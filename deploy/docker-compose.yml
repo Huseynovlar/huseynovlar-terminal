@@ -30,7 +30,7 @@ services:
       - "127.0.0.1:${FRONTEND_LOCAL_PORT:-18443}:8080"
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=32m
-    networks: [panel_internal]
+    networks: [panel_internal, panel_egress]
     depends_on:
       backend:
         condition: service_healthy

@@ -557,8 +557,11 @@ async def lookup_ip_geolocation(
         }
 
     try:
+        import os
+
+        geo_template = os.getenv("IP_GEO_API_URL", "https://ipwho.is/{ip}")
         async with httpx.AsyncClient(timeout=4.0) as http:
-            resp = await http.get(f"https://ipwho.is/{cleaned}")
+            resp = await http.get(geo_template.format(ip=cleaned))
             data = resp.json()
             if data.get("success"):
                 return {

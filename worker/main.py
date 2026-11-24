@@ -6,7 +6,7 @@ import asyncio
 import logging
 
 from app.core.config import get_settings
-from app.core.database import AsyncSessionLocal
+from app.core.database import get_session_factory
 from app.modules.intelligence.router import run_news_refresh
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [worker] %(levelname)s %(message)s")
@@ -16,9 +16,10 @@ logger = logging.getLogger("terminal.worker")
 async def run_worker_loop() -> None:
     logger.info("Huseynovlar Terminal Worker started (Verified News / Cross-Source Corroboration scheduler)")
     settings = get_settings()
+    session_factory = get_session_factory()
     while True:
         try:
-            async with AsyncSessionLocal() as db:
+            async with session_factory() as db:
                 stats = await run_news_refresh(db, settings)
                 logger.info(
                     "News cycle complete: inserted=%s corroborated=%s checked=%s failed=%s",
