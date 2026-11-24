@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.module_registry import ModuleSpec, register_modules
 from app.modules.accounts.router import router as accounts_router
+from app.modules.analytics.router import router as analytics_router
 from app.modules.assets.router import router as assets_router
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
             ModuleSpec("audit", audit_router),
             ModuleSpec("ingest", ingest_router),
             ModuleSpec("charts", charts_router),
+            ModuleSpec("analytics", analytics_router),
         ],
     )
 

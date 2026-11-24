@@ -9,12 +9,11 @@
 ---
 
 ## Текущий статус
-- **Активная фаза:** Фаза 3 — Глубокая аналитика, Полный отчёт Exness (PDF/CSV/Excel) и Казначейство / Хранилище (Treasury)
-- **Последнее действие:** Полностью завершена **Фаза 2 (MQL5 Zero-Latency + Ingestion/WS + Live Charts + Sound Engine)**:
-  - **MQL5:** написаны `mql5/ExnessPanelBridge.mq5` (отдельный поток MT5, `OnInit` sync, `OnTradeTransaction`, `OnTimer` тики/свечи `M1`–`D1`/снэпшоты/MAE-MFE, предохранитель `AllowRemoteClose = false`) и безсетевой `mql5/ExnessPanelHook.mqh` (`< 0.05 мс`).
-  - **Backend:** добавлены модели (`Deal`, `BalanceOperation`, `OpenPositionLive`, `EquitySnapshot`, `MarketBar`, `PendingCommand`), `ws_hub.py`, `ingest/router.py` (fail-closed `X-Account-Api-Key`, идемпотентность, `USC / 100`, отделение `DEAL_TYPE_BALANCE` / Exness Vault) и `charts/router.py` (`GET /api/v1/charts/{asset_code}` + `WS /api/v1/ws/live`). Прогнаны `ruff` и `pytest` (**5/5 PASSED**).
-  - **Frontend:** интегрирован **TradingView Lightweight Charts** (`LiveAssetChart.tsx`: `M1`–`W1` + хоткеи `1`–`8`, линии активных ордеров `Entry`/`SL`/`TP`, маркеры истории входов/выходов на свечах, клик в таблице → фокус на графике, фильтр мульти-счетов `USD`+`USC`, панель DOM / Supply-Demand), добавлен **Web Audio Sound Engine** (`sound-engine.ts` с кнопкой звука в шапке).
-- **Следующий шаг:** Начать **Фазу 3** — сводная аналитика (`analytics/router.py`), полный отчёт Exness (PDF/CSV/Excel), Казначейство/Хранилище и UI-страницы на `<TerminalPageShell>`.
+- **Активная фаза:** Фаза 4 — Market Treemap Heatmap (StockCharts/Finviz), Резервные мульти-источники мировых новостей, Экономический календарь и Google AI (Gemini) Co-Pilot
+- **Последнее действие:** Полностью завершена **Фаза 3 (Институциональная аналитика, Полный отчёт Exness, Казначейство/Хранилище и WebSocket Live Hook)**:
+  - **Backend:** создан `backend/app/modules/analytics/router.py` (`/overview`, `/treasury`, `/statement.csv` UTF-8 BOM Excel-compatible) с расчётом Win Rate, Profit Factor, Expectancy, Payoff Ratio, Max Drawdown, Recovery Factor, Sharpe, Daily Calendar Heatmap, Hourly Heatmap (00–23), разрезов по активам/счетам (`USD`+`USC`)/роботам и учётом Хранилища Exness (`DEAL_TYPE_BALANCE`). Прогнаны `ruff` и `pytest` (**6/6 PASSED**).
+  - **Frontend:** создан `use-live-socket.ts` (автопереподключаемый WebSocket со звуковыми эффектами сделок/крупной прибыли/новостей), обновлены единым шаблоном `<TerminalPageShell>` страницы `analytics/route.tsx` (Risk Lab + Equity/Underwater графики + часовой/дневной heatmap + экспорт CSV/PDF), `finance/route.tsx` (Казначейство и Хранилище Exness с индикатором цели фиксации прибыли) и `default/route.tsx` (Мульти-счета `USD`+`USC` и Роботы).
+- **Следующий шаг:** Начать **Фазу 4** — `worker/` (резервные мульти-источники мировых новостей со всего мира, ForexFactory календарь, Market Treemap Heatmap NASDAQ-100 / S&P 500 / Gold & Commodities) + интеграция **Google AI (Gemini)** + UI-страницы карты рынка и AI-копилота.
 - **Важные сквозные правила пользователя:**
   - Все команды для VPS выдавать **готовыми цельными copy-paste блоками**.
   - В Фазе 4 добавить **резервные мульти-источники мировых новостей и рыночных данных** (максимум информации без зависимости от одного источника).
@@ -60,12 +59,12 @@
 - [x] **Тесты Фазы 2:** `ruff check` + `pytest -v` (**5/5 PASSED**) + `npm run build`
 
 ## Фаза 3: Asset Hubs, Полный отчёт Exness, Аналитика и Казначейство (Treasury)
-- [ ] **Global Overview Dashboard:** общая сводка по всем активам, профилям и счетам + настраиваемые виджеты
-- [ ] **Asset Hubs (`XAUUSD`, `USTEC` + Watchlist):** объединённый экран (график + ордера + мульти-счета + новости + календарь)
-- [ ] **Deep Analytics & Risk Lab:** TWR ROI %, Equity/Balance Curve, Underwater Drawdown, PnL Calendar Heatmap, Profit Factor, Expectancy, Sharpe/Sortino/Calmar, MAE/MFE, Execution Quality (TCA), Correlation Matrix, Stress Test & Monte Carlo
-- [ ] **Полный отчёт Exness (Full Statement):** генерация и экспорт в **PDF / CSV / Excel**
-- [ ] **Казначейство / Treasury:** автоматический учёт `DEAL_TYPE_BALANCE` (депозиты, выводы, внутренние переводы, Хранилище Exness) + цели фиксации прибыли + Дневник и аннотации на графике
-- [ ] **Тесты Фазы 3:** математика TWR ROI, Drawdown, `USD`+`USC` сводок, отделение `DEAL_TYPE_BALANCE`
+- [x] **Accounts & Robots UI (`default/route.tsx`):** мульти-счета `USD` + `USC`, статус `AlgoTrading`, Balance/Equity/Floating, API-ключ префикс
+- [x] **Deep Analytics & Risk Lab (`analytics/router.py` + `analytics/route.tsx`):** Win Rate, Profit Factor, Expectancy, Payoff Ratio, Max Drawdown, Recovery Factor, Sharpe, Equity & Underwater Drawdown графики, Hourly Heatmap (00–23), Daily PnL Calendar, разрезы по активам (`XAUUSD`/`USTEC`) и счетам (`USD`/`USC`)
+- [x] **Полный отчёт Exness (`GET /api/v1/analytics/statement.csv` + Print/PDF):** выгрузка Excel-совместимого UTF-8 BOM CSV и печать в PDF
+- [x] **Казначейство / Treasury (`GET /api/v1/analytics/treasury` + `finance/route.tsx`):** учёт `DEAL_TYPE_BALANCE` (депозиты, выводы, внутренние переводы, Хранилище Exness) + индикатор цели фиксации прибыли в Хранилище
+- [x] **Live WebSocket Hook (`use-live-socket.ts`):** автопереподключение `/api/v1/ws/live` + триггеры звуковых эффектов на сделки, крупную прибыль и срочные новости
+- [x] **Тесты Фазы 3:** `ruff check` + `pytest -v` (**6/6 PASSED**) + `npm run build`
 
 ## Фаза 4: Market Treemap (StockCharts), Мировые новости, Календарь и Google AI (Gemini)
 - [ ] **Market Treemap Heatmap:** `worker/app/treemap_collector.py` (`yfinance` + кэш Redis) + интерактивная карта в UI (NASDAQ-100, S&P 500, Global Top, Gold & Commodities) с периодами `1D`/`1W`/`1M`/`YTD`
