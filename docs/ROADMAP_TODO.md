@@ -9,9 +9,9 @@
 ---
 
 ## Текущий статус
-- **Активная фаза:** Фаза 1 — Фундамент безопасности (FIDO2/WebAuthn), Профиль, Мини-фреймворк и CRUD
-- **Последнее действие:** Полностью завершена **Фаза 0**: создана структура монорепозитория, скопирован шаблон **Studio Admin** (`arhamkhnz/tanstack-shadcn-admin-dashboard`, Vite + React 19 + TS + Tailwind v4 + shadcn/ui + TanStack Table + Zustand + dnd-kit + cmdk) в `frontend/`, добавлены YAML-конфиги (`config/*.yaml`), hardened `deploy/docker-compose.yml` (проверен `docker compose config`), `deploy/caddy/terminal.Caddyfile`, `deploy/nginx/terminal.conf`, `deploy/scripts/backup-db.sh`, `.env.example` и `.github/workflows/ci.yml`.
-- **Следующий шаг:** Начать **Фазу 1** — поднять `backend/` (FastAPI + SQLAlchemy 2.0 + Alembic + FIDO2/WebAuthn + 2FA + AES-256-GCM + CRUD) и интегрировать наш config-driven мини-фреймворк (`frontend/src/framework/`) + бегущую строку новостей в `frontend/`.
+- **Активная фаза:** Фаза 1B — Фронтенд (Мини-фреймворк, единый шаблон страниц, Login с FIDO2/2FA, бегущая строка, Конструктор левого меню и Профиль)
+- **Последнее действие:** Полностью завершена **Фаза 1A (Backend Core & Security)**: созданы модули `auth` (bootstrap, Argon2id, JWT + HttpOnly refresh, 2FA TOTP, FIDO2/WebAuthn Passkeys), `profile` (аватар, био, соцсети, preferences, AES-256-GCM Secret Vault), `assets` (Asset Hubs + Watchlist + YAML seed), `accounts` (Exness Profiles, мульти-счета `USD`+`USC` с `currency_divisor`, генерация/ротация `X-Account-Api-Key`, Robots CRUD) и `audit`. Прогнаны `ruff check` и `pytest` (4/4 PASSED), добавлен job `backend-check` в CI.
+- **Следующий шаг:** Выбрать стиль Login-страницы (`v2` split-screen vs `v1` centered card) и реализовать **Фазу 1B** поверх `Studio Admin` (`frontend/src/framework/` + `<TerminalPageShell>` + бегущая строка + Login + Profile + Accounts/Assets UI).
 
 ---
 
@@ -30,16 +30,17 @@
 - [x] Настроить базовый CI (`.github/workflows/ci.yml`; `deploy-production.yml` добавим в Фазе 6)
 
 ## Фаза 1: Фундамент безопасности (FIDO2/WebAuthn), Профиль, Мини-фреймворк и CRUD
-- [ ] **Backend Core:** модульная архитектура (`app/core/module_registry.py`), SQLAlchemy 2.0 async, Alembic, AES-256-GCM шифрование секретов
-- [ ] **Миграция БД `001_init`:** users, webauthn_credentials, totp, sessions, preferences, audit_logs, exness_profiles, docker_containers, trading_accounts (`USD`/`USC` + `currency_divisor`), assets (+ Watchlist), robots
-- [ ] **Auth & Security:** Argon2id + 2FA TOTP + **FIDO2 / WebAuthn Passkeys** (`RP_ID=terminal.huseynovlar.org`) + JWT / HttpOnly Refresh + уведомление в Telegram о входе с нового IP
-- [ ] **CRUD API:** Exness-профили, мульти-счета (`USD` + `USC` на один актив), активы + Watchlist, роботы, генерация/ротация `X-Account-Api-Key` (SHA-256), профиль пользователя (аватар, био, соцсети)
-- [ ] **Frontend (Studio Admin + Mini-Framework):**
-  - [ ] Развернуть дизайн-систему `Studio Admin` на React 19 + TS + Vite + Tailwind v4 + shadcn/ui
-  - [ ] Реализовать `frontend/src/framework/` (`pages.config.ts`, `widgets.config.ts`, `hotkeys.config.ts`, `<TerminalPageShell>`)
+- [x] **Backend Core:** модульная архитектура (`backend/app/core/module_registry.py`), SQLAlchemy 2.0 async, Alembic env, AES-256-GCM шифрование секретов (`backend/app/core/crypto.py`)
+- [x] **Схема БД (`backend/app/db/models.py`):** users, webauthn_credentials, sessions, preferences, audit_logs, exness_profiles, docker_containers, trading_accounts (`USD`/`USC` + `currency_divisor`), assets (+ Watchlist), robots, secret_vault
+- [x] **Auth & Security (`backend/app/modules/auth/router.py`):** Argon2id + 2FA TOTP + **FIDO2 / WebAuthn Passkeys** (`RP_ID=terminal.huseynovlar.org`) + JWT / HttpOnly Refresh + Audit Log
+- [x] **CRUD API (`profile`, `assets`, `accounts`, `audit`):** Exness-профили, мульти-счета (`USD` + `USC` на один актив), активы + Watchlist + YAML seed, роботы, генерация/ротация `X-Account-Api-Key` (SHA-256), профиль пользователя (аватар, био, соцсети, encrypted vault)
+- [x] **Тесты Фазы 1A:** `ruff check` + `pytest -v` (4/4 PASSED) + `backend-check` в CI
+- [ ] **Frontend (Studio Admin + Mini-Framework — Фаза 1B):**
+  - [ ] Реализовать `frontend/src/framework/` (`pages.config.ts`, `widgets.config.ts`, `hotkeys.config.ts`, `<TerminalPageShell>` единый шаблон страниц)
+  - [ ] Реализовать единую страницу **Login / Bootstrap** (FIDO2 Passkey 1-click + пароль + 2FA TOTP OTP)
   - [ ] Реализовать **бегущую строку в шапке (Bloomberg Live Ticker Tape)** + `Cmd+K` Command Palette + переключатели `USD/USC`, `Privacy Mode (Shift+M)`, таймзоны (`Asia/Baku`), i18n (`RU`/`EN`)
-  - [ ] Реализовать **Конструктор левого меню** (drag-and-drop, группировки, скрытие, закрепление активов) и страницу **Профиля** (аватар, соцсети, Passkeys/2FA)
-- [ ] **Тесты Фазы 1:** unit/security тесты Auth/WebAuthn, AES-256-GCM, CRUD, `npm run build`
+  - [ ] Реализовать **Конструктор левого меню** (drag-and-drop, группировки, скрытие, закрепление активов) и страницу **Профиля** (аватар, соцсети, Passkeys/2FA, Secret Vault)
+  - [ ] Проверить `npm run build` и обновить `docs/ROADMAP_TODO.md`
 
 ## Фаза 2: Zero-Latency MQL5 + Живые графики (`M1`–`W1`), Ордера на графике и DOM
 - [ ] **MQL5:** написать `mql5/ExnessPanelBridge.mq5` (отдельный поток, `OnInit` sync, `OnTradeTransaction`, `OnTimer` тики/свечи/снэпшоты/MAE-MFE/`MarketBookGet`, предохранитель `AllowRemoteClose = false`)
