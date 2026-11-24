@@ -24,7 +24,7 @@ class ExnessProfileCreate(BaseModel):
 
 
 class AccountCreate(BaseModel):
-    profile_id: str
+    profile_id: str | None = None
     primary_asset_id: str | None = None
     container_id: str | None = None
     name: str = Field(min_length=2, max_length=120)
@@ -64,6 +64,8 @@ def _serialize_account(a: TradingAccount, plaintext_api_key: str | None = None) 
         "is_active": a.is_active,
         "api_key_prefix": a.api_key_prefix,
         "algo_trading_enabled": a.algo_trading_enabled,
+        "terminal_connected": getattr(a, "terminal_connected", False),
+        "last_ping_ms": getattr(a, "last_ping_ms", None),
         "last_seen_at": a.last_seen_at.isoformat() if a.last_seen_at else None,
         "last_balance": a.last_balance,
         "last_balance_usd": round(a.last_balance / a.currency_divisor, 2),
@@ -164,9 +166,17 @@ async def create_account(
     user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    profile = await db.get(ExnessProfile, body.profile_id)
-    if not profile:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exness profile not found")
+    profile: ExnessProfile | None = None
+    if body.profile_id:
+        profile = await db.get(ExnessProfile, body.profile_id)
+        if not profile:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exness profile not found")
+    else:
+        profile = (await db.execute(select(ExnessProfile).order_by(ExnessProfile.created_at.asc()))).scalars().first()
+        if not profile:
+            profile = ExnessProfile(name="Exness Main", notes="Auto-created default broker profile")
+            db.add(profile)
+            await db.flush()
 
     dup = (
         await db.execute(
@@ -183,7 +193,7 @@ async def create_account(
     divisor = 100.0 if body.currency == "USC" else 1.0
 
     account = TradingAccount(
-        profile_id=body.profile_id,
+        profile_id=profile.id,
         primary_asset_id=body.primary_asset_id,
         container_id=body.container_id,
         name=body.name.strip(),

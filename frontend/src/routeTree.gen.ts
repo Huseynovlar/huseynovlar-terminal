@@ -40,6 +40,7 @@ import { Route as mainDashboardProductsRouteRouteImport } from './routes/(main)/
 import { Route as mainDashboardProfileRouteRouteImport } from './routes/(main)/dashboard/profile/route'
 import { Route as mainDashboardRolesRouteRouteImport } from './routes/(main)/dashboard/roles/route'
 import { Route as mainDashboardTasksRouteRouteImport } from './routes/(main)/dashboard/tasks/route'
+import { Route as mainDashboardTreemapRouteRouteImport } from './routes/(main)/dashboard/treemap/route'
 import { Route as mainDashboardUsersRouteRouteImport } from './routes/(main)/dashboard/users/route'
 import { Route as mainAuthV1LoginRouteRouteImport } from './routes/(main)/auth/v1/login/route'
 import { Route as mainAuthV1RegisterRouteRouteImport } from './routes/(main)/auth/v1/register/route'
@@ -222,6 +223,12 @@ const mainDashboardTasksRouteRoute = mainDashboardTasksRouteRouteImport.update({
   path: '/tasks',
   getParentRoute: () => mainDashboardRouteRoute,
 } as any)
+const mainDashboardTreemapRouteRoute =
+  mainDashboardTreemapRouteRouteImport.update({
+    id: '/treemap',
+    path: '/treemap',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
 const mainDashboardUsersRouteRoute = mainDashboardUsersRouteRouteImport.update({
   id: '/users',
   path: '/users',
@@ -302,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/profile': typeof mainDashboardProfileRouteRoute
   '/dashboard/roles': typeof mainDashboardRolesRouteRoute
   '/dashboard/tasks': typeof mainDashboardTasksRouteRoute
+  '/dashboard/treemap': typeof mainDashboardTreemapRouteRoute
   '/dashboard/users': typeof mainDashboardUsersRouteRoute
   '/dashboard/$': typeof mainDashboardSplatRoute
   '/dashboard/': typeof mainDashboardIndexRoute
@@ -343,6 +351,7 @@ export interface FileRoutesByTo {
   '/dashboard/profile': typeof mainDashboardProfileRouteRoute
   '/dashboard/roles': typeof mainDashboardRolesRouteRoute
   '/dashboard/tasks': typeof mainDashboardTasksRouteRoute
+  '/dashboard/treemap': typeof mainDashboardTreemapRouteRoute
   '/dashboard/users': typeof mainDashboardUsersRouteRoute
   '/dashboard/$': typeof mainDashboardSplatRoute
   '/dashboard': typeof mainDashboardIndexRoute
@@ -386,6 +395,7 @@ export interface FileRoutesById {
   '/(main)/dashboard/profile': typeof mainDashboardProfileRouteRoute
   '/(main)/dashboard/roles': typeof mainDashboardRolesRouteRoute
   '/(main)/dashboard/tasks': typeof mainDashboardTasksRouteRoute
+  '/(main)/dashboard/treemap': typeof mainDashboardTreemapRouteRoute
   '/(main)/dashboard/users': typeof mainDashboardUsersRouteRoute
   '/(main)/dashboard/$': typeof mainDashboardSplatRoute
   '/(main)/dashboard/': typeof mainDashboardIndexRoute
@@ -430,6 +440,7 @@ export interface FileRouteTypes {
     | '/dashboard/profile'
     | '/dashboard/roles'
     | '/dashboard/tasks'
+    | '/dashboard/treemap'
     | '/dashboard/users'
     | '/dashboard/$'
     | '/dashboard/'
@@ -471,6 +482,7 @@ export interface FileRouteTypes {
     | '/dashboard/profile'
     | '/dashboard/roles'
     | '/dashboard/tasks'
+    | '/dashboard/treemap'
     | '/dashboard/users'
     | '/dashboard/$'
     | '/dashboard'
@@ -513,6 +525,7 @@ export interface FileRouteTypes {
     | '/(main)/dashboard/profile'
     | '/(main)/dashboard/roles'
     | '/(main)/dashboard/tasks'
+    | '/(main)/dashboard/treemap'
     | '/(main)/dashboard/users'
     | '/(main)/dashboard/$'
     | '/(main)/dashboard/'
@@ -756,6 +769,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof mainDashboardTasksRouteRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
+    '/(main)/dashboard/treemap': {
+      id: '/(main)/dashboard/treemap'
+      path: '/treemap'
+      fullPath: '/dashboard/treemap'
+      preLoaderRoute: typeof mainDashboardTreemapRouteRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
     '/(main)/dashboard/users': {
       id: '/(main)/dashboard/users'
       path: '/users'
@@ -846,6 +866,7 @@ interface mainDashboardRouteRouteChildren {
   mainDashboardProfileRouteRoute: typeof mainDashboardProfileRouteRoute
   mainDashboardRolesRouteRoute: typeof mainDashboardRolesRouteRoute
   mainDashboardTasksRouteRoute: typeof mainDashboardTasksRouteRoute
+  mainDashboardTreemapRouteRoute: typeof mainDashboardTreemapRouteRoute
   mainDashboardUsersRouteRoute: typeof mainDashboardUsersRouteRoute
   mainDashboardSplatRoute: typeof mainDashboardSplatRoute
   mainDashboardIndexRoute: typeof mainDashboardIndexRoute
@@ -880,6 +901,7 @@ const mainDashboardRouteRouteChildren: mainDashboardRouteRouteChildren = {
   mainDashboardProfileRouteRoute: mainDashboardProfileRouteRoute,
   mainDashboardRolesRouteRoute: mainDashboardRolesRouteRoute,
   mainDashboardTasksRouteRoute: mainDashboardTasksRouteRoute,
+  mainDashboardTreemapRouteRoute: mainDashboardTreemapRouteRoute,
   mainDashboardUsersRouteRoute: mainDashboardUsersRouteRoute,
   mainDashboardSplatRoute: mainDashboardSplatRoute,
   mainDashboardIndexRoute: mainDashboardIndexRoute,

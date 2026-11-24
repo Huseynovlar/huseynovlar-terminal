@@ -348,10 +348,30 @@ function AccountsAndRobotsPage() {
                     <KeyRound className="size-3" />
                     {acc.api_key_prefix}••••
                   </span>
-                  <span className="flex items-center gap-1 text-emerald-500">
-                    <ShieldCheck className="size-3" />
-                    {acc.terminal_connected ? "MT5 Connected" : "Ожидает MT5 Bridge"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-[10px]"
+                      onClick={async () => {
+                        try {
+                          const res = await apiRequest<{ api_key: string }>(`/accounts/${acc.id}/rotate-key`, {
+                            method: "POST",
+                          });
+                          setCreatedApiKey(res.api_key);
+                          loadData();
+                        } catch (err) {
+                          setFormError(err instanceof Error ? err.message : "Ошибка генерации ключа");
+                        }
+                      }}
+                    >
+                      Новый ключ
+                    </Button>
+                    <span className="flex items-center gap-1 text-emerald-500">
+                      <ShieldCheck className="size-3" />
+                      {acc.terminal_connected ? "MT5 Live" : "Ждёт MT5"}
+                    </span>
+                  </div>
                 </div>
               </CardContent>
             </Card>

@@ -13,7 +13,6 @@ import { TerminalHeaderControls } from "@/framework/components/TerminalHeaderCon
 import { getDashboardLayout } from "@/server/server-actions";
 
 import { AccountSwitcher } from "./-components/header/account-switcher";
-import { LayoutControls } from "./-components/header/layout-controls";
 import { SearchDialog } from "./-components/header/search-dialog";
 import { ThemeSwitcher } from "./-components/header/theme-switcher";
 import { AppSidebar, type CurrentTerminalUser } from "./-components/sidebar/app-sidebar";
@@ -118,7 +117,6 @@ function DashboardLayout() {
                 orientation="vertical"
                 className="mx-1 hidden data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center md:block"
               />
-              <LayoutControls />
               <ThemeSwitcher />
               <AccountSwitcher user={currentUser} />
             </div>

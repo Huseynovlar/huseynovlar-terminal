@@ -1,47 +1,19 @@
 import { useEffect, useState } from "react";
 
-import { AlertTriangle, Clock, Newspaper, TrendingDown, TrendingUp } from "lucide-react";
+import { BadgeCheck, Clock, Newspaper } from "lucide-react";
 
+import { apiRequest } from "@/framework/api-client";
 import { useTerminalStore } from "@/framework/terminal-store";
 
-interface TickerItem {
+interface LiveHeadline {
   id: string;
-  kind: "quote" | "news" | "event";
-  tag: string;
-  text: string;
-  delta?: string;
-  positive?: boolean;
+  source: string;
+  title: string;
+  is_verified_source?: boolean;
+  affected_assets: string[];
 }
 
-const DEMO_TICKER_ITEMS: TickerItem[] = [
-  { id: "q1", kind: "quote", tag: "XAUUSD", text: "2,642.50", delta: "+0.84%", positive: true },
-  { id: "q2", kind: "quote", tag: "USTEC", text: "20,845.20", delta: "+0.41%", positive: true },
-  { id: "q3", kind: "quote", tag: "DXY", text: "104.12", delta: "-0.26%", positive: false },
-  { id: "q4", kind: "quote", tag: "US10Y", text: "4.21%", delta: "-0.04", positive: false },
-  { id: "q5", kind: "quote", tag: "VIX", text: "14.80", delta: "-3.1%", positive: false },
-  {
-    id: "e1",
-    kind: "event",
-    tag: "HIGH IMPACT",
-    text: "US CPI Release • XAUUSD / USTEC • Forecast 2.9% (Prev 3.1%)",
-  },
-  {
-    id: "n1",
-    kind: "news",
-    tag: "XAUUSD",
-    text: "Central bank gold demand accelerates in Q4 amid softer Treasury yields",
-    positive: true,
-  },
-  {
-    id: "n2",
-    kind: "news",
-    tag: "USTEC",
-    text: "Mega-cap AI chipmakers lead NASDAQ-100 futures higher ahead of NY session",
-    positive: true,
-  },
-];
-
-function formatBakuTime(tz: string): string {
+function formatClock(tz: string): string {
   try {
     const timeZone = tz === "Asia/Baku" ? "Asia/Baku" : "UTC";
     return new Intl.DateTimeFormat("en-GB", {
@@ -60,17 +32,24 @@ export function BloombergTickerTape() {
   const tickerEnabled = useTerminalStore((s) => s.tickerEnabled);
   const tickerSpeed = useTerminalStore((s) => s.tickerSpeed);
   const timezone = useTerminalStore((s) => s.timezone);
-  const [clock, setClock] = useState(() => formatBakuTime(timezone));
+  const [clock, setClock] = useState(() => formatClock(timezone));
+  const [headlines, setHeadlines] = useState<LiveHeadline[]>([]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setClock(formatBakuTime(timezone)), 1000);
+    const id = window.setInterval(() => setClock(formatClock(timezone)), 1000);
     return () => window.clearInterval(id);
   }, [timezone]);
+
+  useEffect(() => {
+    apiRequest<LiveHeadline[]>("/intelligence/news?verified_only=true&limit=12")
+      .then((rows) => setHeadlines(rows))
+      .catch(() => setHeadlines([]));
+  }, []);
 
   if (!tickerEnabled) return null;
 
   const durationSec = tickerSpeed === "slow" ? 55 : tickerSpeed === "fast" ? 22 : 36;
-  const doubled = [...DEMO_TICKER_ITEMS, ...DEMO_TICKER_ITEMS];
+  const doubled = headlines.length > 0 ? [...headlines, ...headlines] : [];
 
   return (
     <div className="bg-muted/40 relative flex h-8 w-full items-center overflow-hidden border-b border-border/60 text-xs select-none">
@@ -82,53 +61,31 @@ export function BloombergTickerTape() {
         <span className="text-muted-foreground hidden sm:inline">({timezone})</span>
       </div>
 
-      {/* Smooth CSS Marquee — pauses automatically on hover */}
-      <div className="group flex flex-1 overflow-hidden">
-        <div
-          className="flex w-max items-center gap-6 px-4 group-hover:[animation-play-state:paused]"
-          style={{
-            animation: `ht-marquee ${durationSec}s linear infinite`,
-          }}
-        >
-          {doubled.map((item, idx) => (
-            <div key={`${item.id}-${idx}`} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
-              {item.kind === "quote" ? (
-                <>
-                  <span className="font-semibold tracking-tight">{item.tag}</span>
-                  <span className="font-mono text-foreground/90">{item.text}</span>
-                  <span
-                    className={`inline-flex items-center gap-0.5 font-mono text-[11px] ${
-                      item.positive ? "text-emerald-500" : "text-rose-500"
-                    }`}
-                  >
-                    {item.positive ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}
-                    {item.delta}
-                  </span>
-                </>
-              ) : item.kind === "event" ? (
-                <>
-                  <AlertTriangle className="size-3 text-amber-500" />
-                  <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-amber-500">
-                    {item.tag}
-                  </span>
-                  <span className="text-foreground/90">{item.text}</span>
-                </>
-              ) : (
-                <>
-                  <Newspaper className="text-muted-foreground size-3" />
-                  <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold">
-                    {item.tag}
-                  </span>
-                  <span className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
-                    {item.text}
-                  </span>
-                </>
-              )}
-              <span className="text-border ml-3">•</span>
-            </div>
-          ))}
+      {/* Only render scrolling wire when real verified news exist — zero invented quotes */}
+      {doubled.length > 0 ? (
+        <div className="group flex flex-1 overflow-hidden">
+          <div
+            className="flex w-max items-center gap-6 px-4 group-hover:[animation-play-state:paused]"
+            style={{
+              animation: `ht-marquee ${durationSec}s linear infinite`,
+            }}
+          >
+            {doubled.map((item, idx) => (
+              <div key={`${item.id}-${idx}`} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+                <Newspaper className="text-muted-foreground size-3" />
+                <span className="inline-flex items-center gap-0.5 font-semibold text-foreground">
+                  {item.source}
+                  {item.is_verified_source ? <BadgeCheck className="size-3 text-emerald-500" /> : null}
+                </span>
+                <span className="text-muted-foreground">{item.title}</span>
+                <span className="text-border ml-3">•</span>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="text-muted-foreground px-3 font-mono text-[11px]">Huseynovlar Terminal • Live</div>
+      )}
 
       <style>{`
         @keyframes ht-marquee {

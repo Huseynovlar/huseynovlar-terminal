@@ -3,12 +3,9 @@ import {
   BookOpen,
   Bot,
   Calendar,
-  Coins,
-  Cpu,
   Gauge,
   Grid2x2,
   LayoutDashboard,
-  Lock,
   type LucideIcon,
   Newspaper,
   Server,
@@ -64,7 +61,7 @@ export const sidebarItems: NavGroup[] = [
     items: [
       {
         id: "overview",
-        title: "Общая сводка",
+        title: "Терминал и Графики",
         url: "/dashboard/crypto",
         icon: LayoutDashboard,
       },
@@ -84,30 +81,12 @@ export const sidebarItems: NavGroup[] = [
   },
   {
     id: 2,
-    label: "Хабы активов",
-    items: [
-      {
-        id: "asset-xauusd",
-        title: "XAUUSD (Золото)",
-        url: "/dashboard/crypto",
-        icon: Coins,
-      },
-      {
-        id: "asset-ustec",
-        title: "USTEC (NASDAQ-100)",
-        url: "/dashboard/crypto",
-        icon: Cpu,
-      },
-    ],
-  },
-  {
-    id: 3,
     label: "Рынок и ИИ",
     items: [
       {
         id: "market-heatmap",
         title: "Карта рынка (Treemap)",
-        url: "/dashboard/analytics",
+        url: "/dashboard/treemap",
         icon: Grid2x2,
       },
       {
@@ -131,7 +110,7 @@ export const sidebarItems: NavGroup[] = [
     ],
   },
   {
-    id: 4,
+    id: 3,
     label: "Инфраструктура",
     items: [
       {
@@ -149,7 +128,7 @@ export const sidebarItems: NavGroup[] = [
     ],
   },
   {
-    id: 5,
+    id: 4,
     label: "Система",
     items: [
       {
@@ -163,12 +142,6 @@ export const sidebarItems: NavGroup[] = [
         title: "Настройки и Хоткеи",
         url: "/dashboard/roles",
         icon: Settings,
-      },
-      {
-        id: "auth-login",
-        title: "Экран входа (Passkey)",
-        url: "/auth/v2/login",
-        icon: Lock,
       },
     ],
   },
