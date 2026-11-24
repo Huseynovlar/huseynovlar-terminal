@@ -9,8 +9,11 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/s
 import { users } from "@/data/users";
 import { getDashboardLayout } from "@/server/server-actions";
 
+import { BloombergTickerTape } from "@/framework/components/BloombergTickerTape";
+import { HotkeyEngine } from "@/framework/components/HotkeyEngine";
+import { TerminalHeaderControls } from "@/framework/components/TerminalHeaderControls";
+
 import { AccountSwitcher } from "./-components/header/account-switcher";
-import { GitHubRepositoriesMenu } from "./-components/header/github-repositories-menu";
 import { LayoutControls } from "./-components/header/layout-controls";
 import { SearchDialog } from "./-components/header/search-dialog";
 import { ThemeSwitcher } from "./-components/header/theme-switcher";
@@ -33,6 +36,7 @@ function DashboardLayout() {
         } as CSSProperties
       }
     >
+      <HotkeyEngine />
       <AppSidebar variant={variant} collapsible={collapsible} />
       <SidebarInset
         className={cn(
@@ -44,6 +48,7 @@ function DashboardLayout() {
           "min-w-0 overflow-x-clip",
         )}
       >
+        <BloombergTickerTape />
         <header
           className={cn(
             "flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12",
@@ -61,9 +66,13 @@ function DashboardLayout() {
               <SearchDialog />
             </div>
             <div className="flex items-center gap-2">
+              <TerminalHeaderControls />
+              <Separator
+                orientation="vertical"
+                className="mx-1 hidden data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center md:block"
+              />
               <LayoutControls />
               <ThemeSwitcher />
-              <GitHubRepositoriesMenu />
               <AccountSwitcher users={users} />
             </div>
           </div>

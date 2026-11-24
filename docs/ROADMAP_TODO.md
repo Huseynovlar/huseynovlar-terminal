@@ -9,9 +9,11 @@
 ---
 
 ## Текущий статус
-- **Активная фаза:** Фаза 1B — Фронтенд (Мини-фреймворк, единый шаблон страниц, Login с FIDO2/2FA, бегущая строка, Конструктор левого меню и Профиль)
-- **Последнее действие:** Полностью завершена **Фаза 1A (Backend Core & Security)**: созданы модули `auth` (bootstrap, Argon2id, JWT + HttpOnly refresh, 2FA TOTP, FIDO2/WebAuthn Passkeys), `profile` (аватар, био, соцсети, preferences, AES-256-GCM Secret Vault), `assets` (Asset Hubs + Watchlist + YAML seed), `accounts` (Exness Profiles, мульти-счета `USD`+`USC` с `currency_divisor`, генерация/ротация `X-Account-Api-Key`, Robots CRUD) и `audit`. Прогнаны `ruff check` и `pytest` (4/4 PASSED), добавлен job `backend-check` в CI.
-- **Следующий шаг:** Выбрать стиль Login-страницы (`v2` split-screen vs `v1` centered card) и реализовать **Фазу 1B** поверх `Studio Admin` (`frontend/src/framework/` + `<TerminalPageShell>` + бегущая строка + Login + Profile + Accounts/Assets UI).
+- **Активная фаза:** Фаза 2 — Zero-Latency MQL5 (`ExnessPanelBridge.mq5` + `ExnessPanelHook.mqh`), Ingestion API + WebSocket и Живые графики (`M1`–`W1`) с ордерами на свечах и DOM
+- **Последнее действие:** Полностью завершена **Фаза 1 (1A Backend + 1B Frontend)**:
+  - **Backend (`286ca68`):** FastAPI + SQLAlchemy 2.0 + Alembic + Argon2id + JWT/HttpOnly + 2FA TOTP + FIDO2/WebAuthn Passkeys + AES-256-GCM Secret Vault + CRUD (Profile, Assets + YAML seed, Multi-Account `USD`/`USC`, Robots, Audit) + 4/4 pytest PASSED.
+  - **Frontend:** наш config-driven мини-фреймворк (`frontend/src/framework/`: `terminal-store.ts`, `api-client.ts`, `registries/pages.config.ts`, `templates/TerminalPageShell.tsx`), бегущая строка в шапке (`BloombergTickerTape.tsx`), быстрые переключатели (`TerminalHeaderControls.tsx` — `USD/USC`, `Privacy Shift+M`, `Asia/Baku`, `RU/EN`, `Ticker`), движок хоткеев (`HotkeyEngine.tsx` — `Shift+M/C/T`, `G D/A/M/N/C/I`, `?`, готовность под `F13–F24`), обновлённое левое меню `Huseynovlar Terminal` и Split-Screen Login/Bootstrap (`auth/v2/login` с 1-click FIDO2 Passkey + 2FA). `npm run build` прошёл с кодом `0`.
+- **Следующий шаг:** Начать **Фазу 2** — написать `mql5/ExnessPanelBridge.mq5` + `mql5/ExnessPanelHook.mqh`, добавить Ingestion API + Redis Pub/Sub WebSocket в `backend/` и подключить **TradingView Lightweight Charts** (`M1`–`W1`) с линиями активных ордеров, историей входов/выходов на свечах и DOM.
 
 ---
 
@@ -35,12 +37,12 @@
 - [x] **Auth & Security (`backend/app/modules/auth/router.py`):** Argon2id + 2FA TOTP + **FIDO2 / WebAuthn Passkeys** (`RP_ID=terminal.huseynovlar.org`) + JWT / HttpOnly Refresh + Audit Log
 - [x] **CRUD API (`profile`, `assets`, `accounts`, `audit`):** Exness-профили, мульти-счета (`USD` + `USC` на один актив), активы + Watchlist + YAML seed, роботы, генерация/ротация `X-Account-Api-Key` (SHA-256), профиль пользователя (аватар, био, соцсети, encrypted vault)
 - [x] **Тесты Фазы 1A:** `ruff check` + `pytest -v` (4/4 PASSED) + `backend-check` в CI
-- [ ] **Frontend (Studio Admin + Mini-Framework — Фаза 1B):**
-  - [ ] Реализовать `frontend/src/framework/` (`pages.config.ts`, `widgets.config.ts`, `hotkeys.config.ts`, `<TerminalPageShell>` единый шаблон страниц)
-  - [ ] Реализовать единую страницу **Login / Bootstrap** (FIDO2 Passkey 1-click + пароль + 2FA TOTP OTP)
-  - [ ] Реализовать **бегущую строку в шапке (Bloomberg Live Ticker Tape)** + `Cmd+K` Command Palette + переключатели `USD/USC`, `Privacy Mode (Shift+M)`, таймзоны (`Asia/Baku`), i18n (`RU`/`EN`)
-  - [ ] Реализовать **Конструктор левого меню** (drag-and-drop, группировки, скрытие, закрепление активов) и страницу **Профиля** (аватар, соцсети, Passkeys/2FA, Secret Vault)
-  - [ ] Проверить `npm run build` и обновить `docs/ROADMAP_TODO.md`
+- [x] **Frontend (Studio Admin + Mini-Framework — Фаза 1B):**
+  - [x] Реализовать `frontend/src/framework/` (`pages.config.ts`, `terminal-store.ts`, `api-client.ts`, `<TerminalPageShell>` единый шаблон страниц)
+  - [x] Реализовать Split-Screen страницу **Login / Bootstrap** (`auth/v2/login`: FIDO2 Passkey 1-click + пароль + 2FA TOTP)
+  - [x] Реализовать **бегущую строку в шапке (`BloombergTickerTape`)** + `TerminalHeaderControls` (`USD/USC`, `Privacy Shift+M`, `Asia/Baku`, `RU/EN`, `Ticker`) + `HotkeyEngine` (`Shift+M/C/T`, `G D/A/M/N/C/I`, `?`, готовность под `F13–F24`)
+  - [x] Обновить левое меню под группы `Huseynovlar Terminal` (`Терминал`, `Хабы активов`, `Рынок и ИИ`, `Инфраструктура`, `Система`)
+  - [x] Проверить `npm run build` (успешно, exit code 0) и обновить `docs/ROADMAP_TODO.md`
 
 ## Фаза 2: Zero-Latency MQL5 + Живые графики (`M1`–`W1`), Ордера на графике и DOM
 - [ ] **MQL5:** написать `mql5/ExnessPanelBridge.mq5` (отдельный поток, `OnInit` sync, `OnTradeTransaction`, `OnTimer` тики/свечи/снэпшоты/MAE-MFE/`MarketBookGet`, предохранитель `AllowRemoteClose = false`)

@@ -3,12 +3,14 @@ import packageJson from "../../package.json";
 const currentYear = new Date().getFullYear();
 
 export const APP_CONFIG = {
-  name: "Studio Admin",
+  name: "Huseynovlar Terminal",
+  shortName: "H-Terminal",
+  domain: "terminal.huseynovlar.org",
   version: packageJson.version,
-  copyright: `© ${currentYear}, Studio Admin.`,
+  copyright: `© ${currentYear}, Huseynovlar Terminal.`,
   meta: {
-    title: "Studio Admin - Modern TanStack Start Dashboard Starter Template",
+    title: "Huseynovlar Terminal — Exness MT5 Institutional Desk",
     description:
-      "Studio Admin is a modern, open-source dashboard starter template built with TanStack Start, Tailwind CSS v4, and shadcn/ui. Perfect for SaaS apps, admin panels, and internal tools—fully customizable and production-ready.",
+      "Personal Bloomberg-grade trading, analytics, AI news, and Docker MT5 operations terminal for Exness accounts.",
   },
 };
