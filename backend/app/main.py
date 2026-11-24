@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.database import Base, build_engine
 from app.core.module_registry import ModuleSpec, register_modules
+from app.db import models as _models  # noqa: F401
 from app.modules.accounts.router import router as accounts_router
 from app.modules.analytics.router import router as analytics_router
 from app.modules.assets.router import router as assets_router
@@ -17,6 +21,19 @@ from app.modules.ops.router import router as ops_router
 from app.modules.profile.router import router as profile_router
 
 
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    settings = get_settings()
+    if settings.environment != "test":
+        engine = build_engine(settings.database_url)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+        finally:
+            await engine.dispose()
+    yield
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
@@ -24,6 +41,7 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         docs_url="/api/docs" if settings.environment != "production" else None,
         redoc_url=None,
+        lifespan=_lifespan,
     )
 
     app.add_middleware(

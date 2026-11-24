@@ -126,7 +126,11 @@ services:
     <<: *hardening
     image: redis:7-alpine
     container_name: terminal-redis
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    user: "999:999"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /data:rw,noexec,nosuid,nodev,size=16m
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--dir", "/tmp"]
     networks: [panel_internal]
     mem_limit: 160m
     cpus: 0.3
@@ -139,13 +143,15 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
 
   docker-proxy:
-    <<: *hardening
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
     image: tecnativa/docker-socket-proxy:0.3.0
     container_name: terminal-docker-proxy
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=16m
-      - /usr/local/etc/haproxy:rw,noexec,nosuid,nodev,size=1m
-      - /run:rw,noexec,nosuid,nodev,size=1m
     environment:
       CONTAINERS: 1
       POST: 1

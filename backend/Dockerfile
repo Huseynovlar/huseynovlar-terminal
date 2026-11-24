@@ -14,6 +14,7 @@ RUN pip install --upgrade pip && pip install -r /app/requirements.txt
 COPY backend/app /app/app
 COPY backend/alembic /app/alembic
 COPY backend/alembic.ini /app/alembic.ini
+COPY worker /app/worker
 COPY config /app/config
 
 USER app
