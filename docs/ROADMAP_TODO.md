@@ -9,12 +9,11 @@
 ---
 
 ## Текущий статус
-- **Активная фаза:** Фаза 5 — Docker Ops (`docker-socket-proxy`), Kill-Switch, Telegram-уведомления, Редактор горячих клавиш (`F13–F24`) и Setup Wizard (`.set` генератор) / Wiki
-- **Последнее действие:** Полностью завершена **Фаза 4 (Market Treemap Heatmap, Резервные мульти-источники мировых новостей, Календарь, Google AI Gemini Co-Pilot, UTC по умолчанию и 3 языка RU/EN/AZ)**:
-  - **Config & Worker:** расширен `config/news_sources.yaml` (12 резервных мировых источников: Kitco, Investing, FXStreet, CNBC Finance/Tech, MarketWatch, Yahoo Finance, Fed, ECB, Google News, GDELT 2.0 + резервный календарь ForexFactory), создан `worker/main.py`.
-  - **Backend:** добавлены `NewsItem`, `EconomicEvent`, `AiBriefing` и `backend/app/modules/intelligence/router.py` (`/news`, `/news/refresh` с изоляцией ошибок по каждому фиду и WS-рассылкой Breaking News, `/calendar`, `/treemap`, `/ai/analyze` для Google Gemini с живым контекстом портфеля). Прогнаны `ruff` и `pytest` (**8/8 PASSED**).
-  - **Frontend:** создан `MarketTreemap.tsx` (StockCharts/Finviz тремап NASDAQ-100 / S&P 500 / Gold & Commodities с `1D/1W/1M/YTD`), страница `chat/route.tsx` (мировые новости + фильтры по активам + Google Gemini Co-Pilot с утренним брифингом и риск-анализом), часовой пояс по умолчанию переведён на **`UTC`**, добавлены **3 языка (`RU` / `EN` / `AZ`)**.
-- **Следующий шаг:** Начать **Фазу 5** — `containers/router.py` (`docker-socket-proxy` allowlist + Restart/Start/Stop/Logs), аварийный Kill-Switch, `setup_wizard/router.py` (`.set` генератор MT5), Telegram-алерты и UI-страницы Containers Ops, Setup Wizard/Wiki, Profile/Vault и Visual Hotkey Editor (`F13–F24`).
+- **Активная фаза:** Фаза 6 — Финальный Hardening, Frontend Dockerfile, GitHub Actions NetBird+SSH деплой (по образцу `server_telegram_bot`), Google Drive Backup и готовые copy-paste команды для VPS
+- **Последнее действие:** Полностью завершена **Фаза 5 (Docker Ops, Kill-Switch, Telegram-алерты, Редактор горячих клавиш F13–F24, Setup Wizard / Wiki и Профиль/Vault)**:
+  - **Backend (`backend/app/modules/ops/router.py`):** `GET/POST /ops/containers` (строгий allowlist / label `exness-panel.managed=true` через `docker-socket-proxy`), `POST /ops/kill-switch/{account_id}` (с проверкой `CLOSE ALL` + предохранителем `AllowRemoteClose=true` в MT5), `POST /ops/alerts/test` (отправка в `huseynovlar-alerts-bot` `/internal/webhooks/trading` и/или отдельный TG-бот), `GET /ops/setup-wizard/{account_id}/bridge.set` (генератор `.set`-файлов MT5). Прогнаны `ruff` и `pytest` (**9/9 PASSED**).
+  - **Frontend:** 4 единые страницы на `<TerminalPageShell>` — `infrastructure/route.tsx` (Контейнеры MT5 + логи + Kill-Switch), `academy/route.tsx` (Setup Wizard `.set` + Docker network инструкция), `profile/route.tsx` (Аватар, соцсети, FIDO2 Passkey регистрация, AES-256-GCM Secret Vault + `Test Telegram Alert`), `roles/route.tsx` (Плотность Apple/Bloomberg, 3 языка `RU/EN/AZ`, единое время `UTC`, Конструктор левого меню и Visual Hotkey & Macro-Pad Editor `F13–F24`).
+- **Следующий шаг:** Завершить **Фазу 6** — добавить `frontend/Dockerfile`, `deploy/scripts/deploy.sh`, `.github/workflows/deploy-production.yml` (по точному образцу `server_telegram_bot`: NetBird `https://vpn.huseynovlar.org` → `100.104.116.58`), опционально добавить `/internal/webhooks/trading` в `server_telegram_bot`, и выдать готовые copy-paste блоки команд для запуска на VPS.
 - **Важные сквозные правила пользователя:**
   - Все команды для VPS выдавать **готовыми цельными copy-paste блоками**.
   - Единое живое время по умолчанию **`UTC`** (настраиваемое) и **3 языка (`RU` / `EN` / `AZ`)**.
@@ -75,11 +74,12 @@
 - [x] **Тесты Фазы 4:** `ruff check` + `pytest -v` (**8/8 PASSED**) + `npm run build`
 
 ## Фаза 5: Docker Ops, Kill-Switch, Telegram-алерты, Hotkeys/Macro-Pad и Setup Wizard / Wiki
-- [ ] **Docker Containers Ops:** интеграция `docker-socket-proxy` (label `exness-panel.managed=true` + allowlist для отдельных MT5 compose-контейнеров), статус/CPU/RAM/логи, Restart/Start/Stop с подтверждением и Audit Log
-- [ ] **Аварийный Kill-Switch:** opt-in закрытие позиции/счёта с двойной защитой (`AllowRemoteClose=true` в MT5 + Passkey/2FA в UI)
-- [ ] **Центр уведомлений Telegram:** доставка через существующий `huseynovlar-alerts-bot` (webhook) и/или выделенный TG-бот, правила алертов, тихие часы, `Test Alert`
-- [ ] **Visual Hotkey & Macro-Pad Editor:** перенастройка всех хоткеев, поддержка `F13`–`F24` (Stream Deck / QMK), экспорт/импорт JSON
-- [ ] **Instructions & Setup Wizard:** мастер подключения счёта с автогенерацией `.set`-файла для `ExnessPanelBridge.mq5` + docker network команда + встроенная Markdown Wiki
+- [x] **Docker Containers Ops (`ops/router.py` + `infrastructure/route.tsx`):** интеграция `docker-socket-proxy` (label `exness-panel.managed=true` + allowlist), просмотр логов, подтверждаемый Restart/Start/Stop + Audit Log
+- [x] **Аварийный Kill-Switch:** `POST /ops/kill-switch/{account_id}` с двойной защитой (`CLOSE ALL` + `AllowRemoteClose=true` в MT5)
+- [x] **Центр уведомлений Telegram (`POST /ops/alerts/test` + `profile/route.tsx`):** интеграция с `huseynovlar-alerts-bot` (`/internal/webhooks/trading`) и/или выделенный TG-бот + кнопка `Test Telegram Alert`
+- [x] **Visual Hotkey & Macro-Pad Editor (`roles/route.tsx`):** перенастройка хоткеев, поддержка `F13`–`F24`, экспорт JSON, конструктор левого меню, плотность Apple/Bloomberg, 3 языка `RU/EN/AZ`, единое время `UTC`
+- [x] **Instructions & Setup Wizard (`GET /ops/setup-wizard/{id}/bridge.set` + `academy/route.tsx`):** автогенерация `.set`-файла для `ExnessPanelBridge.mq5` + docker network команда + пошаговая инструкция
+- [x] **Тесты Фазы 5:** `ruff check` + `pytest -v` (**9/9 PASSED**) + `npm run build`
 
 ## Фаза 6: Финальный Hardening, Google Drive Backup и Production Launch
 - [ ] Полный прогон unit/integration/security тестов и проверка нагрузки WebSocket
