@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   CandlestickSeries,
@@ -6,18 +6,65 @@ import {
   createChart,
   createSeriesMarkers,
   type IChartApi,
+  LineSeries,
   type Time,
 } from "lightweight-charts";
-import { Activity, ArrowDownRight, ArrowUpRight, Layers, ShieldAlert } from "lucide-react";
+import {
+  Activity,
+  ArrowDownRight,
+  ArrowUpRight,
+  Layers,
+  Minus,
+  MousePointer2,
+  Percent,
+  Search,
+  ShieldAlert,
+  Trash2,
+  TrendingUp,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/framework/api-client";
 import { useTerminalStore } from "@/framework/terminal-store";
 
 const TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
+type DrawingTool = "cursor" | "hline" | "trendline" | "fib";
+
+interface SavedDrawings {
+  hlines: number[];
+  trendlines: { t1: number; p1: number; t2: number; p2: number }[];
+  fibs: { high: number; low: number }[];
+}
+
+function calcEMA(bars: ChartBar[], period: number) {
+  const out: { time: Time; value: number }[] = [];
+  if (bars.length < period) return out;
+  const k = 2 / (period + 1);
+  let ema = bars.slice(0, period).reduce((s, b) => s + b.close, 0) / period;
+  for (let i = period; i < bars.length; i++) {
+    ema = bars[i].close * k + ema * (1 - k);
+    out.push({ time: bars[i].time as Time, value: Number(ema.toFixed(4)) });
+  }
+  return out;
+}
+
+function calcBollinger(bars: ChartBar[], period = 20, mult = 2) {
+  const upper: { time: Time; value: number }[] = [];
+  const lower: { time: Time; value: number }[] = [];
+  for (let i = period - 1; i < bars.length; i++) {
+    const slice = bars.slice(i - period + 1, i + 1);
+    const mean = slice.reduce((s, b) => s + b.close, 0) / period;
+    const variance = slice.reduce((s, b) => s + (b.close - mean) ** 2, 0) / period;
+    const std = Math.sqrt(variance);
+    upper.push({ time: bars[i].time as Time, value: Number((mean + mult * std).toFixed(4)) });
+    lower.push({ time: bars[i].time as Time, value: Number((mean - mult * std).toFixed(4)) });
+  }
+  return { upper, lower };
+}
 
 interface ChartBar {
   time: number;
@@ -173,14 +220,57 @@ export function LiveAssetChart() {
   const privacyMode = useTerminalStore((s) => s.privacyMode);
   const currencyMode = useTerminalStore((s) => s.currencyMode);
 
-  const [asset, setAsset] = useState<"XAUUSD" | "USTEC">("XAUUSD");
+  const [asset, setAsset] = useState<string>("XAUUSD");
+  const [searchInput, setSearchInput] = useState("");
+  const [isExplorerMode, setIsExplorerMode] = useState(false);
+  const [explorerMeta, setExplorerMeta] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>("M5");
   const [accountFilter, setAccountFilter] = useState<string>("ALL");
   const [bundle, setBundle] = useState<ChartBundle>(() => buildPreviewBundle("XAUUSD", "M5"));
   const [isLiveSource, setIsLiveSource] = useState(false);
 
+  // Pro Drawing Tools & Technical Indicators
+  const [activeTool, setActiveTool] = useState<DrawingTool>("cursor");
+  const [pendingPoint, setPendingPoint] = useState<{ time: number; price: number } | null>(null);
+  const [drawings, setDrawings] = useState<SavedDrawings>({ hlines: [], trendlines: [], fibs: [] });
+  const [showEma20, setShowEma20] = useState(true);
+  const [showEma50, setShowEma50] = useState(false);
+  const [showEma200, setShowEma200] = useState(false);
+  const [showBollinger, setShowBollinger] = useState(false);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const activeToolRef = useRef<DrawingTool>(activeTool);
+  const pendingPointRef = useRef<{ time: number; price: number } | null>(pendingPoint);
+  activeToolRef.current = activeTool;
+  pendingPointRef.current = pendingPoint;
+
+  // Load saved drawings per symbol from localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`ht_drawings_${asset}`);
+      if (raw) {
+        setDrawings(JSON.parse(raw) as SavedDrawings);
+      } else {
+        setDrawings({ hlines: [], trendlines: [], fibs: [] });
+      }
+    } catch {
+      setDrawings({ hlines: [], trendlines: [], fibs: [] });
+    }
+    setPendingPoint(null);
+  }, [asset]);
+
+  function updateDrawings(updater: (prev: SavedDrawings) => SavedDrawings) {
+    setDrawings((prev) => {
+      const next = updater(prev);
+      try {
+        localStorage.setItem(`ht_drawings_${asset}`, JSON.stringify(next));
+      } catch {
+        // ignore quota errors
+      }
+      return next;
+    });
+  }
 
   // Hotkeys 1..8 switch timeframes M1..W1
   useEffect(() => {
@@ -197,29 +287,45 @@ export function LiveAssetChart() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Load real chart bundle from backend; gracefully fall back to deterministic preview until MT5 Bridge streams
+  // Load real chart bundle from backend (tracked MT5 asset OR instant any-symbol market explorer)
   useEffect(() => {
     let cancelled = false;
-    apiRequest<ChartBundle>(`/charts/${asset}?timeframe=${timeframe}`)
+    const endpoint = isExplorerMode
+      ? `/charts/explore?symbol=${encodeURIComponent(asset)}&timeframe=${timeframe}`
+      : `/charts/${encodeURIComponent(asset)}?timeframe=${timeframe}`;
+
+    apiRequest<ChartBundle & { name?: string; change_pct?: number }>(endpoint)
       .then((res) => {
         if (!cancelled && res.bars && res.bars.length > 0) {
           setBundle(res);
           setIsLiveSource(true);
-        } else if (!cancelled) {
+          setExplorerMeta(res.name ? `${res.name} (${res.change_pct ?? 0}%)` : null);
+        } else if (!cancelled && !isExplorerMode) {
           setBundle(buildPreviewBundle(asset, timeframe));
           setIsLiveSource(false);
+          setExplorerMeta(null);
         }
       })
       .catch(() => {
-        if (!cancelled) {
+        if (!cancelled && !isExplorerMode) {
           setBundle(buildPreviewBundle(asset, timeframe));
           setIsLiveSource(false);
+          setExplorerMeta(null);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [asset, timeframe]);
+  }, [asset, timeframe, isExplorerMode]);
+
+  function handleExploreSearch(e: FormEvent) {
+    e.preventDefault();
+    const sym = searchInput.trim().toUpperCase();
+    if (!sym) return;
+    setAsset(sym);
+    setIsExplorerMode(true);
+    setAccountFilter("ALL");
+  }
 
   const filteredPositions = useMemo(
     () =>
@@ -241,7 +347,7 @@ export function LiveAssetChart() {
     return Array.from(map.entries());
   }, [bundle]);
 
-  // Mount TradingView Lightweight Charts with active Entry/SL/TP lines + historical entry/exit markers
+  // Mount TradingView Lightweight Charts with indicators, interactive drawings, Entry/SL/TP lines, and markers
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
@@ -255,7 +361,7 @@ export function LiveAssetChart() {
       },
       rightPriceScale: { borderColor: "rgba(255,255,255,0.12)" },
       timeScale: { borderColor: "rgba(255,255,255,0.12)", timeVisible: true, secondsVisible: false },
-      height: 430,
+      height: 450,
     });
     chartRef.current = chart;
 
@@ -277,6 +383,103 @@ export function LiveAssetChart() {
         close: b.close,
       })),
     );
+
+    // Technical Indicators
+    if (showEma20) {
+      const s = chart.addSeries(LineSeries, { color: "#06b6d4", lineWidth: 1, title: "EMA 20" });
+      s.setData(calcEMA(bundle.bars, 20));
+    }
+    if (showEma50) {
+      const s = chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 1, title: "EMA 50" });
+      s.setData(calcEMA(bundle.bars, 50));
+    }
+    if (showEma200) {
+      const s = chart.addSeries(LineSeries, { color: "#a855f7", lineWidth: 2, title: "EMA 200" });
+      s.setData(calcEMA(bundle.bars, 200));
+    }
+    if (showBollinger) {
+      const bb = calcBollinger(bundle.bars, 20, 2);
+      const u = chart.addSeries(LineSeries, { color: "rgba(148,163,184,0.6)", lineWidth: 1, lineStyle: 2, title: "BB+" });
+      const l = chart.addSeries(LineSeries, { color: "rgba(148,163,184,0.6)", lineWidth: 1, lineStyle: 2, title: "BB-" });
+      u.setData(bb.upper);
+      l.setData(bb.lower);
+    }
+
+    // User Drawings: Horizontal S/R lines
+    for (const price of drawings.hlines) {
+      candleSeries.createPriceLine({
+        price,
+        color: "#eab308",
+        lineWidth: 2,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: "S/R",
+      });
+    }
+
+    // User Drawings: Trendlines
+    for (const tl of drawings.trendlines) {
+      const pts = [
+        { time: tl.t1 as Time, value: tl.p1 },
+        { time: tl.t2 as Time, value: tl.p2 },
+      ].sort((a, b) => Number(a.time) - Number(b.time));
+      if (pts[0].time !== pts[1].time) {
+        const line = chart.addSeries(LineSeries, { color: "#38bdf8", lineWidth: 2 });
+        line.setData(pts);
+      }
+    }
+
+    // User Drawings: Fibonacci Retracement levels
+    const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+    for (const fib of drawings.fibs) {
+      const diff = fib.high - fib.low;
+      for (const lvl of FIB_LEVELS) {
+        const p = Number((fib.high - diff * lvl).toFixed(2));
+        candleSeries.createPriceLine({
+          price: p,
+          color: lvl === 0.618 || lvl === 0.5 ? "#f59e0b" : "#94a3b8",
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: `Fib ${(lvl * 100).toFixed(1)}%`,
+        });
+      }
+    }
+
+    // Interactive click-to-draw handler
+    chart.subscribeClick((param) => {
+      const tool = activeToolRef.current;
+      if (tool === "cursor" || !param.point) return;
+      const price = candleSeries.coordinateToPrice(param.point.y);
+      if (price === null || price === undefined) return;
+      const roundedPrice = Number(price.toFixed(2));
+      const timeSec = typeof param.time === "number" ? param.time : (bundle.bars[bundle.bars.length - 1]?.time ?? 0);
+
+      if (tool === "hline") {
+        updateDrawings((prev) => ({ ...prev, hlines: [...prev.hlines, roundedPrice] }));
+        setActiveTool("cursor");
+        return;
+      }
+
+      const first = pendingPointRef.current;
+      if (!first) {
+        setPendingPoint({ time: timeSec, price: roundedPrice });
+      } else {
+        if (tool === "trendline") {
+          updateDrawings((prev) => ({
+            ...prev,
+            trendlines: [...prev.trendlines, { t1: first.time, p1: first.price, t2: timeSec, p2: roundedPrice }],
+          }));
+        } else if (tool === "fib") {
+          updateDrawings((prev) => ({
+            ...prev,
+            fibs: [...prev.fibs, { high: Math.max(first.price, roundedPrice), low: Math.min(first.price, roundedPrice) }],
+          }));
+        }
+        setPendingPoint(null);
+        setActiveTool("cursor");
+      }
+    });
 
     // Draw live open positions (Entry, SL, TP) directly on chart
     for (const pos of filteredPositions) {
@@ -342,7 +545,7 @@ export function LiveAssetChart() {
       chart.remove();
       chartRef.current = null;
     };
-  }, [bundle.bars, filteredPositions, filteredDeals]);
+  }, [bundle.bars, filteredPositions, filteredDeals, drawings, showEma20, showEma50, showEma200, showBollinger]);
 
   const lastBar = bundle.bars[bundle.bars.length - 1];
   const spread = asset === "USTEC" ? 1.2 : 0.22;
@@ -367,16 +570,17 @@ export function LiveAssetChart() {
 
   return (
     <div className="space-y-4">
-      {/* Asset & Multi-Account Toolbar */}
+      {/* Asset, Instant Any-Symbol Search & Multi-Account Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           {(["XAUUSD", "USTEC"] as const).map((code) => (
             <Button
               key={code}
               size="sm"
-              variant={asset === code ? "default" : "outline"}
+              variant={!isExplorerMode && asset === code ? "default" : "outline"}
               onClick={() => {
                 setAsset(code);
+                setIsExplorerMode(false);
                 setAccountFilter("ALL");
               }}
               className="font-mono text-xs"
@@ -384,6 +588,20 @@ export function LiveAssetChart() {
               {code}
             </Button>
           ))}
+
+          {/* Instant Search ANY global symbol without adding to DB */}
+          <form onSubmit={handleExploreSearch} className="flex items-center gap-1">
+            <Input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Поиск любого актива (EURUSD, BTCUSD, NVDA...)"
+              className="h-8 w-56 font-mono text-xs"
+            />
+            <Button type="submit" size="sm" variant="secondary" className="h-8 gap-1 px-2.5 text-xs">
+              <Search className="size-3.5" />
+              Найти
+            </Button>
+          </form>
 
           <div className="bg-muted/50 flex items-center gap-1 rounded-md border border-border/60 p-0.5">
             {TIMEFRAMES.map((tf, idx) => (
@@ -402,22 +620,133 @@ export function LiveAssetChart() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            className="bg-background rounded-md border border-border px-2.5 py-1 text-xs"
-            value={accountFilter}
-            onChange={(e) => setAccountFilter(e.target.value)}
-          >
-            <option value="ALL">Все счета по {asset} (USD + USC)</option>
-            {accountOptions.map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
+          {!isExplorerMode ? (
+            <select
+              className="bg-background rounded-md border border-border px-2.5 py-1 text-xs"
+              value={accountFilter}
+              onChange={(e) => setAccountFilter(e.target.value)}
+            >
+              <option value="ALL">Все счета по {asset} (USD + USC)</option>
+              {accountOptions.map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          ) : null}
 
           <Badge variant={isLiveSource ? "default" : "secondary"} className="font-mono text-[11px]">
-            {isLiveSource ? "MT5 LIVE" : "DEMO PREVIEW (ЖДЁТ MT5 BRIDGE)"}
+            {isExplorerMode
+              ? `EXPLORER: ${explorerMeta || asset}`
+              : isLiveSource
+                ? "MT5 LIVE"
+                : "DEMO PREVIEW (ЖДЁТ MT5 BRIDGE)"}
           </Badge>
+        </div>
+      </div>
+
+      {/* Pro Drawing Tools & Technical Indicators Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5 text-xs">
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-muted-foreground mr-1 text-[11px] font-medium">Рисование:</span>
+          <Button
+            size="sm"
+            variant={activeTool === "cursor" ? "default" : "ghost"}
+            className="h-6 gap-1 px-2 text-[11px]"
+            onClick={() => {
+              setActiveTool("cursor");
+              setPendingPoint(null);
+            }}
+          >
+            <MousePointer2 className="size-3" />
+            Курсор
+          </Button>
+          <Button
+            size="sm"
+            variant={activeTool === "hline" ? "default" : "ghost"}
+            className="h-6 gap-1 px-2 text-[11px]"
+            onClick={() => {
+              setActiveTool("hline");
+              setPendingPoint(null);
+            }}
+          >
+            <Minus className="size-3" />
+            Уровень S/R
+          </Button>
+          <Button
+            size="sm"
+            variant={activeTool === "trendline" ? "default" : "ghost"}
+            className="h-6 gap-1 px-2 text-[11px]"
+            onClick={() => {
+              setActiveTool("trendline");
+              setPendingPoint(null);
+            }}
+          >
+            <TrendingUp className="size-3" />
+            Тренд (2 клика)
+          </Button>
+          <Button
+            size="sm"
+            variant={activeTool === "fib" ? "default" : "ghost"}
+            className="h-6 gap-1 px-2 text-[11px]"
+            onClick={() => {
+              setActiveTool("fib");
+              setPendingPoint(null);
+            }}
+          >
+            <Percent className="size-3" />
+            Фибоначчи (2 клика)
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 gap-1 px-2 text-[11px] text-rose-500"
+            onClick={() => updateDrawings(() => ({ hlines: [], trendlines: [], fibs: [] }))}
+          >
+            <Trash2 className="size-3" />
+            Очистить
+          </Button>
+          {pendingPoint ? (
+            <Badge variant="outline" className="ml-1 animate-pulse font-mono text-[10px] text-amber-500">
+              Кликните 2-ю точку на графике...
+            </Badge>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="text-muted-foreground mr-1 text-[11px] font-medium">Индикаторы:</span>
+          <Button
+            size="sm"
+            variant={showEma20 ? "secondary" : "ghost"}
+            className="h-6 px-2 font-mono text-[11px] text-cyan-400"
+            onClick={() => setShowEma20((v) => !v)}
+          >
+            EMA20
+          </Button>
+          <Button
+            size="sm"
+            variant={showEma50 ? "secondary" : "ghost"}
+            className="h-6 px-2 font-mono text-[11px] text-amber-400"
+            onClick={() => setShowEma50((v) => !v)}
+          >
+            EMA50
+          </Button>
+          <Button
+            size="sm"
+            variant={showEma200 ? "secondary" : "ghost"}
+            className="h-6 px-2 font-mono text-[11px] text-purple-400"
+            onClick={() => setShowEma200((v) => !v)}
+          >
+            EMA200
+          </Button>
+          <Button
+            size="sm"
+            variant={showBollinger ? "secondary" : "ghost"}
+            className="h-6 px-2 font-mono text-[11px]"
+            onClick={() => setShowBollinger((v) => !v)}
+          >
+            BB(20,2)
+          </Button>
         </div>
       </div>
 

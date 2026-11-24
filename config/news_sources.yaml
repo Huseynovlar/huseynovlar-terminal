@@ -1,106 +1,142 @@
 # Redundant Multi-Source Free World News, Economic Calendar & Macro Sources (0 $/month)
-# If any primary feed times out or rate-limits, the worker automatically continues with remaining sources.
+# `verified: true` marks trusted institutional / official sources displayed with a green checkmark badge.
 
 rss_feeds:
+  # --- Central Banks (Official Primary Releases) ---
+  - id: fed_press
+    name: Federal Reserve Press Releases
+    domain: federalreserve.gov
+    url: https://www.federalreserve.gov/feeds/press_all.xml
+    category: central_banks
+    priority: critical
+    verified: true
+    trust_tier: official
+    default_assets: [XAUUSD, USTEC, EURUSD]
+    poll_interval_sec: 120
+
+  - id: ecb_press
+    name: European Central Bank Press
+    domain: ecb.europa.eu
+    url: https://www.ecb.europa.eu/rss/press.html
+    category: central_banks
+    priority: high
+    verified: true
+    trust_tier: official
+    default_assets: [EURUSD, XAUUSD]
+    poll_interval_sec: 300
+
   # --- Gold & Commodities (XAUUSD primary + fallbacks) ---
   - id: kitco_gold
     name: Kitco Gold News
+    domain: kitco.com
     url: https://www.kitco.com/rss/category/commodities/gold
     category: commodities
     priority: high
+    verified: true
+    trust_tier: tier1
     default_assets: [XAUUSD]
     poll_interval_sec: 120
 
   - id: investing_commodities
     name: Investing.com Commodities
+    domain: investing.com
     url: https://www.investing.com/rss/news_11.rss
     category: commodities
     priority: medium
+    verified: true
+    trust_tier: tier2
     default_assets: [XAUUSD]
     poll_interval_sec: 180
 
   # --- Forex & Global Macro (Multi-region) ---
   - id: fxstreet_news
     name: FXStreet Market News
+    domain: fxstreet.com
     url: https://www.fxstreet.com/rss/news
     category: forex_macro
     priority: high
+    verified: true
+    trust_tier: tier1
     default_assets: [XAUUSD, USTEC, EURUSD]
     poll_interval_sec: 90
 
   - id: investing_forex
     name: Investing.com Forex & Economy
+    domain: investing.com
     url: https://www.investing.com/rss/news_1.rss
     category: forex_macro
     priority: medium
+    verified: true
+    trust_tier: tier2
     default_assets: [XAUUSD, EURUSD]
     poll_interval_sec: 180
 
   # --- US Equities & Tech (USTEC / NASDAQ-100 primary + fallbacks) ---
   - id: cnbc_finance
     name: CNBC Finance & Markets
+    domain: cnbc.com
     url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664
     category: equities_macro
     priority: high
+    verified: true
+    trust_tier: tier1
     default_assets: [USTEC]
     poll_interval_sec: 120
 
   - id: cnbc_tech
     name: CNBC Technology
+    domain: cnbc.com
     url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19854910
     category: tech
     priority: medium
+    verified: true
+    trust_tier: tier1
     default_assets: [USTEC]
     poll_interval_sec: 180
 
   - id: marketwatch_top
-    name: MarketWatch Top Stories
+    name: MarketWatch (Dow Jones)
+    domain: marketwatch.com
     url: https://feeds.content.dowjones.io/public/rss/mw_topstories
     category: global_markets
     priority: high
+    verified: true
+    trust_tier: tier1
     default_assets: [XAUUSD, USTEC]
     poll_interval_sec: 120
 
   - id: yahoo_finance_top
     name: Yahoo Finance Global
+    domain: finance.yahoo.com
     url: https://finance.yahoo.com/news/rssindex
     category: global_markets
     priority: medium
+    verified: true
+    trust_tier: tier2
     default_assets: [USTEC, XAUUSD]
     poll_interval_sec: 180
 
-  # --- Central Banks (Critical Policy Releases) ---
-  - id: fed_press
-    name: Federal Reserve Press Releases
-    url: https://www.federalreserve.gov/feeds/press_all.xml
-    category: central_banks
-    priority: critical
-    default_assets: [XAUUSD, USTEC, EURUSD]
-    poll_interval_sec: 120
-
-  - id: ecb_press
-    name: European Central Bank Press
-    url: https://www.ecb.europa.eu/rss/press.html
-    category: central_banks
-    priority: high
-    default_assets: [EURUSD, XAUUSD]
-    poll_interval_sec: 300
-
-  # --- Global Wire & Geopolitics (GDELT 2.0 + Google News Finance Fallback) ---
+  # --- Global Wire & Geopolitics (Aggregators — marked unverified unless corroborated by Tier-1/Official) ---
   - id: google_news_markets
     name: Google News World Markets
+    domain: news.google.com
     url: https://news.google.com/rss/search?q=gold+OR+nasdaq+OR+federal+reserve+OR+inflation&hl=en-US&gl=US&ceid=US:en
     category: global_wire
     priority: medium
+    verified: false
+    trust_tier: aggregator
     default_assets: [XAUUSD, USTEC]
     poll_interval_sec: 240
 
   - id: gdelt_geopolitics
     name: GDELT 2.0 Geopolitics & Macro
+    domain: gdeltproject.org
     type: gdelt_api
     query: "(gold OR federal reserve OR inflation OR geopolitical crisis OR nasdaq)"
     category: geopolitics
     priority: medium
+    verified: false
+    trust_tier: aggregator
     default_assets: [XAUUSD, USTEC]
     poll_interval_sec: 300
 

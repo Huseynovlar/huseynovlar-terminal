@@ -9,13 +9,14 @@
 ---
 
 ## Текущий статус
-- **Активная фаза:** Готово к продакшн-запуску на VPS (`https://terminal.huseynovlar.org`)!
-- **Последнее действие:** Полностью завершена **Фаза 6 + усиление безопасности и реального времени**:
-  - Добавлен живой пинг брокера (`TERMINAL_PING_LAST` → `last_ping_ms`, `terminal_connected`) в `ExnessPanelBridge.mq5` и `ingest/router.py`, а также live-статусы роботов (`live_status`, `live_state_json`, `last_execution_ms`).
-  - Добавлено управление активными сессиями (`GET /auth/sessions`, `DELETE /auth/sessions/{id}` с защитой текущей сессии) и история входов (`GET /auth/login-history`).
-  - Добавлены поля кросс-проверки новостей (`corroborating_sources`, `verification_count`) в `NewsItem`.
-  - Созданы `frontend/Dockerfile`, `deploy/scripts/deploy.sh` и `.github/workflows/deploy-production.yml` (по точному образцу `server_telegram_bot`: NetBird `https://vpn.huseynovlar.org` → `100.104.116.58`).
-  - В `server_telegram_bot` добавлен и запушен fail-closed endpoint **`POST /internal/webhooks/trading`** (`19a9ed7`).
+- **Активная фаза:** Продакшн-релиз на VPS (`https://terminal.huseynovlar.org`) + Bloomberg-усиление!
+- **Последнее действие:** Полностью завершены **Фаза 6 + все расширенные функции реального времени и безопасности**:
+  - Исправлен `terminal-frontend` (Nitro SSR + unprivileged Nginx `user: 1000:1000` + корректный healthcheck `/auth/v2/login`).
+  - **Безопасность и карта IP (`profile/route.tsx`, `auth/router.py`):** таблица активных сессий (с защитой текущей), интерактивная карта геолокации IP (OpenStreetMap + определение `NetBird VPN 100.104.x.x`), история входов, управление WebAuthn Passkeys с подтверждением **2FA TOTP** при удалении.
+  - **Реестр проверенных источников новостей (`config/news_sources.yaml`, `intelligence/router.py`, `worker/main.py`, `chat/route.tsx`):** зелёная галочка `✓` только у доверенных первоисточников, автоматическая группировка и кросс-проверка новостей между СМИ («Подтверждено: N СМИ»), отдельный блок «Реестр проверенных источников».
+  - **Bloomberg Pro Charts (`LiveAssetChart.tsx`, `charts/router.py`):** мгновенный поиск и просмотр графиков **любого мирового актива** без добавления в БД (`/charts/explore`), интерактивное рисование (`Уровень S/R`, `Тренд`, `Фибоначчи`) с сохранением в `localStorage`, индикаторы `EMA20 / EMA50 / EMA200 / BB(20,2)`.
+  - **Живой пинг (`ms`), точные live-статусы роботов и мировые сессии (`default/route.tsx`)** + форма **«+ Добавить MT5 контейнер»** (`infrastructure/route.tsx`, `POST /ops/containers`).
+  - Исправлен парсинг `.env` в `deploy/scripts/backup-db.sh` (безопасное чтение переменных с пробелами).
 - **Бэклог на будущее (после запуска):**
   - [ ] Подключение **SMTP** для email-уведомлений и отчётов (отложено по решению владельца).
   - [ ] Подключение физического макропада (Stream Deck / QMK `F13–F24`).

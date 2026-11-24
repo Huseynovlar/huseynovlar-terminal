@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -484,9 +484,18 @@ async def list_passkeys(
 async def delete_passkey(
     cred_id: str,
     request: Request,
+    totp_code: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> None:
+    if user.totp_enabled and user.totp_secret_enc:
+        secret = decrypt_secret(user.totp_secret_enc, settings.vault_master_key)
+        if not totp_code or not verify_totp_code(secret, totp_code):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Valid 2FA TOTP code is required to remove a WebAuthn Passkey",
+            )
     cred = await db.get(WebAuthnCredential, cred_id)
     if not cred or cred.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Passkey not found")
@@ -500,6 +509,85 @@ async def delete_passkey(
         ip_address=request.client.host if request.client else "",
     )
     await db.commit()
+
+
+@router.get("/ip-lookup/{ip_addr}")
+async def lookup_ip_geolocation(
+    ip_addr: str,
+    _: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Resolve IP geolocation for the Security Map (handles NetBird 100.104.x.x safely without SSRF)."""
+    import ipaddress
+
+    import httpx
+
+    cleaned = ip_addr.strip()
+    try:
+        ip_obj = ipaddress.ip_address(cleaned)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid IP address") from exc
+
+    netbird_net = ipaddress.ip_network("100.104.0.0/16")
+    if ip_obj.version == 4 and ip_obj in netbird_net:
+        return {
+            "ip": cleaned,
+            "is_private": True,
+            "is_netbird": True,
+            "country": "NetBird Private Mesh VPN",
+            "country_code": "VPN",
+            "city": "Encrypted Tunnel (100.104.0.0/16)",
+            "region": "Zero-Trust WireGuard",
+            "isp": "Huseynovlar NetBird Mesh",
+            "lat": 40.4093,
+            "lon": 49.8671,
+        }
+
+    if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_reserved or ip_obj.is_link_local:
+        return {
+            "ip": cleaned,
+            "is_private": True,
+            "is_netbird": False,
+            "country": "Local / Private Network",
+            "country_code": "LAN",
+            "city": "Internal Docker / LAN",
+            "region": "RFC1918",
+            "isp": "Local Interface",
+            "lat": 40.4093,
+            "lon": 49.8671,
+        }
+
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as http:
+            resp = await http.get(f"https://ipwho.is/{cleaned}")
+            data = resp.json()
+            if data.get("success"):
+                return {
+                    "ip": cleaned,
+                    "is_private": False,
+                    "is_netbird": False,
+                    "country": data.get("country") or "Unknown",
+                    "country_code": data.get("country_code") or "",
+                    "city": data.get("city") or "",
+                    "region": data.get("region") or "",
+                    "isp": (data.get("connection") or {}).get("isp") or "",
+                    "lat": float(data.get("latitude") or 0.0),
+                    "lon": float(data.get("longitude") or 0.0),
+                }
+    except Exception:
+        pass
+
+    return {
+        "ip": cleaned,
+        "is_private": False,
+        "is_netbird": False,
+        "country": "Lookup unavailable",
+        "country_code": "",
+        "city": "",
+        "region": "",
+        "isp": "",
+        "lat": 0.0,
+        "lon": 0.0,
+    }
 
 
 @router.get("/sessions")

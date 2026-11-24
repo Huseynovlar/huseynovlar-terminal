@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { OctagonAlert, Play, RefreshCw, RotateCcw, Server, Square, Terminal } from "lucide-react";
+import { OctagonAlert, Play, Plus, RefreshCw, RotateCcw, Server, Square, Terminal } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ export const Route = createFileRoute("/(main)/dashboard/infrastructure")({
 interface ContainerRow {
   id: string;
   name: string;
+  display_name?: string;
   image: string;
   state: string;
   status: string;
@@ -37,6 +38,12 @@ function ContainersOpsPage() {
   const [killAccountId, setKillAccountId] = useState("");
   const [killConfirm, setKillConfirm] = useState("");
 
+  // Add new MT5 Docker container form
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newContainerName, setNewContainerName] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [connectCmd, setConnectCmd] = useState<string | null>(null);
+
   function loadContainers() {
     apiRequest<ContainerRow[]>("/ops/containers")
       .then((rows) => {
@@ -48,6 +55,30 @@ function ContainersOpsPage() {
   useEffect(() => {
     loadContainers();
   }, []);
+
+  async function handleRegisterContainer(e: FormEvent) {
+    e.preventDefault();
+    if (!newContainerName.trim()) return;
+    setStatusMsg(null);
+    setConnectCmd(null);
+    try {
+      const res = await apiRequest<{ name: string; network_cmd: string }>("/ops/containers", {
+        method: "POST",
+        body: JSON.stringify({
+          container_name: newContainerName.trim(),
+          display_name: newDisplayName.trim() || newContainerName.trim(),
+          host_label: "vps-main",
+        }),
+      });
+      setConnectCmd(res.network_cmd);
+      setStatusMsg(`Контейнер ${res.name} добавлен в реестр терминала.`);
+      setNewContainerName("");
+      setNewDisplayName("");
+      loadContainers();
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : "Ошибка регистрации контейнера");
+    }
+  }
 
   async function handleAction(name: string, action: "restart" | "start" | "stop") {
     if (!window.confirm(`Выполнить ${action.toUpperCase()} для контейнера ${name}?`)) return;
@@ -93,17 +124,60 @@ function ContainersOpsPage() {
   return (
     <TerminalPageShell
       title="Контейнеры MT5 / ОС и Аварийный Kill-Switch"
-      subtitle="Безопасное управление отдельными MT5 Docker-контейнерами через docker-socket-proxy (только label exness-panel.managed=true / allowlist)."
+      subtitle="Добавление и безопасное управление MT5 Docker-контейнерами через docker-socket-proxy (статусы, логи, Restart/Start/Stop)."
       badge="DOCKER OPS"
       actions={
-        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={loadContainers}>
-          <RefreshCw className="size-3.5" />
-          Обновить статусы
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" className="gap-1.5 text-xs" onClick={() => setShowAddForm((v) => !v)}>
+            <Plus className="size-3.5" />
+            Добавить MT5 контейнер
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={loadContainers}>
+            <RefreshCw className="size-3.5" />
+            Обновить
+          </Button>
+        </div>
       }
     >
       {statusMsg ? (
         <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs">{statusMsg}</div>
+      ) : null}
+
+      {connectCmd ? (
+        <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 font-mono text-xs">
+          <div className="mb-1 font-sans text-xs font-medium text-emerald-500">
+            Выполните на сервере, чтобы подключить контейнер к Zero-Latency сети MT5:
+          </div>
+          <code>{connectCmd}</code>
+        </div>
+      ) : null}
+
+      {showAddForm ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Регистрация нового MT5 Docker-контейнера</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleRegisterContainer} className="flex flex-wrap gap-2 text-xs">
+              <Input
+                placeholder="Имя контейнера в Docker (напр. mt5-xauusd-1)"
+                value={newContainerName}
+                onChange={(e) => setNewContainerName(e.target.value)}
+                className="max-w-xs font-mono text-xs"
+                required
+              />
+              <Input
+                placeholder="Понятное название (напр. MT5 Gold Pro)"
+                value={newDisplayName}
+                onChange={(e) => setNewDisplayName(e.target.value)}
+                className="max-w-xs text-xs"
+              />
+              <Button type="submit" size="sm">
+                Сохранить контейнер
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -113,14 +187,14 @@ function ContainersOpsPage() {
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 font-mono text-sm">
                   <Server className="size-4 text-blue-500" />
-                  {c.name}
+                  {c.display_name || c.name}
                 </CardTitle>
                 <Badge variant={c.state === "running" ? "default" : "destructive"} className="text-[10px]">
                   {c.state.toUpperCase()}
                 </Badge>
               </div>
               <div className="text-muted-foreground font-mono text-[11px]">
-                {c.image} • {c.status}
+                {c.name} • {c.status}
               </div>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-1.5">

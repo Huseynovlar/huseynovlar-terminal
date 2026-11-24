@@ -7,13 +7,14 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.crypto import decrypt_secret
 from app.core.database import get_db
 from app.core.deps import record_audit, require_admin
-from app.db.models import PendingCommand, SecretVaultEntry, TradingAccount, User
+from app.db.models import DockerContainer, PendingCommand, SecretVaultEntry, TradingAccount, User
 
 router = APIRouter(prefix="/ops", tags=["ops"])
 
@@ -47,36 +48,110 @@ class TestAlertRequest(BaseModel):
     severity: str = Field(default="info", pattern="^(info|warning|critical)$")
 
 
+class RegisterContainerRequest(BaseModel):
+    container_name: str = Field(min_length=2, max_length=120, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]+$")
+    display_name: str = Field(min_length=2, max_length=120)
+    host_label: str = Field(default="vps-main", max_length=64)
+
+
+@router.post("/containers", status_code=status.HTTP_201_CREATED)
+async def register_mt5_container(
+    body: RegisterContainerRequest,
+    request: Request,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Register a new MT5 Docker container in the terminal registry so it can be tracked and managed."""
+    existing = (
+        await db.execute(select(DockerContainer).where(DockerContainer.container_name == body.container_name))
+    ).scalar_one_or_none()
+    if existing:
+        existing.display_name = body.display_name
+        existing.host_label = body.host_label
+        await db.commit()
+        return {
+            "id": existing.id,
+            "name": existing.container_name,
+            "display_name": existing.display_name,
+            "network_cmd": f"sudo docker network connect exness_mt5_ingest {existing.container_name}",
+        }
+
+    ref = DockerContainer(
+        container_name=body.container_name,
+        display_name=body.display_name,
+        host_label=body.host_label,
+    )
+    db.add(ref)
+    await record_audit(
+        db,
+        action="container.registered",
+        user_id=user.id,
+        resource_type="docker_container",
+        resource_id=body.container_name,
+        ip_address=request.client.host if request.client else "",
+    )
+    await db.commit()
+    return {
+        "id": ref.id,
+        "name": ref.container_name,
+        "display_name": ref.display_name,
+        "network_cmd": f"sudo docker network connect exness_mt5_ingest {ref.container_name}",
+    }
+
+
 @router.get("/containers")
 async def list_managed_containers(
     _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> list[dict[str, Any]]:
-    """List ONLY allowlisted or labeled (exness-panel.managed=true) MT5/OS containers via docker-socket-proxy."""
+    """List allowlisted, labeled (exness-panel.managed=true), or DB-registered MT5/OS containers."""
+    registered = (await db.execute(select(DockerContainer))).scalars().all()
+    reg_map = {r.container_name: r for r in registered}
+
+    raw: list[dict[str, Any]] = []
     try:
         async with httpx.AsyncClient(timeout=5.0) as http:
             resp = await http.get(f"{_docker_base_url()}/containers/json", params={"all": "1"})
             resp.raise_for_status()
             raw = resp.json()
     except Exception:
-        return []
+        raw = []
 
     out: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for c in raw:
         names = c.get("Names") or []
         cname = (names[0] if names else c.get("Id", "")[:12]).lstrip("/")
         labels = c.get("Labels") or {}
-        if not _is_container_allowed(cname, labels, settings):
+        if not (_is_container_allowed(cname, labels, settings) or cname in reg_map):
             continue
+        seen.add(cname)
         out.append(
             {
                 "id": c.get("Id", "")[:12],
                 "name": cname,
+                "display_name": reg_map[cname].display_name if cname in reg_map else cname,
                 "image": c.get("Image", ""),
                 "state": c.get("State", "unknown"),
                 "status": c.get("Status", ""),
+                "registered": cname in reg_map,
             }
         )
+
+    for cname, ref in reg_map.items():
+        if cname not in seen:
+            out.append(
+                {
+                    "id": ref.id[:12],
+                    "name": cname,
+                    "display_name": ref.display_name,
+                    "image": "not found in docker-proxy yet",
+                    "state": "not_connected",
+                    "status": "Registered — connect to exness_mt5_ingest & allowlist",
+                    "registered": True,
+                }
+            )
     return out
 
 

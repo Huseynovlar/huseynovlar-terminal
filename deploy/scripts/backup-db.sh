@@ -6,17 +6,23 @@ set -euo pipefail
 # existing encrypted Google Drive (restic) backup picks it up automatically.
 
 ENV_FILE="${ENV_FILE:-/opt/huseynovlar-terminal/.env}"
-if [[ -f "$ENV_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
-fi
+get_env() {
+  local key="$1" default="$2"
+  if [[ -f "$ENV_FILE" ]]; then
+    local val
+    val="$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- | tr -d '\r' | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+    if [[ -n "$val" ]]; then
+      printf '%s' "$val"
+      return
+    fi
+  fi
+  printf '%s' "$default"
+}
 
-BACKUP_DIR="${BACKUP_HOST_DIR:-/var/backups/huseynovlar-terminal}"
-RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
-POSTGRES_USER="${POSTGRES_USER:-terminal_app}"
-POSTGRES_DB="${POSTGRES_DB:-huseynovlar_terminal}"
+BACKUP_DIR="$(get_env BACKUP_HOST_DIR /var/backups/huseynovlar-terminal)"
+RETENTION_DAYS="$(get_env BACKUP_RETENTION_DAYS 14)"
+POSTGRES_USER="$(get_env POSTGRES_USER terminal_app)"
+POSTGRES_DB="$(get_env POSTGRES_DB huseynovlar_terminal)"
 CONTAINER_NAME="${POSTGRES_CONTAINER:-terminal-postgres}"
 
 mkdir -p "$BACKUP_DIR"

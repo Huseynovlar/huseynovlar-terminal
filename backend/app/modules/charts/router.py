@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,120 @@ from app.core.ws_hub import ws_hub
 from app.db.models import AssetHub, Deal, MarketBar, OpenPositionLive, TradingAccount, User
 
 router = APIRouter(tags=["charts"])
+
+_YAHOO_SYMBOL_ALIASES: dict[str, str] = {
+    "XAUUSD": "GC=F",
+    "GOLD": "GC=F",
+    "XAGUSD": "SI=F",
+    "SILVER": "SI=F",
+    "USTEC": "^NDX",
+    "NAS100": "^NDX",
+    "NASDAQ": "^NDX",
+    "US500": "^GSPC",
+    "SPX": "^GSPC",
+    "US30": "^DJI",
+    "DXY": "DX-Y.NYB",
+    "US10Y": "^TNX",
+    "VIX": "^VIX",
+    "USOIL": "CL=F",
+    "WTI": "CL=F",
+    "UKOIL": "BZ=F",
+    "EURUSD": "EURUSD=X",
+    "GBPUSD": "GBPUSD=X",
+    "USDJPY": "JPY=X",
+    "USDCHF": "CHF=X",
+    "AUDUSD": "AUDUSD=X",
+    "USDCAD": "CAD=X",
+    "BTCUSD": "BTC-USD",
+    "ETHUSD": "ETH-USD",
+    "SOLUSD": "SOL-USD",
+}
+
+_TF_TO_YAHOO: dict[str, tuple[str, str]] = {
+    "M1": ("1m", "1d"),
+    "M5": ("5m", "5d"),
+    "M15": ("15m", "5d"),
+    "M30": ("30m", "1mo"),
+    "H1": ("60m", "1mo"),
+    "H4": ("60m", "3mo"),
+    "D1": ("1d", "1y"),
+    "W1": ("1wk", "5y"),
+}
+
+
+@router.get("/charts/explore")
+async def explore_any_symbol_chart(
+    symbol: str = Query(min_length=1, max_length=24),
+    timeframe: str = Query(default="H1", pattern="^(M1|M5|M15|M30|H1|H4|D1|W1)$"),
+    _: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Search and chart ANY global market symbol (Forex, Gold, Indices, Crypto, Stocks) without adding it to DB."""
+    clean = symbol.strip().upper().replace(" ", "")
+    yahoo_sym = _YAHOO_SYMBOL_ALIASES.get(clean, clean)
+    interval, range_str = _TF_TO_YAHOO.get(timeframe, ("60m", "1mo"))
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_sym}"
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as http:
+            resp = await http.get(
+                url,
+                params={"interval": interval, "range": range_str},
+                headers={"User-Agent": "Mozilla/5.0 HuseynovlarTerminal/1.0"},
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Market data lookup failed for {clean} ({yahoo_sym}): {exc}",
+        ) from exc
+
+    results = (payload.get("chart") or {}).get("result") or []
+    if not results:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Symbol '{clean}' not found")
+
+    res = results[0]
+    meta = res.get("meta") or {}
+    timestamps = res.get("timestamp") or []
+    quote = ((res.get("indicators") or {}).get("quote") or [{}])[0]
+    opens = quote.get("open") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    closes = quote.get("close") or []
+    volumes = quote.get("volume") or []
+
+    bars: list[dict[str, Any]] = []
+    for idx, ts in enumerate(timestamps):
+        if idx >= len(closes) or opens[idx] is None or closes[idx] is None or highs[idx] is None or lows[idx] is None:
+            continue
+        bars.append(
+            {
+                "time": int(ts),
+                "open": float(opens[idx]),
+                "high": float(highs[idx]),
+                "low": float(lows[idx]),
+                "close": float(closes[idx]),
+                "volume": float(volumes[idx] or 0) if idx < len(volumes) else 0.0,
+            }
+        )
+
+    reg_price = float(meta.get("regularMarketPrice") or (bars[-1]["close"] if bars else 0.0))
+    prev_close = float(meta.get("chartPreviousClose") or meta.get("previousClose") or reg_price or 1.0)
+    change_pct = round(((reg_price - prev_close) / prev_close) * 100.0, 2) if prev_close else 0.0
+
+    return {
+        "asset_code": clean,
+        "yahoo_symbol": yahoo_sym,
+        "name": meta.get("longName") or meta.get("shortName") or clean,
+        "currency": meta.get("currency") or "USD",
+        "price": reg_price,
+        "change_pct": change_pct,
+        "timeframe": timeframe,
+        "bars": bars[-500:],
+        "open_positions": [],
+        "deals": [],
+        "is_explorer": True,
+    }
 
 
 @router.get("/charts/{asset_code}")

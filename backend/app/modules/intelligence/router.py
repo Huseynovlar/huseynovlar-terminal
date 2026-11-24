@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import xml.etree.ElementTree as ET
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -81,23 +82,89 @@ class AiAnalyzeRequest(BaseModel):
     model: str = Field(default="gemini-2.5-flash", max_length=64)
 
 
+_STOPWORDS = {
+    "this", "that", "with", "from", "have", "will", "into", "over", "after", "more", "than",
+    "what", "when", "where", "about", "their", "there", "could", "would", "should", "says",
+    "amid", "news", "market", "markets", "stock", "stocks", "price", "prices",
+}
+
+
+def _headline_tokens(title: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]{4,}", title.lower())
+    return {w for w in words if w not in _STOPWORDS}
+
+
+def _build_sources_map(settings: Settings) -> dict[str, dict[str, Any]]:
+    cfg = settings.load_yaml_config("news_sources.yaml")
+    out: dict[str, dict[str, Any]] = {}
+    for feed in cfg.get("rss_feeds", []):
+        name = feed.get("name") or feed.get("id", "")
+        out[name] = {
+            "id": feed.get("id", ""),
+            "name": name,
+            "domain": feed.get("domain", ""),
+            "category": feed.get("category", "global"),
+            "priority": feed.get("priority", "medium"),
+            "verified": bool(feed.get("verified", False)),
+            "trust_tier": feed.get("trust_tier", "tier2"),
+            "default_assets": feed.get("default_assets", []),
+        }
+    return out
+
+
+@router.get("/sources")
+async def list_verified_sources(
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> list[dict[str, Any]]:
+    """Return the official Verified News Sources Registry with live item counts."""
+    sources_map = _build_sources_map(settings)
+    rows = (await db.execute(select(NewsItem.source))).scalars().all()
+    counts: dict[str, int] = {}
+    for src in rows:
+        counts[src] = counts.get(src, 0) + 1
+
+    result = []
+    for name, meta in sources_map.items():
+        result.append({**meta, "items_count": counts.get(name, 0)})
+    return result
+
+
 @router.get("/news")
 async def list_news(
     asset: str | None = None,
+    verified_only: bool = False,
     limit: int = Query(default=40, ge=1, le=200),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> list[dict[str, Any]]:
-    rows = (await db.execute(select(NewsItem).order_by(NewsItem.published_at.desc()).limit(limit * 2))).scalars().all()
+    sources_map = _build_sources_map(settings)
+    rows = (await db.execute(select(NewsItem).order_by(NewsItem.published_at.desc()).limit(limit * 3))).scalars().all()
     out: list[dict[str, Any]] = []
     target = asset.strip().upper() if asset else None
     for r in rows:
         if target and target not in (r.affected_assets or []):
             continue
+        meta = sources_map.get(r.source, {})
+        is_verified = bool(meta.get("verified", False))
+        corroborating = list(r.corroborating_sources or [])
+        verified_corroborators = [s for s in corroborating if sources_map.get(s, {}).get("verified")]
+        total_verified = (1 if is_verified else 0) + len(verified_corroborators)
+        if verified_only and total_verified == 0:
+            continue
         out.append(
             {
                 "id": r.id,
                 "source": r.source,
+                "source_domain": meta.get("domain", ""),
+                "trust_tier": meta.get("trust_tier", "aggregator"),
+                "is_verified_source": is_verified,
+                "corroborating_sources": corroborating,
+                "verified_corroborators": verified_corroborators,
+                "verification_count": max(1, int(r.verification_count or 1)),
+                "verified_source_count": total_verified,
                 "category": r.category,
                 "title": r.title,
                 "url": r.url,
@@ -115,26 +182,28 @@ async def list_news(
     return out
 
 
-@router.post("/news/refresh")
-async def refresh_news_feeds(
-    _: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-) -> dict[str, Any]:
-    """Fetch all redundant RSS feeds with per-feed isolation so a single outage never blocks updates."""
+async def run_news_refresh(db: AsyncSession, settings: Settings) -> dict[str, Any]:
+    """Fetch all redundant RSS feeds with per-feed isolation and cross-source headline corroboration."""
     cfg = settings.load_yaml_config("news_sources.yaml")
     assets = (await db.execute(select(AssetHub))).scalars().all()
     feeds = [f for f in cfg.get("rss_feeds", []) if f.get("url")]
 
+    cutoff = datetime.now(UTC) - timedelta(hours=18)
+    recent_q = select(NewsItem).where(NewsItem.published_at >= cutoff).order_by(NewsItem.published_at.desc())
+    recent_rows = (await db.execute(recent_q)).scalars().all()
+    recent_tokens: list[tuple[NewsItem, set[str]]] = [(r, _headline_tokens(r.title)) for r in recent_rows]
+
     inserted = 0
+    corroborated = 0
     failed_sources: list[str] = []
 
     async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as http:
         for feed in feeds:
+            source_name = feed.get("name", feed["id"])
             try:
                 resp = await http.get(feed["url"], headers={"User-Agent": "HuseynovlarTerminal/1.0"})
                 resp.raise_for_status()
-                parsed = parse_rss_xml(resp.text, feed.get("name", feed["id"]), feed.get("category", "global"))
+                parsed = parse_rss_xml(resp.text, source_name, feed.get("category", "global"))
                 for item in parsed:
                     dedup = _hash_text(item["url"] or item["title"])
                     exists = (
@@ -142,6 +211,30 @@ async def refresh_news_feeds(
                     ).scalar_one_or_none()
                     if exists:
                         continue
+
+                    # Cross-source corroboration: check if another source already reported this story
+                    tokens = _headline_tokens(item["title"])
+                    matched_row: NewsItem | None = None
+                    if len(tokens) >= 3:
+                        for existing_row, existing_toks in recent_tokens:
+                            if existing_row.source == source_name:
+                                continue
+                            overlap = tokens & existing_toks
+                            union = tokens | existing_toks
+                            if len(overlap) >= 3 or (union and len(overlap) / len(union) >= 0.45):
+                                matched_row = existing_row
+                                break
+
+                    if matched_row is not None:
+                        corr = list(matched_row.corroborating_sources or [])
+                        if source_name not in corr:
+                            corr.append(source_name)
+                            matched_row.corroborating_sources = corr
+                            matched_row.verification_count = 1 + len(corr)
+                            matched_row.impact_score = min(10, max(matched_row.impact_score, 7 + len(corr)))
+                            corroborated += 1
+                        continue
+
                     tags = _tag_assets_from_text(
                         f"{item['title']} {item['summary']}", list(assets), feed.get("default_assets", [])
                     )
@@ -156,8 +249,11 @@ async def refresh_news_feeds(
                         affected_assets=tags,
                         is_breaking=is_breaking,
                         impact_score=9 if is_breaking else 6,
+                        corroborating_sources=[],
+                        verification_count=1,
                     )
                     db.add(row)
+                    recent_tokens.append((row, tokens))
                     inserted += 1
                     if is_breaking:
                         await ws_hub.broadcast(
@@ -168,7 +264,21 @@ async def refresh_news_feeds(
                 failed_sources.append(feed.get("id", "unknown"))
 
     await db.commit()
-    return {"inserted": inserted, "sources_checked": len(feeds), "failed_sources": failed_sources}
+    return {
+        "inserted": inserted,
+        "corroborated": corroborated,
+        "sources_checked": len(feeds),
+        "failed_sources": failed_sources,
+    }
+
+
+@router.post("/news/refresh")
+async def refresh_news_feeds(
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    return await run_news_refresh(db, settings)
 
 
 @router.get("/calendar")
