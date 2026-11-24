@@ -230,8 +230,9 @@ void SendSnapshotAndProcessCommands()
       spread_pts = (int)SymbolInfoInteger(g_symbol, SYMBOL_SPREAD);
      }
 
+   long ping_ms = TerminalInfoInteger(TERMINAL_PING_LAST) / 1000;
    string body = StringFormat(
-      "{\"balance\":%.4f,\"equity\":%.4f,\"floating_pnl\":%.4f,\"margin\":%.4f,\"free_margin\":%.4f,\"margin_level\":%.2f,\"algo_trading_enabled\":%s,\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread_pts\":%d,\"open_positions\":%s}",
+      "{\"balance\":%.4f,\"equity\":%.4f,\"floating_pnl\":%.4f,\"margin\":%.4f,\"free_margin\":%.4f,\"margin_level\":%.2f,\"algo_trading_enabled\":%s,\"terminal_connected\":%s,\"ping_ms\":%I64d,\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread_pts\":%d,\"open_positions\":%s}",
       AccountInfoDouble(ACCOUNT_BALANCE),
       AccountInfoDouble(ACCOUNT_EQUITY),
       AccountInfoDouble(ACCOUNT_PROFIT),
@@ -239,6 +240,8 @@ void SendSnapshotAndProcessCommands()
       AccountInfoDouble(ACCOUNT_MARGIN_FREE),
       AccountInfoDouble(ACCOUNT_MARGIN_LEVEL),
       TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) ? "true" : "false",
+      TerminalInfoInteger(TERMINAL_CONNECTED) ? "true" : "false",
+      ping_ms,
       EscapeJson(g_symbol),
       bid, ask, spread_pts,
       pos_json

@@ -194,6 +194,8 @@ class TradingAccount(Base):
     # Live terminal status
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     algo_trading_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    terminal_connected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_ping_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_synced_deal_ticket: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     last_balance: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     last_equity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -226,6 +228,10 @@ class Robot(Base):
     version: Mapped[str] = mapped_column(String(32), nullable=False, default="1.0")
     strategy_notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     params_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    live_status: Mapped[str] = mapped_column(String(64), nullable=False, default="IDLE")
+    live_state_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    last_execution_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
@@ -385,6 +391,8 @@ class NewsItem(Base):
     sentiment: Mapped[str] = mapped_column(String(16), nullable=False, default="neutral")  # bullish|bearish|neutral
     impact_score: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     is_breaking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    corroborating_sources: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    verification_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     ai_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
 

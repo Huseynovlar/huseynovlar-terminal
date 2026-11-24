@@ -67,6 +67,13 @@ class OpenPositionItem(BaseModel):
     comment: str = ""
 
 
+class RobotLiveStateItem(BaseModel):
+    magic_number: int
+    status: str = "RUNNING"
+    execution_ms: int = 0
+    state_json: dict[str, Any] = Field(default_factory=dict)
+
+
 class SnapshotPayload(BaseModel):
     balance: float
     equity: float
@@ -75,11 +82,14 @@ class SnapshotPayload(BaseModel):
     free_margin: float = 0.0
     margin_level: float = 0.0
     algo_trading_enabled: bool = False
+    terminal_connected: bool = True
+    ping_ms: int = 0
     symbol: str = ""
     bid: float = 0.0
     ask: float = 0.0
     spread_pts: int = 0
     open_positions: list[OpenPositionItem] = Field(default_factory=list)
+    robot_states: list[RobotLiveStateItem] = Field(default_factory=list)
 
 
 class TradeEventPayload(BaseModel):
@@ -144,6 +154,8 @@ async def ingest_snapshot(
     account: TradingAccount = Depends(verify_account_api_key),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    from app.db.models import Robot
+
     now = datetime.now(UTC)
     div = account.currency_divisor or 1.0
     balance_usd = round(body.balance / div, 4)
@@ -159,10 +171,24 @@ async def ingest_snapshot(
 
     account.last_seen_at = now
     account.algo_trading_enabled = body.algo_trading_enabled
+    account.terminal_connected = body.terminal_connected
+    account.last_ping_ms = max(0, body.ping_ms)
     account.last_balance = body.balance
     account.last_equity = body.equity
     account.last_floating_pnl = body.floating_pnl
     account.last_margin_level = body.margin_level
+
+    # Update live robot statuses reported by ExnessPanelHook.mqh / Bridge
+    for rs in body.robot_states:
+        robot = (
+            await db.execute(select(Robot).where(Robot.account_id == account.id, Robot.magic_number == rs.magic_number))
+        ).scalar_one_or_none()
+        if robot:
+            robot.live_status = rs.status[:64]
+            robot.live_state_json = rs.state_json
+            if rs.execution_ms > 0:
+                robot.last_execution_ms = rs.execution_ms
+            robot.last_heartbeat_at = now
 
     # Replace live open positions for this account atomically
     await db.execute(delete(OpenPositionLive).where(OpenPositionLive.account_id == account.id))

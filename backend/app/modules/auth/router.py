@@ -500,3 +500,111 @@ async def delete_passkey(
         ip_address=request.client.host if request.client else "",
     )
     await db.commit()
+
+
+@router.get("/sessions")
+async def list_active_sessions(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> list[dict[str, Any]]:
+    """List active sessions with is_current flag so user can safely terminate other devices."""
+    current_sid: str | None = None
+    raw_refresh = request.cookies.get("ht_refresh_token")
+    if raw_refresh:
+        try:
+            current_sid = decode_token(raw_refresh, settings, expected_type="refresh").get("sid")
+        except jwt.PyJWTError:
+            current_sid = None
+
+    rows = (
+        (
+            await db.execute(
+                select(UserSession)
+                .where(UserSession.user_id == user.id, UserSession.revoked.is_(False))
+                .order_by(UserSession.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return [
+        {
+            "id": s.id,
+            "ip_address": s.ip_address,
+            "user_agent": s.user_agent,
+            "is_current": s.id == current_sid,
+            "created_at": s.created_at.isoformat(),
+            "expires_at": s.expires_at.isoformat(),
+        }
+        for s in rows
+    ]
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_session(
+    session_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Terminate any active session EXCEPT the current session."""
+    raw_refresh = request.cookies.get("ht_refresh_token")
+    if raw_refresh:
+        try:
+            if decode_token(raw_refresh, settings, expected_type="refresh").get("sid") == session_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot terminate current active session; use Logout instead",
+                )
+        except jwt.PyJWTError:
+            pass
+
+    session = await db.get(UserSession, session_id)
+    if not session or session.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    session.revoked = True
+    await record_audit(
+        db,
+        action="auth.session_revoked",
+        user_id=user.id,
+        resource_type="user_session",
+        resource_id=session_id,
+        ip_address=request.client.host if request.client else "",
+    )
+    await db.commit()
+
+
+@router.get("/login-history")
+async def get_login_history(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, Any]]:
+    from app.db.models import AuditLog
+
+    rows = (
+        (
+            await db.execute(
+                select(AuditLog)
+                .where(AuditLog.user_id == user.id, AuditLog.action.like("auth.%"))
+                .order_by(AuditLog.created_at.desc())
+                .limit(40)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "action": r.action,
+            "ip_address": r.ip_address,
+            "details": r.details,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]

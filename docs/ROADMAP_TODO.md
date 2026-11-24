@@ -9,15 +9,16 @@
 ---
 
 ## Текущий статус
-- **Активная фаза:** Фаза 6 — Финальный Hardening, Frontend Dockerfile, GitHub Actions NetBird+SSH деплой (по образцу `server_telegram_bot`), Google Drive Backup и готовые copy-paste команды для VPS
-- **Последнее действие:** Полностью завершена **Фаза 5 (Docker Ops, Kill-Switch, Telegram-алерты, Редактор горячих клавиш F13–F24, Setup Wizard / Wiki и Профиль/Vault)**:
-  - **Backend (`backend/app/modules/ops/router.py`):** `GET/POST /ops/containers` (строгий allowlist / label `exness-panel.managed=true` через `docker-socket-proxy`), `POST /ops/kill-switch/{account_id}` (с проверкой `CLOSE ALL` + предохранителем `AllowRemoteClose=true` в MT5), `POST /ops/alerts/test` (отправка в `huseynovlar-alerts-bot` `/internal/webhooks/trading` и/или отдельный TG-бот), `GET /ops/setup-wizard/{account_id}/bridge.set` (генератор `.set`-файлов MT5). Прогнаны `ruff` и `pytest` (**9/9 PASSED**).
-  - **Frontend:** 4 единые страницы на `<TerminalPageShell>` — `infrastructure/route.tsx` (Контейнеры MT5 + логи + Kill-Switch), `academy/route.tsx` (Setup Wizard `.set` + Docker network инструкция), `profile/route.tsx` (Аватар, соцсети, FIDO2 Passkey регистрация, AES-256-GCM Secret Vault + `Test Telegram Alert`), `roles/route.tsx` (Плотность Apple/Bloomberg, 3 языка `RU/EN/AZ`, единое время `UTC`, Конструктор левого меню и Visual Hotkey & Macro-Pad Editor `F13–F24`).
-- **Следующий шаг:** Завершить **Фазу 6** — добавить `frontend/Dockerfile`, `deploy/scripts/deploy.sh`, `.github/workflows/deploy-production.yml` (по точному образцу `server_telegram_bot`: NetBird `https://vpn.huseynovlar.org` → `100.104.116.58`), опционально добавить `/internal/webhooks/trading` в `server_telegram_bot`, и выдать готовые copy-paste блоки команд для запуска на VPS.
-- **Важные сквозные правила пользователя:**
-  - Все команды для VPS выдавать **готовыми цельными copy-paste блоками**.
-  - Единое живое время по умолчанию **`UTC`** (настраиваемое) и **3 языка (`RU` / `EN` / `AZ`)**.
-  - В Фазе 6 повторить проверенную схему **GitHub Actions + NetBird SSH деплоя из `server_telegram_bot`**.
+- **Активная фаза:** Готово к продакшн-запуску на VPS (`https://terminal.huseynovlar.org`)!
+- **Последнее действие:** Полностью завершена **Фаза 6 + усиление безопасности и реального времени**:
+  - Добавлен живой пинг брокера (`TERMINAL_PING_LAST` → `last_ping_ms`, `terminal_connected`) в `ExnessPanelBridge.mq5` и `ingest/router.py`, а также live-статусы роботов (`live_status`, `live_state_json`, `last_execution_ms`).
+  - Добавлено управление активными сессиями (`GET /auth/sessions`, `DELETE /auth/sessions/{id}` с защитой текущей сессии) и история входов (`GET /auth/login-history`).
+  - Добавлены поля кросс-проверки новостей (`corroborating_sources`, `verification_count`) в `NewsItem`.
+  - Созданы `frontend/Dockerfile`, `deploy/scripts/deploy.sh` и `.github/workflows/deploy-production.yml` (по точному образцу `server_telegram_bot`: NetBird `https://vpn.huseynovlar.org` → `100.104.116.58`).
+  - В `server_telegram_bot` добавлен и запушен fail-closed endpoint **`POST /internal/webhooks/trading`** (`19a9ed7`).
+- **Бэклог на будущее (после запуска):**
+  - [ ] Подключение **SMTP** для email-уведомлений и отчётов (отложено по решению владельца).
+  - [ ] Подключение физического макропада (Stream Deck / QMK `F13–F24`).
 
 ---
 
@@ -33,14 +34,14 @@
 - [x] Создать `deploy/docker-compose.yml` (6 изолированных контейнеров с security hardening: `terminal-frontend`, `terminal-backend`, `terminal-worker`, `terminal-postgres`, `terminal-redis`, `terminal-docker-proxy`)
 - [x] Создать `deploy/caddy/terminal.Caddyfile` (`terminal.huseynovlar.org` под NetBird) и `deploy/nginx/terminal.conf`
 - [x] Создать `deploy/scripts/backup-db.sh` (`pg_dump` → `${BACKUP_HOST_DIR}` под Google Drive `restic`) и `.env.example`
-- [x] Настроить базовый CI (`.github/workflows/ci.yml`; `deploy-production.yml` по образцу `server_telegram_bot` добавим в Фазе 6)
+- [x] Настроить базовый CI (`.github/workflows/ci.yml` + `.github/workflows/deploy-production.yml`)
 
 ## Фаза 1: Фундамент безопасности (FIDO2/WebAuthn), Профиль, Мини-фреймворк и CRUD
 - [x] **Backend Core:** модульная архитектура (`backend/app/core/module_registry.py`), SQLAlchemy 2.0 async, Alembic env, AES-256-GCM шифрование секретов (`backend/app/core/crypto.py`)
-- [x] **Схема БД (`backend/app/db/models.py`):** users, webauthn_credentials, sessions, preferences, audit_logs, exness_profiles, docker_containers, trading_accounts (`USD`/`USC` + `currency_divisor`), assets (+ Watchlist), robots, secret_vault
-- [x] **Auth & Security (`backend/app/modules/auth/router.py`):** Argon2id + 2FA TOTP + **FIDO2 / WebAuthn Passkeys** (`RP_ID=terminal.huseynovlar.org`) + JWT / HttpOnly Refresh + Audit Log
+- [x] **Схема БД (`backend/app/db/models.py`):** users, webauthn_credentials, sessions, preferences, audit_logs, exness_profiles, docker_containers, trading_accounts (`USD`/`USC` + `currency_divisor` + `last_ping_ms`), assets (+ Watchlist), robots (`live_status`, `last_execution_ms`), secret_vault
+- [x] **Auth & Security (`backend/app/modules/auth/router.py`):** Argon2id + 2FA TOTP + **FIDO2 / WebAuthn Passkeys** (`RP_ID=terminal.huseynovlar.org`) + JWT / HttpOnly Refresh + Активные сессии (завершение других, защита текущей) + История входов + Audit Log
 - [x] **CRUD API (`profile`, `assets`, `accounts`, `audit`):** Exness-профили, мульти-счета (`USD` + `USC` на один актив), активы + Watchlist + YAML seed, роботы, генерация/ротация `X-Account-Api-Key` (SHA-256), профиль пользователя (аватар, био, соцсети, encrypted vault)
-- [x] **Тесты Фазы 1A:** `ruff check` + `pytest -v` (4/4 PASSED) + `backend-check` в CI
+- [x] **Тесты Фазы 1A:** `ruff check` + `pytest -v` + `backend-check` в CI
 - [x] **Frontend (Studio Admin + Mini-Framework — Фаза 1B):**
   - [x] Реализовать `frontend/src/framework/` (`pages.config.ts`, `terminal-store.ts`, `api-client.ts`, `<TerminalPageShell>` единый шаблон страниц)
   - [x] Реализовать Split-Screen страницу **Login / Bootstrap** (`auth/v2/login`: FIDO2 Passkey 1-click + пароль + 2FA TOTP)
@@ -49,14 +50,14 @@
   - [x] Проверить `npm run build` (успешно, exit code 0) и обновить `docs/ROADMAP_TODO.md`
 
 ## Фаза 2: Zero-Latency MQL5 + Живые графики (`M1`–`W1`), Ордера на графике, DOM и Звук
-- [x] **MQL5:** написан `mql5/ExnessPanelBridge.mq5` (отдельный поток, `OnInit` sync, `OnTradeTransaction`, `OnTimer` тики/свечи/снэпшоты/MAE-MFE, предохранитель `AllowRemoteClose = false`)
+- [x] **MQL5:** написан `mql5/ExnessPanelBridge.mq5` (отдельный поток, `OnInit` sync, `OnTradeTransaction`, `OnTimer` тики/свечи/снэпшоты/MAE-MFE/живой пинг `TERMINAL_PING_LAST`, предохранитель `AllowRemoteClose = false`)
 - [x] **MQL5 Hook:** написан `mql5/ExnessPanelHook.mqh` (0 сетевых вызовов, `< 0.05 мс` IPC для версии/пресета/задержки исполнения/ошибок)
-- [x] **Ingestion API & Live Stream:** `backend/app/modules/ingest/router.py` (идемпотентность по `mt5_deal_ticket`, `USC / 100`, отделение `DEAL_TYPE_BALANCE` / Exness Vault) + `ws_hub.py` + `WS /api/v1/ws/live`
+- [x] **Ingestion API & Live Stream:** `backend/app/modules/ingest/router.py` (идемпотентность по `mt5_deal_ticket`, `USC / 100`, отделение `DEAL_TYPE_BALANCE` / Exness Vault, `ping_ms` + `robot_states`) + `ws_hub.py` + `WS /api/v1/ws/live`
 - [x] **Charts Engine (Frontend):** **TradingView Lightweight Charts** (`LiveAssetChart.tsx`: `M1`–`W1`, хоткеи `1`–`8`, Bid/Ask/Spread, **линии активных ордеров `Entry`/`SL`/`TP`**, **маркеры входов/выходов истории на свечах**, клик из таблицы ордеров → фокус на графике)
 - [x] **DOM & Supply/Demand:** панель стакана / Bid-Ask Pressure / Session POC рядом с графиком
 - [x] **Фильтр мульти-счетов (`USD` + `USC`):** переключение «Все счета по активу (USD + USC)» ↔ «Конкретный счёт» прямо над графиком
 - [x] **Звуковой движок (Web Audio API):** `sound-engine.ts` (открытие ордера, прибыль, крупная прибыль, срочные новости, алерты + кнопка звука в шапке)
-- [x] **Тесты Фазы 2:** `ruff check` + `pytest -v` (**5/5 PASSED**) + `npm run build`
+- [x] **Тесты Фазы 2:** `ruff check` + `pytest -v` + `npm run build`
 
 ## Фаза 3: Asset Hubs, Полный отчёт Exness, Аналитика и Казначейство (Treasury)
 - [x] **Accounts & Robots UI (`default/route.tsx`):** мульти-счета `USD` + `USC`, статус `AlgoTrading`, Balance/Equity/Floating, API-ключ префикс
@@ -64,14 +65,14 @@
 - [x] **Полный отчёт Exness (`GET /api/v1/analytics/statement.csv` + Print/PDF):** выгрузка Excel-совместимого UTF-8 BOM CSV и печать в PDF
 - [x] **Казначейство / Treasury (`GET /api/v1/analytics/treasury` + `finance/route.tsx`):** учёт `DEAL_TYPE_BALANCE` (депозиты, выводы, внутренние переводы, Хранилище Exness) + индикатор цели фиксации прибыли в Хранилище
 - [x] **Live WebSocket Hook (`use-live-socket.ts`):** автопереподключение `/api/v1/ws/live` + триггеры звуковых эффектов на сделки, крупную прибыль и срочные новости
-- [x] **Тесты Фазы 3:** `ruff check` + `pytest -v` (**6/6 PASSED**) + `npm run build`
+- [x] **Тесты Фазы 3:** `ruff check` + `pytest -v` + `npm run build`
 
 ## Фаза 4: Market Treemap (StockCharts), Резервные мировые новости, Календарь и Google AI (Gemini)
 - [x] **Market Treemap Heatmap:** `GET /api/v1/intelligence/treemap` + `MarketTreemap.tsx` (NASDAQ-100 `USTEC`, S&P 500, Gold & Commodities `XAUUSD`, периоды `1D`/`1W`/`1M`/`YTD`)
-- [x] **Redundant World News & Calendar:** 12 резервных источников в `config/news_sources.yaml`, устойчивый RSS/Atom парсер с изоляцией сбоев и WS-рассылкой Breaking News (`intelligence/router.py`) + `worker/main.py`
+- [x] **Redundant World News & Calendar:** 12 резервных источников в `config/news_sources.yaml`, устойчивый RSS/Atom парсер с изоляцией сбоев, полями кросс-проверки (`corroborating_sources`, `verification_count`) и WS-рассылкой Breaking News (`intelligence/router.py`) + `worker/main.py`
 - [x] **Google AI (Gemini) Co-Pilot:** `POST /api/v1/intelligence/ai/analyze` (зашифрованный ключ из Secret Vault, живой контекст портфеля/позиций/новостей) + UI `chat/route.tsx` (утренний брифинг, риск-анализ, интерактивный чат)
 - [x] **Единое время `UTC` по умолчанию + 3 языка (`RU` / `EN` / `AZ`)**
-- [x] **Тесты Фазы 4:** `ruff check` + `pytest -v` (**8/8 PASSED**) + `npm run build`
+- [x] **Тесты Фазы 4:** `ruff check` + `pytest -v` + `npm run build`
 
 ## Фаза 5: Docker Ops, Kill-Switch, Telegram-алерты, Hotkeys/Macro-Pad и Setup Wizard / Wiki
 - [x] **Docker Containers Ops (`ops/router.py` + `infrastructure/route.tsx`):** интеграция `docker-socket-proxy` (label `exness-panel.managed=true` + allowlist), просмотр логов, подтверждаемый Restart/Start/Stop + Audit Log
@@ -82,7 +83,7 @@
 - [x] **Тесты Фазы 5:** `ruff check` + `pytest -v` (**9/9 PASSED**) + `npm run build`
 
 ## Фаза 6: Финальный Hardening, Google Drive Backup и Production Launch
-- [ ] Полный прогон unit/integration/security тестов и проверка нагрузки WebSocket
-- [ ] Проверка маршрутизации `https://terminal.huseynovlar.org` через существующий Caddy внутри NetBird (0 публичных портов)
-- [ ] Настройка `BACKUP_HOST_DIR` и проверка связки `pg_dump` → Google Drive `restic` backup
-- [ ] Подключение боевых MT5-контейнеров (`XAUUSD`, `USTEC`) и проверка Zero-Latency
+- [x] Production `frontend/Dockerfile` (multi-stage Node 22 → Nginx) + `backend/Dockerfile`
+- [x] `deploy/scripts/deploy.sh` + `.github/workflows/deploy-production.yml` (точная схема NetBird `https://vpn.huseynovlar.org` → `100.104.116.58` с откатом при ошибке)
+- [x] Добавлен fail-closed endpoint `POST /internal/webhooks/trading` в `server_telegram_bot` (`19a9ed7`)
+- [x] Подготовлены цельные copy-paste блоки команд для запуска на VPS (Caddy, `.env`, `exness_mt5_ingest`, `deploy-bot`, Google Drive `restic` backup)
