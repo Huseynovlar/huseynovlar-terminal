@@ -1,21 +1,19 @@
-# Add this site block to your existing Caddyfile inside NetBird VPN.
-# Caddy automatically provisions and renews TLS for terminal.huseynovlar.org
-# (required for FIDO2 / WebAuthn Passkeys).
+# Add this block to your Caddyfile on the VPS and reload Caddy.
+# Also add internal DNS record in NetBird / internal DNS:
+#   terminal.huseynovlar.org -> 100.104.116.58
 
 terminal.huseynovlar.org {
-    encode zstd gzip
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
 
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        Referrer-Policy "strict-origin-when-cross-origin"
-        Permissions-Policy "geolocation=(), microphone=(), camera=()"
-        -Server
-    }
+	import security_headers
 
-    reverse_proxy 127.0.0.1:18443 {
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-    }
+	@admins remote_ip 100.104.0.0/16
+
+	handle @admins {
+		reverse_proxy 127.0.0.1:18443
+	}
+
+	respond "Not Found" 404
 }
