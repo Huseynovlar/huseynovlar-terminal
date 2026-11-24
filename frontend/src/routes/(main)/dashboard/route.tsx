@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 
@@ -7,6 +7,7 @@ import { cn } from "cn";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { users } from "@/data/users";
+import { apiRequest, type AuthTokenResponse, getAccessToken, setAccessToken } from "@/framework/api-client";
 import { getDashboardLayout } from "@/server/server-actions";
 
 import { BloombergTickerTape } from "@/framework/components/BloombergTickerTape";
@@ -26,6 +27,40 @@ export const Route = createFileRoute("/(main)/dashboard")({
 
 function DashboardLayout() {
   const { defaultOpen, variant, collapsible } = Route.useLoaderData();
+  const [authStatus, setAuthStatus] = useState<"checking" | "authed">("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function verifySession() {
+      try {
+        if (!getAccessToken()) {
+          const refreshed = await apiRequest<AuthTokenResponse>("/auth/refresh", { method: "POST" });
+          if (refreshed?.access_token) {
+            setAccessToken(refreshed.access_token);
+          }
+        }
+        await apiRequest("/profile/me");
+        if (!cancelled) setAuthStatus("authed");
+      } catch {
+        setAccessToken(null);
+        if (!cancelled) {
+          window.location.replace("/auth/v2/login");
+        }
+      }
+    }
+    verifySession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (authStatus !== "authed") {
+    return (
+      <div className="bg-background text-muted-foreground flex h-dvh w-full items-center justify-center font-mono text-xs">
+        Проверка доступа (Zero-Trust Session Guard)...
+      </div>
+    );
+  }
 
   return (
     <SidebarProvider
