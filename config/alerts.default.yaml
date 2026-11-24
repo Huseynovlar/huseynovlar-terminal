@@ -1,0 +1,56 @@
+# Default Telegram & Webhook Alert Rules for Huseynovlar Terminal
+
+rules:
+  - code: heartbeat_offline
+    name: MT5 Terminal Offline
+    severity: critical
+    enabled: true
+    threshold_sec: 45
+    cooldown_sec: 300
+
+  - code: drawdown_warning
+    name: Account Drawdown Warning
+    severity: warning
+    enabled: true
+    threshold_pct: 5.0
+    cooldown_sec: 1800
+
+  - code: drawdown_critical
+    name: Account Drawdown Critical
+    severity: critical
+    enabled: true
+    threshold_pct: 10.0
+    cooldown_sec: 900
+
+  - code: low_margin_level
+    name: Low Margin Level
+    severity: critical
+    enabled: true
+    threshold_pct: 300.0
+    cooldown_sec: 600
+
+  - code: algotrading_disabled
+    name: AlgoTrading Disabled in MT5
+    severity: warning
+    enabled: true
+    cooldown_sec: 600
+
+  - code: high_impact_news_soon
+    name: High-Impact News Countdown
+    severity: info
+    enabled: true
+    lead_minutes: 15
+    cooldown_sec: 3600
+
+  - code: vault_profit_target
+    name: Profit Ready for Exness Vault Transfer
+    severity: info
+    enabled: true
+    threshold_usd: 500.0
+    cooldown_sec: 86400
+
+  - code: new_login_ip
+    name: New Login IP / Device
+    severity: warning
+    enabled: true
+    cooldown_sec: 60

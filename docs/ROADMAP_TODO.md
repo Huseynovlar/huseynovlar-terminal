@@ -9,24 +9,25 @@
 ---
 
 ## Текущий статус
-- **Активная фаза:** Фаза 0 — Инициализация репозитория
-- **Последнее действие:** Утверждена архитектура (v2.2), выбран шаблон `Studio Admin`, согласован стек и бесплатные источники данных
-- **Следующий шаг:** Создать структуру монорепозитория `huseynovlar-terminal`, закоммитить `docs/ARCHITECTURE.md` + `docs/ROADMAP_TODO.md` и поднять каркас Фазы 0
+- **Активная фаза:** Фаза 1 — Фундамент безопасности (FIDO2/WebAuthn), Профиль, Мини-фреймворк и CRUD
+- **Последнее действие:** Полностью завершена **Фаза 0**: создана структура монорепозитория, скопирован шаблон **Studio Admin** (`arhamkhnz/tanstack-shadcn-admin-dashboard`, Vite + React 19 + TS + Tailwind v4 + shadcn/ui + TanStack Table + Zustand + dnd-kit + cmdk) в `frontend/`, добавлены YAML-конфиги (`config/*.yaml`), hardened `deploy/docker-compose.yml` (проверен `docker compose config`), `deploy/caddy/terminal.Caddyfile`, `deploy/nginx/terminal.conf`, `deploy/scripts/backup-db.sh`, `.env.example` и `.github/workflows/ci.yml`.
+- **Следующий шаг:** Начать **Фазу 1** — поднять `backend/` (FastAPI + SQLAlchemy 2.0 + Alembic + FIDO2/WebAuthn + 2FA + AES-256-GCM + CRUD) и интегрировать наш config-driven мини-фреймворк (`frontend/src/framework/`) + бегущую строку новостей в `frontend/`.
 
 ---
 
 ## Фаза 0: Инициализация репозитория, конфиги и Docker-топология
-- [ ] Создать структуру монорепозитория (`config/`, `backend/`, `worker/`, `frontend/`, `mql5/`, `deploy/`, `docs/`)
-- [ ] Перенести в репозиторий `docs/ARCHITECTURE.md` и `docs/ROADMAP_TODO.md`
-- [ ] Создать централизованные YAML-конфиги:
-  - [ ] `config/assets.default.yaml` (`XAUUSD`, `USTEC`, Watchlist, алиасы, новостные теги)
-  - [ ] `config/news_sources.yaml` (бесплатные RSS/Atom, GDELT, ForexFactory JSON)
-  - [ ] `config/treemap.yaml` (NASDAQ-100, S&P 500, Global Top, Gold & Commodities)
-  - [ ] `config/alerts.default.yaml` (шаблоны правил уведомлений)
-- [ ] Создать `deploy/docker-compose.yml` (6 изолированных контейнеров с security hardening: `terminal-frontend`, `terminal-backend`, `terminal-worker`, `terminal-postgres`, `terminal-redis`, `terminal-docker-proxy`)
-- [ ] Создать `deploy/caddy/terminal.Caddyfile` (`terminal.huseynovlar.org` под NetBird) и `deploy/nginx/terminal.conf`
-- [ ] Создать `deploy/scripts/backup-db.sh` (`pg_dump` → `${BACKUP_HOST_DIR}` под Google Drive `restic`) и `.env.example`
-- [ ] Настроить CI/CD (`.github/workflows/ci.yml` + `.github/workflows/deploy-production.yml`)
+- [x] Создать структуру монорепозитория (`config/`, `backend/`, `worker/`, `frontend/`, `mql5/`, `deploy/`, `docs/`)
+- [x] Перенести в репозиторий `docs/ARCHITECTURE.md` и `docs/ROADMAP_TODO.md`
+- [x] Импортировать UI-базу **Studio Admin** (`arhamkhnz/tanstack-shadcn-admin-dashboard`) в `frontend/`
+- [x] Создать централизованные YAML-конфиги:
+  - [x] `config/assets.default.yaml` (`XAUUSD`, `USTEC`, Watchlist, алиасы, новостные теги)
+  - [x] `config/news_sources.yaml` (бесплатные RSS/Atom, GDELT, ForexFactory JSON, макро-котировки)
+  - [x] `config/treemap.yaml` (NASDAQ-100, S&P 500, Global Top, Gold & Commodities)
+  - [x] `config/alerts.default.yaml` (шаблоны правил уведомлений)
+- [x] Создать `deploy/docker-compose.yml` (6 изолированных контейнеров с security hardening: `terminal-frontend`, `terminal-backend`, `terminal-worker`, `terminal-postgres`, `terminal-redis`, `terminal-docker-proxy`)
+- [x] Создать `deploy/caddy/terminal.Caddyfile` (`terminal.huseynovlar.org` под NetBird) и `deploy/nginx/terminal.conf`
+- [x] Создать `deploy/scripts/backup-db.sh` (`pg_dump` → `${BACKUP_HOST_DIR}` под Google Drive `restic`) и `.env.example`
+- [x] Настроить базовый CI (`.github/workflows/ci.yml`; `deploy-production.yml` добавим в Фазе 6)
 
 ## Фаза 1: Фундамент безопасности (FIDO2/WebAuthn), Профиль, Мини-фреймворк и CRUD
 - [ ] **Backend Core:** модульная архитектура (`app/core/module_registry.py`), SQLAlchemy 2.0 async, Alembic, AES-256-GCM шифрование секретов

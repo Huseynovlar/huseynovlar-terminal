@@ -1,0 +1,106 @@
+# Default Asset Hubs & Watchlist configuration for Huseynovlar Terminal
+# New assets can be added here or via the UI Asset Hub manager.
+
+assets:
+  - code: XAUUSD
+    name: Gold / US Dollar
+    group: metals
+    status: active
+    color: "#F59E0B"
+    icon: coins
+    broker_symbols:
+      - XAUUSD
+      - XAUUSDm
+      - XAUUSDc
+      - GOLD
+    news_tags:
+      - Gold
+      - XAU
+      - XAUUSD
+      - Fed
+      - FOMC
+      - CPI
+      - NFP
+      - DXY
+      - US10Y
+      - Treasury Yields
+      - Geopolitics
+      - Central Bank Gold
+    macro_drivers:
+      - DXY
+      - US10Y
+      - XAGUSD
+      - VIX
+
+  - code: USTEC
+    name: US Tech 100 (NASDAQ-100)
+    group: indices
+    status: active
+    color: "#3B82F6"
+    icon: cpu
+    broker_symbols:
+      - USTEC
+      - USTECm
+      - USTECc
+      - US100
+      - NAS100
+      - NDX
+    news_tags:
+      - NASDAQ
+      - USTEC
+      - NDX
+      - US100
+      - FOMC
+      - Fed
+      - CPI
+      - Tech Stocks
+      - NVDA
+      - AAPL
+      - MSFT
+      - AI Chips
+      - Earnings
+    macro_drivers:
+      - VIX
+      - US10Y
+      - SPX
+      - DXY
+
+  - code: EURUSD
+    name: Euro / US Dollar
+    group: forex
+    status: watchlist
+    color: "#10B981"
+    icon: globe
+    broker_symbols:
+      - EURUSD
+      - EURUSDm
+      - EURUSDc
+    news_tags:
+      - EURUSD
+      - ECB
+      - Eurozone
+      - Fed
+      - DXY
+    macro_drivers:
+      - DXY
+      - US10Y
+
+  - code: BTCUSD
+    name: Bitcoin / US Dollar
+    group: crypto
+    status: watchlist
+    color: "#F97316"
+    icon: bitcoin
+    broker_symbols:
+      - BTCUSD
+      - BTCUSDm
+    news_tags:
+      - Bitcoin
+      - BTC
+      - Crypto ETF
+      - SEC
+      - Liquidity
+    macro_drivers:
+      - DXY
+      - VIX
+      - USTEC

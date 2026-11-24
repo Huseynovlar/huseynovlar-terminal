@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  docker-compose-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Docker Compose schema
+        env:
+          JWT_SECRET_KEY: ci-dummy-jwt-secret
+          VAULT_MASTER_KEY: ci-dummy-vault-key
+          POSTGRES_PASSWORD: ci-dummy-pg-password
+          REDIS_PASSWORD: ci-dummy-redis-password
+        run: docker compose -f deploy/docker-compose.yml config --quiet
+
+  frontend-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build

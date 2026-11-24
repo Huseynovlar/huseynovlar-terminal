@@ -1,0 +1,169 @@
+# Huseynovlar Terminal — Multi-Container Production Stack
+# Run on VPS:
+#   docker network create exness_mt5_ingest --internal || true
+#   docker compose -p huseynovlar-terminal --env-file /opt/huseynovlar-terminal/.env -f deploy/docker-compose.yml up -d
+#
+# Network policy:
+#   - `frontend` binds ONLY to 127.0.0.1:${FRONTEND_LOCAL_PORT:-18443}:8080 (proxied by existing NetBird Caddy; 0 public ports).
+#   - `panel_internal` is isolated (no internet).
+#   - `exness_mt5_ingest` is a shared internal Docker network for zero-latency MT5 Bridge EA traffic (<1ms).
+#   - `panel_docker_proxy` isolates `docker-socket-proxy` from every service except `backend`.
+
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=32m"]
+  pids_limit: 128
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  frontend:
+    <<: *hardening
+    image: huseynovlar-terminal-frontend:${IMAGE_TAG:-latest}
+    container_name: terminal-frontend
+    ports:
+      - "127.0.0.1:${FRONTEND_LOCAL_PORT:-18443}:8080"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=16m
+      - /var/run:rw,noexec,nosuid,nodev,size=4m
+    networks: [panel_internal]
+    depends_on:
+      backend:
+        condition: service_healthy
+    mem_limit: 96m
+    cpus: 0.3
+
+  backend:
+    <<: *hardening
+    image: huseynovlar-terminal-backend:${IMAGE_TAG:-latest}
+    container_name: terminal-backend
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    environment:
+      TERMINAL_DOMAIN: ${TERMINAL_DOMAIN:-terminal.huseynovlar.org}
+      TERMINAL_ORIGIN: ${TERMINAL_ORIGIN:-https://terminal.huseynovlar.org}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-terminal.huseynovlar.org}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Huseynovlar Terminal}
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Asia/Baku}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:?VAULT_MASTER_KEY is required}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-terminal_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-huseynovlar_terminal}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      DOCKER_HOST: http://docker-proxy:2375
+      MANAGED_CONTAINER_LABEL: ${MANAGED_CONTAINER_LABEL:-exness-panel.managed=true}
+      ALLOWED_MT5_CONTAINERS: ${ALLOWED_MT5_CONTAINERS:-}
+    volumes:
+      - ../config:/app/config:ro
+    networks: [panel_internal, exness_mt5_ingest, panel_docker_proxy]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      docker-proxy:
+        condition: service_started
+    mem_limit: 384m
+    cpus: 0.8
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    <<: *hardening
+    image: huseynovlar-terminal-backend:${IMAGE_TAG:-latest}
+    container_name: terminal-worker
+    command: ["python", "-m", "worker.main"]
+    environment:
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Asia/Baku}
+      VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:?VAULT_MASTER_KEY is required}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-terminal_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-huseynovlar_terminal}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      GOOGLE_AI_DEFAULT_MODEL: ${GOOGLE_AI_DEFAULT_MODEL:-gemini-2.5-flash}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      ALERTS_BOT_WEBHOOK_URL: ${ALERTS_BOT_WEBHOOK_URL:-}
+      ALERTS_BOT_WEBHOOK_SECRET: ${ALERTS_BOT_WEBHOOK_SECRET:-}
+    volumes:
+      - ../config:/app/config:ro
+    networks: [panel_internal, panel_egress]
+    dns: [1.1.1.1, 9.9.9.9]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 384m
+    cpus: 0.7
+
+  postgres:
+    restart: unless-stopped
+    image: postgres:16-alpine
+    container_name: terminal-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-huseynovlar_terminal}
+      POSTGRES_USER: ${POSTGRES_USER:-terminal_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - terminal_pgdata:/var/lib/postgresql/data
+    networks: [panel_internal]
+    mem_limit: 512m
+    cpus: 0.8
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-terminal_app} -d ${POSTGRES_DB:-huseynovlar_terminal}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    <<: *hardening
+    image: redis:7-alpine
+    container_name: terminal-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    networks: [panel_internal]
+    mem_limit: 160m
+    cpus: 0.3
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+
+  docker-proxy:
+    <<: *hardening
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: terminal-docker-proxy
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /usr/local/etc/haproxy:rw,noexec,nosuid,nodev,size=1m
+      - /run:rw,noexec,nosuid,nodev,size=1m
+    environment:
+      CONTAINERS: 1
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [panel_docker_proxy]
+    mem_limit: 64m
+    cpus: 0.2
+
+networks:
+  panel_internal:
+    internal: true
+  panel_docker_proxy:
+    internal: true
+  panel_egress:
+    driver: bridge
+  exness_mt5_ingest:
+    external: true
+
+volumes:
+  terminal_pgdata:

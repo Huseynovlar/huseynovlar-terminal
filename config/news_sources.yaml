@@ -1,0 +1,83 @@
+# Free World News, Economic Calendar & Macro Sources (0 $/month)
+
+rss_feeds:
+  - id: kitco_gold
+    name: Kitco News
+    url: https://www.kitco.com/rss/category/commodities/gold
+    category: commodities
+    priority: high
+    default_assets: [XAUUSD]
+    poll_interval_sec: 120
+
+  - id: fxstreet_news
+    name: FXStreet Market News
+    url: https://www.fxstreet.com/rss/news
+    category: forex_macro
+    priority: high
+    default_assets: [XAUUSD, USTEC, EURUSD]
+    poll_interval_sec: 90
+
+  - id: cnbc_finance
+    name: CNBC Finance & Markets
+    url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664
+    category: equities_macro
+    priority: high
+    default_assets: [USTEC]
+    poll_interval_sec: 120
+
+  - id: cnbc_tech
+    name: CNBC Technology
+    url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19854910
+    category: tech
+    priority: medium
+    default_assets: [USTEC]
+    poll_interval_sec: 180
+
+  - id: marketwatch_top
+    name: MarketWatch Top Stories
+    url: https://feeds.content.dowjones.io/public/rss/mw_topstories
+    category: global_markets
+    priority: high
+    default_assets: [XAUUSD, USTEC]
+    poll_interval_sec: 120
+
+  - id: fed_press
+    name: Federal Reserve Press Releases
+    url: https://www.federalreserve.gov/feeds/press_all.xml
+    category: central_banks
+    priority: critical
+    default_assets: [XAUUSD, USTEC, EURUSD]
+    poll_interval_sec: 120
+
+  - id: gdelt_geopolitics
+    name: GDELT 2.0 Geopolitics & Gold
+    type: gdelt_api
+    query: "(gold OR federal reserve OR inflation OR geopolitical crisis OR nasdaq)"
+    category: geopolitics
+    priority: medium
+    default_assets: [XAUUSD, USTEC]
+    poll_interval_sec: 300
+
+economic_calendar:
+  primary_url: https://nfs.faireconomy.media/ff_calendar_thisweek.json
+  poll_interval_sec: 900
+  high_impact_currencies: [USD, EUR, GBP, JPY]
+
+macro_quotes:
+  poll_interval_sec: 60
+  symbols:
+    - code: DXY
+      yahoo: DX-Y.NYB
+      label: US Dollar Index
+    - code: US10Y
+      yahoo: "^TNX"
+      label: US 10Y Yield
+    - code: VIX
+      yahoo: "^VIX"
+      label: Volatility Index
+    - code: SPX
+      yahoo: "^GSPC"
+      label: S&P 500
+    - code: XAGUSD
+      yahoo: "SI=F"
+      label: Silver Futures

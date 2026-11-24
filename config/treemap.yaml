@@ -1,0 +1,35 @@
+# Market Treemap Heatmap (StockCharts / Finviz style)
+# Refreshed by terminal-worker via Yahoo Finance batch + Redis cache
+
+refresh_interval_sec: 180
+periods: [1D, 1W, 1M, YTD]
+
+universes:
+  nasdaq100:
+    name: NASDAQ-100 (USTEC Drivers)
+    linked_asset: USTEC
+    sectors:
+      Semiconductors & AI: [NVDA, AVGO, AMD, QCOM, TXN, INTU, AMAT, MU, LRCX, KLAC, ASML, ARM]
+      Big Tech & Cloud: [AAPL, MSFT, AMZN, GOOGL, META, NFLX, ADBE, CRWD, PANW, PLTR, ORCL]
+      Consumer & Auto: [TSLA, COST, PEP, SBUX, BKNG, MELI, MAR, ABNB]
+      Biotech & Healthcare: [AMGN, ISRG, GILD, VRTX, REGN, AZN]
+
+  sp500_top:
+    name: S&P 500 & Global Leaders
+    linked_asset: USTEC
+    sectors:
+      Technology: [AAPL, MSFT, NVDA, AVGO, ORCL, CRM, AMD, ADBE, CSCO]
+      Communication: [GOOGL, META, NFLX, DIS, TMUS, VZ]
+      Financials: [BRK-B, JPM, V, MA, BAC, WFC, GS, MS, BLK]
+      Healthcare: [LLY, UNH, JNJ, ABBV, MRK, TMO, ABT, PFE]
+      Energy & Industrials: [XOM, CVX, GE, CAT, RTX, UNP, HON, LMT]
+      Consumer: [AMZN, TSLA, WMT, COST, HD, PG, KO, MCD]
+
+  gold_commodities:
+    name: Gold & Commodities Ecosystem (XAUUSD Drivers)
+    linked_asset: XAUUSD
+    sectors:
+      Precious Metals: ["GC=F", "SI=F", "PL=F", "PA=F"]
+      Gold Miners: [NEM, GOLD, AEM, WPM, FNV, GDX, GDXJ, KGC]
+      Energy & Industrial Metals: ["CL=F", "BZ=F", "NG=F", "HG=F"]
+      Macro Rates & USD: ["DX-Y.NYB", "^TNX", "TLT"]
