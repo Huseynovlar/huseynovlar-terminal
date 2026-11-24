@@ -244,4 +244,130 @@ class SecretVaultEntry(Base):
     )
 
 
+class Deal(Base):
+    """Idempotent MT5 trading deals (excludes DEAL_TYPE_BALANCE which goes to BalanceOperation)."""
+
+    __tablename__ = "deals"
+    __table_args__ = (UniqueConstraint("account_id", "mt5_deal_ticket", name="uq_deal_account_ticket"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("trading_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    mt5_deal_ticket: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    order_ticket: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    position_id: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, index=True)
+    magic_number: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    deal_type: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0=BUY, 1=SELL
+    entry_type: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0=IN, 1=OUT, 2=INOUT
+    volume: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    commission: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    swap: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    profit: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    fee: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    net_profit: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    net_profit_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    comment: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    time_msc: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+
+
+class BalanceOperation(Base):
+    """Deposits, withdrawals, internal transfers, and Exness Vault movements separated from trading PnL."""
+
+    __tablename__ = "balance_operations"
+    __table_args__ = (UniqueConstraint("account_id", "mt5_deal_ticket", name="uq_balop_account_ticket"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("trading_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    mt5_deal_ticket: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    op_kind: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="DEPOSIT"
+    )  # DEPOSIT|WITHDRAWAL|INTERNAL_TRANSFER|EXNESS_VAULT|REBATE
+    amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    amount_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    comment: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    time_msc: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+
+
+class OpenPositionLive(Base):
+    """Currently open positions per MT5 account with live MAE/MFE tracking."""
+
+    __tablename__ = "open_positions_live"
+    __table_args__ = (UniqueConstraint("account_id", "position_ticket", name="uq_openpos_account_ticket"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("trading_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    position_ticket: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    magic_number: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)  # BUY | SELL
+    volume: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    open_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    current_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    sl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    tp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    swap: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    profit: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    profit_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    mae_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    mfe_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    open_time: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    comment: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class EquitySnapshot(Base):
+    __tablename__ = "equity_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("trading_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    balance_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    equity_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    floating_pnl_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    margin_level: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    open_positions_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
+
+
+class MarketBar(Base):
+    """Exact Exness MT5 OHLCV candles (M1, M5, M15, M30, H1, H4, D1, W1)."""
+
+    __tablename__ = "market_bars"
+    __table_args__ = (UniqueConstraint("symbol", "timeframe", "bar_time", name="uq_bar_sym_tf_time"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    bar_time: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    open: Mapped[float] = mapped_column(Float, nullable=False)
+    high: Mapped[float] = mapped_column(Float, nullable=False)
+    low: Mapped[float] = mapped_column(Float, nullable=False)
+    close: Mapped[float] = mapped_column(Float, nullable=False)
+    volume: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+
+class PendingCommand(Base):
+    """Queued emergency Kill-Switch commands consumed by ExnessPanelBridge.mq5 if AllowRemoteClose=true."""
+
+    __tablename__ = "pending_commands"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("trading_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    command: Mapped[str] = mapped_column(String(32), nullable=False)  # CLOSE_ALL | CLOSE_POSITION
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    consumed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
 Index("ix_audit_logs_action_created", AuditLog.action, AuditLog.created_at)
+Index("ix_market_bars_lookup", MarketBar.symbol, MarketBar.timeframe, MarketBar.bar_time)

@@ -15,12 +15,14 @@ export interface TerminalPreferencesState {
   density: DensityMode;
   tickerEnabled: boolean;
   tickerSpeed: TickerSpeed;
+  soundEnabled: boolean;
   hiddenPageIds: string[];
   pinnedAssetCodes: string[];
   customHotkeys: Record<string, string>;
 
   toggleCurrencyMode: () => void;
   togglePrivacyMode: () => void;
+  toggleSound: () => void;
   cycleTimezone: () => void;
   setLanguage: (lang: LanguageMode) => void;
   setDensity: (density: DensityMode) => void;
@@ -57,6 +59,7 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
       density: "comfortable",
       tickerEnabled: true,
       tickerSpeed: "normal",
+      soundEnabled: true,
       hiddenPageIds: [],
       pinnedAssetCodes: ["XAUUSD", "USTEC"],
       customHotkeys: { ...DEFAULT_HOTKEYS },
@@ -64,6 +67,7 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
       toggleCurrencyMode: () =>
         set((s) => ({ currencyMode: s.currencyMode === "USD" ? "USC" : "USD" })),
       togglePrivacyMode: () => set((s) => ({ privacyMode: !s.privacyMode })),
+      toggleSound: () => set((s) => ({ soundEnabled: !s.soundEnabled })),
       cycleTimezone: () =>
         set((s) => {
           const idx = TZ_ORDER.indexOf(s.timezone);

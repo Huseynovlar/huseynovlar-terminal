@@ -9,6 +9,8 @@ from app.modules.accounts.router import router as accounts_router
 from app.modules.assets.router import router as assets_router
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
+from app.modules.charts.router import router as charts_router
+from app.modules.ingest.router import router as ingest_router
 from app.modules.profile.router import router as profile_router
 
 
@@ -37,6 +39,8 @@ def create_app() -> FastAPI:
             ModuleSpec("assets", assets_router),
             ModuleSpec("accounts", accounts_router),
             ModuleSpec("audit", audit_router),
+            ModuleSpec("ingest", ingest_router),
+            ModuleSpec("charts", charts_router),
         ],
     )
 

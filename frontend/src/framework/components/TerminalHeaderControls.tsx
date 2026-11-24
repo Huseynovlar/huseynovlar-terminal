@@ -1,6 +1,7 @@
-import { Clock, Eye, EyeOff, Languages, Radio } from "lucide-react";
+import { Clock, Eye, EyeOff, Languages, Radio, Volume2, VolumeX } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { soundEngine } from "@/framework/sound-engine";
 import { useTerminalStore } from "@/framework/terminal-store";
 
 export function TerminalHeaderControls() {
@@ -10,8 +11,10 @@ export function TerminalHeaderControls() {
     timezone,
     language,
     tickerEnabled,
+    soundEnabled,
     toggleCurrencyMode,
     togglePrivacyMode,
+    toggleSound,
     cycleTimezone,
     setLanguage,
     setTickerEnabled,
@@ -37,6 +40,20 @@ export function TerminalHeaderControls() {
         title="Privacy Mode — скрыть суммы $ (Shift+M)"
       >
         {privacyMode ? <EyeOff className="size-3.5 text-amber-500" /> : <Eye className="size-3.5" />}
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2"
+        onClick={() => {
+          const next = !soundEnabled;
+          toggleSound();
+          if (next) soundEngine.tradeOpen(true);
+        }}
+        title="Звуковые эффекты (сделки, прибыль, срочные новости)"
+      >
+        {soundEnabled ? <Volume2 className="size-3.5 text-emerald-500" /> : <VolumeX className="size-3.5 text-muted-foreground" />}
       </Button>
 
       <Button
