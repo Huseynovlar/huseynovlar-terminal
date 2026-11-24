@@ -61,11 +61,13 @@ jobs:
           docker build -f backend/Dockerfile -t "huseynovlar-terminal-backend:$TAG" .
           docker build -f frontend/Dockerfile -t "huseynovlar-terminal-frontend:$TAG" .
 
-      - name: Create release bundle
+      - name: Create release bundle (images + compose + configs)
         run: |
           mkdir -p bundle
           docker save "huseynovlar-terminal-backend:$TAG" -o bundle/backend.tar
           docker save "huseynovlar-terminal-frontend:$TAG" -o bundle/frontend.tar
+          cp deploy/docker-compose.yml bundle/docker-compose.yml
+          cp -r config bundle/config
           tar -czf release.tgz -C bundle .
 
       - name: Install NetBird

@@ -57,7 +57,7 @@ services:
       MANAGED_CONTAINER_LABEL: ${MANAGED_CONTAINER_LABEL:-exness-panel.managed=true}
       ALLOWED_MT5_CONTAINERS: ${ALLOWED_MT5_CONTAINERS:-}
     volumes:
-      - ../config:/app/config:ro
+      - ${CONFIG_HOST_DIR:-./config}:/app/config:ro
     networks: [panel_internal, exness_mt5_ingest, panel_docker_proxy]
     depends_on:
       postgres:
@@ -92,7 +92,7 @@ services:
       ALERTS_BOT_WEBHOOK_URL: ${ALERTS_BOT_WEBHOOK_URL:-}
       ALERTS_BOT_WEBHOOK_SECRET: ${ALERTS_BOT_WEBHOOK_SECRET:-}
     volumes:
-      - ../config:/app/config:ro
+      - ${CONFIG_HOST_DIR:-./config}:/app/config:ro
     networks: [panel_internal, panel_egress]
     dns: [1.1.1.1, 9.9.9.9]
     depends_on:

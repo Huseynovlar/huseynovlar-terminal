@@ -16,6 +16,15 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 tar -xzf - -C "$TMP" --no-same-owner --no-same-permissions
 [ -f "$TMP/backend.tar" ] && [ -f "$TMP/frontend.tar" ] || { echo "bundle missing image tars" >&2; exit 1; }
 
+# Auto-sync docker-compose.yml and config/ from GitHub Actions release bundle
+if [ -f "$TMP/docker-compose.yml" ]; then
+  cp "$TMP/docker-compose.yml" "$BASE/docker-compose.yml"
+fi
+if [ -d "$TMP/config" ]; then
+  rm -rf "$BASE/config"
+  cp -r "$TMP/config" "$BASE/config"
+fi
+
 docker load -i "$TMP/backend.tar"
 docker load -i "$TMP/frontend.tar"
 
