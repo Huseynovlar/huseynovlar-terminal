@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node / Frontend
+node_modules/
+dist/
+.vinxi/
+.output/
+.tanstack/
+*.local
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Backups & Data
+backups/
+*.sql.gz
+*.sqlite3
+
+# MQL5 compiled binaries
+*.ex5
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
