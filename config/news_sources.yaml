@@ -1,14 +1,25 @@
-# Free World News, Economic Calendar & Macro Sources (0 $/month)
+# Redundant Multi-Source Free World News, Economic Calendar & Macro Sources (0 $/month)
+# If any primary feed times out or rate-limits, the worker automatically continues with remaining sources.
 
 rss_feeds:
+  # --- Gold & Commodities (XAUUSD primary + fallbacks) ---
   - id: kitco_gold
-    name: Kitco News
+    name: Kitco Gold News
     url: https://www.kitco.com/rss/category/commodities/gold
     category: commodities
     priority: high
     default_assets: [XAUUSD]
     poll_interval_sec: 120
 
+  - id: investing_commodities
+    name: Investing.com Commodities
+    url: https://www.investing.com/rss/news_11.rss
+    category: commodities
+    priority: medium
+    default_assets: [XAUUSD]
+    poll_interval_sec: 180
+
+  # --- Forex & Global Macro (Multi-region) ---
   - id: fxstreet_news
     name: FXStreet Market News
     url: https://www.fxstreet.com/rss/news
@@ -17,6 +28,15 @@ rss_feeds:
     default_assets: [XAUUSD, USTEC, EURUSD]
     poll_interval_sec: 90
 
+  - id: investing_forex
+    name: Investing.com Forex & Economy
+    url: https://www.investing.com/rss/news_1.rss
+    category: forex_macro
+    priority: medium
+    default_assets: [XAUUSD, EURUSD]
+    poll_interval_sec: 180
+
+  # --- US Equities & Tech (USTEC / NASDAQ-100 primary + fallbacks) ---
   - id: cnbc_finance
     name: CNBC Finance & Markets
     url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664
@@ -41,6 +61,15 @@ rss_feeds:
     default_assets: [XAUUSD, USTEC]
     poll_interval_sec: 120
 
+  - id: yahoo_finance_top
+    name: Yahoo Finance Global
+    url: https://finance.yahoo.com/news/rssindex
+    category: global_markets
+    priority: medium
+    default_assets: [USTEC, XAUUSD]
+    poll_interval_sec: 180
+
+  # --- Central Banks (Critical Policy Releases) ---
   - id: fed_press
     name: Federal Reserve Press Releases
     url: https://www.federalreserve.gov/feeds/press_all.xml
@@ -49,8 +78,25 @@ rss_feeds:
     default_assets: [XAUUSD, USTEC, EURUSD]
     poll_interval_sec: 120
 
+  - id: ecb_press
+    name: European Central Bank Press
+    url: https://www.ecb.europa.eu/rss/press.html
+    category: central_banks
+    priority: high
+    default_assets: [EURUSD, XAUUSD]
+    poll_interval_sec: 300
+
+  # --- Global Wire & Geopolitics (GDELT 2.0 + Google News Finance Fallback) ---
+  - id: google_news_markets
+    name: Google News World Markets
+    url: https://news.google.com/rss/search?q=gold+OR+nasdaq+OR+federal+reserve+OR+inflation&hl=en-US&gl=US&ceid=US:en
+    category: global_wire
+    priority: medium
+    default_assets: [XAUUSD, USTEC]
+    poll_interval_sec: 240
+
   - id: gdelt_geopolitics
-    name: GDELT 2.0 Geopolitics & Gold
+    name: GDELT 2.0 Geopolitics & Macro
     type: gdelt_api
     query: "(gold OR federal reserve OR inflation OR geopolitical crisis OR nasdaq)"
     category: geopolitics
@@ -60,8 +106,9 @@ rss_feeds:
 
 economic_calendar:
   primary_url: https://nfs.faireconomy.media/ff_calendar_thisweek.json
+  fallback_url: https://nfs.faireconomy.media/ff_calendar_nextweek.json
   poll_interval_sec: 900
-  high_impact_currencies: [USD, EUR, GBP, JPY]
+  high_impact_currencies: [USD, EUR, GBP, JPY, CHF]
 
 macro_quotes:
   poll_interval_sec: 60

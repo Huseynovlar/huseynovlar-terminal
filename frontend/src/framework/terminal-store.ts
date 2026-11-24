@@ -2,8 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type CurrencyMode = "USD" | "USC";
-export type TimezoneMode = "Asia/Baku" | "UTC" | "Exness";
-export type LanguageMode = "ru" | "en";
+export type TimezoneMode = "UTC" | "Asia/Baku" | "Exness";
+export type LanguageMode = "ru" | "en" | "az";
 export type DensityMode = "comfortable" | "compact";
 export type TickerSpeed = "slow" | "normal" | "fast";
 
@@ -24,6 +24,7 @@ export interface TerminalPreferencesState {
   togglePrivacyMode: () => void;
   toggleSound: () => void;
   cycleTimezone: () => void;
+  cycleLanguage: () => void;
   setLanguage: (lang: LanguageMode) => void;
   setDensity: (density: DensityMode) => void;
   setTickerEnabled: (enabled: boolean) => void;
@@ -47,14 +48,15 @@ export const DEFAULT_HOTKEYS: Record<string, string> = {
   "hotkeys.help": "?",
 };
 
-const TZ_ORDER: TimezoneMode[] = ["Asia/Baku", "UTC", "Exness"];
+const TZ_ORDER: TimezoneMode[] = ["UTC", "Asia/Baku", "Exness"];
+const LANG_ORDER: LanguageMode[] = ["ru", "en", "az"];
 
 export const useTerminalStore = create<TerminalPreferencesState>()(
   persist(
     (set) => ({
       currencyMode: "USD",
       privacyMode: false,
-      timezone: "Asia/Baku",
+      timezone: "UTC",
       language: "ru",
       density: "comfortable",
       tickerEnabled: true,
@@ -72,6 +74,11 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
         set((s) => {
           const idx = TZ_ORDER.indexOf(s.timezone);
           return { timezone: TZ_ORDER[(idx + 1) % TZ_ORDER.length] };
+        }),
+      cycleLanguage: () =>
+        set((s) => {
+          const idx = LANG_ORDER.indexOf(s.language);
+          return { language: LANG_ORDER[(idx + 1) % LANG_ORDER.length] };
         }),
       setLanguage: (language) => set({ language }),
       setDensity: (density) => set({ density }),

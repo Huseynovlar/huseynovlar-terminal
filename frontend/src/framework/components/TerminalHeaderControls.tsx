@@ -16,7 +16,7 @@ export function TerminalHeaderControls() {
     togglePrivacyMode,
     toggleSound,
     cycleTimezone,
-    setLanguage,
+    cycleLanguage,
     setTickerEnabled,
   } = useTerminalStore();
 
@@ -71,8 +71,8 @@ export function TerminalHeaderControls() {
         variant="ghost"
         size="sm"
         className="h-7 gap-1 px-2 text-[11px] uppercase"
-        onClick={() => setLanguage(language === "ru" ? "en" : "ru")}
-        title="Переключить язык RU / EN"
+        onClick={cycleLanguage}
+        title="Переключить язык RU / EN / AZ"
       >
         <Languages className="size-3" />
         {language}

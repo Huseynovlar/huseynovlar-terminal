@@ -9,14 +9,15 @@
 ---
 
 ## Текущий статус
-- **Активная фаза:** Фаза 4 — Market Treemap Heatmap (StockCharts/Finviz), Резервные мульти-источники мировых новостей, Экономический календарь и Google AI (Gemini) Co-Pilot
-- **Последнее действие:** Полностью завершена **Фаза 3 (Институциональная аналитика, Полный отчёт Exness, Казначейство/Хранилище и WebSocket Live Hook)**:
-  - **Backend:** создан `backend/app/modules/analytics/router.py` (`/overview`, `/treasury`, `/statement.csv` UTF-8 BOM Excel-compatible) с расчётом Win Rate, Profit Factor, Expectancy, Payoff Ratio, Max Drawdown, Recovery Factor, Sharpe, Daily Calendar Heatmap, Hourly Heatmap (00–23), разрезов по активам/счетам (`USD`+`USC`)/роботам и учётом Хранилища Exness (`DEAL_TYPE_BALANCE`). Прогнаны `ruff` и `pytest` (**6/6 PASSED**).
-  - **Frontend:** создан `use-live-socket.ts` (автопереподключаемый WebSocket со звуковыми эффектами сделок/крупной прибыли/новостей), обновлены единым шаблоном `<TerminalPageShell>` страницы `analytics/route.tsx` (Risk Lab + Equity/Underwater графики + часовой/дневной heatmap + экспорт CSV/PDF), `finance/route.tsx` (Казначейство и Хранилище Exness с индикатором цели фиксации прибыли) и `default/route.tsx` (Мульти-счета `USD`+`USC` и Роботы).
-- **Следующий шаг:** Начать **Фазу 4** — `worker/` (резервные мульти-источники мировых новостей со всего мира, ForexFactory календарь, Market Treemap Heatmap NASDAQ-100 / S&P 500 / Gold & Commodities) + интеграция **Google AI (Gemini)** + UI-страницы карты рынка и AI-копилота.
+- **Активная фаза:** Фаза 5 — Docker Ops (`docker-socket-proxy`), Kill-Switch, Telegram-уведомления, Редактор горячих клавиш (`F13–F24`) и Setup Wizard (`.set` генератор) / Wiki
+- **Последнее действие:** Полностью завершена **Фаза 4 (Market Treemap Heatmap, Резервные мульти-источники мировых новостей, Календарь, Google AI Gemini Co-Pilot, UTC по умолчанию и 3 языка RU/EN/AZ)**:
+  - **Config & Worker:** расширен `config/news_sources.yaml` (12 резервных мировых источников: Kitco, Investing, FXStreet, CNBC Finance/Tech, MarketWatch, Yahoo Finance, Fed, ECB, Google News, GDELT 2.0 + резервный календарь ForexFactory), создан `worker/main.py`.
+  - **Backend:** добавлены `NewsItem`, `EconomicEvent`, `AiBriefing` и `backend/app/modules/intelligence/router.py` (`/news`, `/news/refresh` с изоляцией ошибок по каждому фиду и WS-рассылкой Breaking News, `/calendar`, `/treemap`, `/ai/analyze` для Google Gemini с живым контекстом портфеля). Прогнаны `ruff` и `pytest` (**8/8 PASSED**).
+  - **Frontend:** создан `MarketTreemap.tsx` (StockCharts/Finviz тремап NASDAQ-100 / S&P 500 / Gold & Commodities с `1D/1W/1M/YTD`), страница `chat/route.tsx` (мировые новости + фильтры по активам + Google Gemini Co-Pilot с утренним брифингом и риск-анализом), часовой пояс по умолчанию переведён на **`UTC`**, добавлены **3 языка (`RU` / `EN` / `AZ`)**.
+- **Следующий шаг:** Начать **Фазу 5** — `containers/router.py` (`docker-socket-proxy` allowlist + Restart/Start/Stop/Logs), аварийный Kill-Switch, `setup_wizard/router.py` (`.set` генератор MT5), Telegram-алерты и UI-страницы Containers Ops, Setup Wizard/Wiki, Profile/Vault и Visual Hotkey Editor (`F13–F24`).
 - **Важные сквозные правила пользователя:**
   - Все команды для VPS выдавать **готовыми цельными copy-paste блоками**.
-  - В Фазе 4 добавить **резервные мульти-источники мировых новостей и рыночных данных** (максимум информации без зависимости от одного источника).
+  - Единое живое время по умолчанию **`UTC`** (настраиваемое) и **3 языка (`RU` / `EN` / `AZ`)**.
   - В Фазе 6 повторить проверенную схему **GitHub Actions + NetBird SSH деплоя из `server_telegram_bot`**.
 
 ---
@@ -27,7 +28,7 @@
 - [x] Импортировать UI-базу **Studio Admin** (`arhamkhnz/tanstack-shadcn-admin-dashboard`) в `frontend/`
 - [x] Создать централизованные YAML-конфиги:
   - [x] `config/assets.default.yaml` (`XAUUSD`, `USTEC`, Watchlist, алиасы, новостные теги)
-  - [x] `config/news_sources.yaml` (бесплатные RSS/Atom, GDELT, ForexFactory JSON, макро-котировки)
+  - [x] `config/news_sources.yaml` (12 резервных бесплатных источников RSS/Atom, GDELT, ForexFactory JSON, макро-котировки)
   - [x] `config/treemap.yaml` (NASDAQ-100, S&P 500, Global Top, Gold & Commodities)
   - [x] `config/alerts.default.yaml` (шаблоны правил уведомлений)
 - [x] Создать `deploy/docker-compose.yml` (6 изолированных контейнеров с security hardening: `terminal-frontend`, `terminal-backend`, `terminal-worker`, `terminal-postgres`, `terminal-redis`, `terminal-docker-proxy`)
@@ -44,7 +45,7 @@
 - [x] **Frontend (Studio Admin + Mini-Framework — Фаза 1B):**
   - [x] Реализовать `frontend/src/framework/` (`pages.config.ts`, `terminal-store.ts`, `api-client.ts`, `<TerminalPageShell>` единый шаблон страниц)
   - [x] Реализовать Split-Screen страницу **Login / Bootstrap** (`auth/v2/login`: FIDO2 Passkey 1-click + пароль + 2FA TOTP)
-  - [x] Реализовать **бегущую строку в шапке (`BloombergTickerTape`)** + `TerminalHeaderControls` (`USD/USC`, `Privacy Shift+M`, `Asia/Baku`, `RU/EN`, `Ticker`, звук) + `HotkeyEngine` (`Shift+M/C/T`, `G D/A/M/N/C/I`, `?`, готовность под `F13–F24`)
+  - [x] Реализовать **бегущую строку в шапке (`BloombergTickerTape`)** + `TerminalHeaderControls` (`USD/USC`, `Privacy Shift+M`, `UTC`, `RU/EN/AZ`, `Ticker`, звук) + `HotkeyEngine` (`Shift+M/C/T`, `G D/A/M/N/C/I`, `?`, готовность под `F13–F24`)
   - [x] Обновить левое меню под группы `Huseynovlar Terminal` (`Терминал`, `Хабы активов`, `Рынок и ИИ`, `Инфраструктура`, `Система`)
   - [x] Проверить `npm run build` (успешно, exit code 0) и обновить `docs/ROADMAP_TODO.md`
 
@@ -66,11 +67,12 @@
 - [x] **Live WebSocket Hook (`use-live-socket.ts`):** автопереподключение `/api/v1/ws/live` + триггеры звуковых эффектов на сделки, крупную прибыль и срочные новости
 - [x] **Тесты Фазы 3:** `ruff check` + `pytest -v` (**6/6 PASSED**) + `npm run build`
 
-## Фаза 4: Market Treemap (StockCharts), Мировые новости, Календарь и Google AI (Gemini)
-- [ ] **Market Treemap Heatmap:** `worker/app/treemap_collector.py` (`yfinance` + кэш Redis) + интерактивная карта в UI (NASDAQ-100, S&P 500, Global Top, Gold & Commodities) с периодами `1D`/`1W`/`1M`/`YTD`
-- [ ] **World News & Calendar Worker:** бесплатные RSS (Kitco, FXStreet, CNBC, MarketWatch, Fed, Google News), GDELT 2.0, ForexFactory JSON календарь, макро-лента (`DXY`, `US10Y`, `VIX`, `SPX`), подача Breaking News в бегущую строку шапки
-- [ ] **Google AI (Gemini) Co-Pilot:** настройка ключа и модели в UI, AI News Pulse (перевод + sentiment + impact 1–10), Morning/Evening Briefing, интерактивный Portfolio Risk Copilot, Weekly Trade Post-Mortem
-- [ ] **Тесты Фазы 4:** парсинг фидов, дедупликация, мок-тесты Gemini и Treemap
+## Фаза 4: Market Treemap (StockCharts), Резервные мировые новости, Календарь и Google AI (Gemini)
+- [x] **Market Treemap Heatmap:** `GET /api/v1/intelligence/treemap` + `MarketTreemap.tsx` (NASDAQ-100 `USTEC`, S&P 500, Gold & Commodities `XAUUSD`, периоды `1D`/`1W`/`1M`/`YTD`)
+- [x] **Redundant World News & Calendar:** 12 резервных источников в `config/news_sources.yaml`, устойчивый RSS/Atom парсер с изоляцией сбоев и WS-рассылкой Breaking News (`intelligence/router.py`) + `worker/main.py`
+- [x] **Google AI (Gemini) Co-Pilot:** `POST /api/v1/intelligence/ai/analyze` (зашифрованный ключ из Secret Vault, живой контекст портфеля/позиций/новостей) + UI `chat/route.tsx` (утренний брифинг, риск-анализ, интерактивный чат)
+- [x] **Единое время `UTC` по умолчанию + 3 языка (`RU` / `EN` / `AZ`)**
+- [x] **Тесты Фазы 4:** `ruff check` + `pytest -v` (**8/8 PASSED**) + `npm run build`
 
 ## Фаза 5: Docker Ops, Kill-Switch, Telegram-алерты, Hotkeys/Macro-Pad и Setup Wizard / Wiki
 - [ ] **Docker Containers Ops:** интеграция `docker-socket-proxy` (label `exness-panel.managed=true` + allowlist для отдельных MT5 compose-контейнеров), статус/CPU/RAM/логи, Restart/Start/Stop с подтверждением и Audit Log

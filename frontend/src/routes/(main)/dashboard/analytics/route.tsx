@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/framework/api-client";
+import { MarketTreemap } from "@/framework/components/MarketTreemap";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useTerminalStore } from "@/framework/terminal-store";
 import { useLiveTerminalSocket } from "@/framework/use-live-socket";
@@ -179,6 +180,9 @@ function DeepAnalyticsPage() {
           </Card>
         ))}
       </div>
+
+      {/* StockCharts / Finviz Global Market Heatmap */}
+      <MarketTreemap />
 
       {/* Equity Curve & Underwater Drawdown */}
       <div className="grid gap-4 lg:grid-cols-12">

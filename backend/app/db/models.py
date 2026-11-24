@@ -369,5 +369,53 @@ class PendingCommand(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
+class NewsItem(Base):
+    """Deduplicated global financial news with asset tags and Google Gemini AI metadata."""
+
+    __tablename__ = "news_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    dedup_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False, default="global")
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    affected_assets: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    sentiment: Mapped[str] = mapped_column(String(16), nullable=False, default="neutral")  # bullish|bearish|neutral
+    impact_score: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    is_breaking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ai_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
+
+
+class EconomicEvent(Base):
+    """High/Medium/Low impact macroeconomic calendar events."""
+
+    __tablename__ = "economic_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    dedup_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    impact: Mapped[str] = mapped_column(String(16), nullable=False, default="Medium")  # High|Medium|Low
+    forecast: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    previous: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+
+class AiBriefing(Base):
+    """Stored Google Gemini AI briefings and portfolio risk analyses."""
+
+    __tablename__ = "ai_briefings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="copilot")
+    model_name: Mapped[str] = mapped_column(String(64), nullable=False, default="gemini-2.5-flash")
+    prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    response_md: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
+
+
 Index("ix_audit_logs_action_created", AuditLog.action, AuditLog.created_at)
 Index("ix_market_bars_lookup", MarketBar.symbol, MarketBar.timeframe, MarketBar.bar_time)
