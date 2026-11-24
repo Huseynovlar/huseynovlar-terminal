@@ -37,36 +37,30 @@ interface TreasuryData {
   }[];
 }
 
-const PREVIEW_TREASURY: TreasuryData = {
+const EMPTY_TREASURY: TreasuryData = {
   summary: {
-    working_capital_usd: 18680.5,
-    total_deposited_usd: 15000.0,
-    total_withdrawn_usd: 1200.0,
-    total_vault_usd: 2450.0,
-    total_rebates_usd: 145.0,
-    realized_trading_profit_usd: 4285.4,
-    profit_ready_for_vault_usd: 635.4,
+    working_capital_usd: 0,
+    total_deposited_usd: 0,
+    total_withdrawn_usd: 0,
+    total_vault_usd: 0,
+    total_rebates_usd: 0,
+    realized_trading_profit_usd: 0,
+    profit_ready_for_vault_usd: 0,
     vault_target_usd: 500.0,
-    vault_target_reached: true,
+    vault_target_reached: false,
   },
-  operations: [
-    { id: "1", account_name: "XAUUSD Pro USD", currency: "USD", op_kind: "EXNESS_VAULT", amount_usd: -850, comment: "Transfer to Exness Vault", timestamp: "2026-11-22T14:20:00Z" },
-    { id: "2", account_name: "USTEC Pro USD", currency: "USD", op_kind: "INTERNAL_TRANSFER", amount_usd: -400, comment: "Internal transfer to Reserve", timestamp: "2026-11-19T11:05:00Z" },
-    { id: "3", account_name: "XAUUSD Cent USC", currency: "USC", op_kind: "DEPOSIT", amount_usd: 1000, comment: "Deposit 100,000 USC", timestamp: "2026-11-12T08:40:00Z" },
-  ],
+  operations: [],
 };
 
 function TreasuryVaultPage() {
   const privacyMode = useTerminalStore((s) => s.privacyMode);
-  const [data, setData] = useState<TreasuryData>(PREVIEW_TREASURY);
+  const [data, setData] = useState<TreasuryData>(EMPTY_TREASURY);
   const [filter, setFilter] = useState<string>("ALL");
 
   useEffect(() => {
     apiRequest<TreasuryData>("/analytics/treasury")
-      .then((res) => {
-        if (res.operations.length > 0 || res.summary.working_capital_usd > 0) setData(res);
-      })
-      .catch(() => {});
+      .then((res) => setData(res))
+      .catch(() => setData(EMPTY_TREASURY));
   }, []);
 
   const fmt = (usd: number) =>

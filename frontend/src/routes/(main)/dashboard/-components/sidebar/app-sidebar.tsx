@@ -13,15 +13,24 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { APP_CONFIG } from "@/config/app-config";
-import { rootUser } from "@/data/users";
 import { sidebarItems } from "@/navigation/sidebar/sidebar-items";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
 import { NavMain } from "./nav-main";
 import { NavUser } from "./nav-user";
-import { SupportCard } from "./support-card";
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export interface CurrentTerminalUser {
+  readonly id: string;
+  readonly name: string;
+  readonly email: string;
+  readonly avatar: string;
+  readonly role: string;
+}
+
+export function AppSidebar({
+  currentUser,
+  ...props
+}: React.ComponentProps<typeof Sidebar> & { readonly currentUser: CurrentTerminalUser }) {
   const { sidebarVariant, sidebarCollapsible, isSynced } = usePreferencesStore(
     useShallow((s) => ({
       sidebarVariant: s.values.sidebar_variant,
@@ -49,8 +58,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain items={sidebarItems} />
       </SidebarContent>
       <SidebarFooter>
-        <SupportCard />
-        <NavUser user={rootUser} />
+        <NavUser user={currentUser} />
       </SidebarFooter>
     </Sidebar>
   );

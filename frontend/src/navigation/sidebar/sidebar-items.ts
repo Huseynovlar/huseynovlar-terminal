@@ -67,7 +67,6 @@ export const sidebarItems: NavGroup[] = [
         title: "Общая сводка",
         url: "/dashboard/crypto",
         icon: LayoutDashboard,
-        badge: "updated",
       },
       {
         id: "accounts-robots",
@@ -92,14 +91,12 @@ export const sidebarItems: NavGroup[] = [
         title: "XAUUSD (Золото)",
         url: "/dashboard/crypto",
         icon: Coins,
-        badge: "new",
       },
       {
         id: "asset-ustec",
         title: "USTEC (NASDAQ-100)",
         url: "/dashboard/crypto",
         icon: Cpu,
-        badge: "new",
       },
     ],
   },
@@ -112,7 +109,6 @@ export const sidebarItems: NavGroup[] = [
         title: "Карта рынка (Treemap)",
         url: "/dashboard/analytics",
         icon: Grid2x2,
-        badge: "new",
       },
       {
         id: "analytics-risk",

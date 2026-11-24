@@ -1,4 +1,5 @@
-import { CircleUser, CreditCard, EllipsisVertical, LogOut, MessageSquareDot } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { CircleUser, EllipsisVertical, LogOut, Settings } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -10,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
+import { authApi, setAccessToken } from "@/framework/api-client";
 import { getInitials } from "@/lib/utils";
 
 export function NavUser({
@@ -23,6 +25,16 @@ export function NavUser({
 }) {
   const { isMobile } = useSidebar();
 
+  async function handleLogout() {
+    try {
+      await authApi.logout();
+    } catch {
+      // ignore
+    }
+    setAccessToken(null);
+    window.location.replace("/auth/v2/login");
+  }
+
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -35,7 +47,7 @@ export function NavUser({
               />
             }
           >
-            <Avatar className="h-8 w-8 rounded-lg grayscale">
+            <Avatar className="h-8 w-8 rounded-lg">
               <AvatarImage src={user.avatar || undefined} alt={user.name} />
               <AvatarFallback className="rounded-lg">{getInitials(user.name)}</AvatarFallback>
             </Avatar>
@@ -63,23 +75,19 @@ export function NavUser({
             </div>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem render={<Link to="/dashboard/profile" />}>
                 <CircleUser />
-                Account
+                Профиль и Безопасность
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <CreditCard />
-                Billing
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <MessageSquareDot />
-                Notifications
+              <DropdownMenuItem render={<Link to="/dashboard/roles" />}>
+                <Settings />
+                Настройки и Хоткеи
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={handleLogout}>
               <LogOut />
-              Log out
+              Выйти
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

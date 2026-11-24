@@ -45,70 +45,10 @@ interface VerifiedSourceRow {
   items_count: number;
 }
 
-const PREVIEW_NEWS: NewsRow[] = [
-  {
-    id: "n1",
-    source: "Kitco Gold News",
-    source_domain: "kitco.com",
-    trust_tier: "tier1",
-    is_verified_source: true,
-    corroborating_sources: ["FXStreet Market News", "MarketWatch (Dow Jones)"],
-    verified_corroborators: ["FXStreet Market News", "MarketWatch (Dow Jones)"],
-    verification_count: 3,
-    verified_source_count: 3,
-    category: "commodities",
-    title: "Gold holds firm above $2,640 as global central banks accelerate physical reserve buying",
-    url: "https://www.kitco.com/",
-    affected_assets: ["XAUUSD"],
-    sentiment: "bullish",
-    impact_score: 9,
-    is_breaking: true,
-    published_at: new Date().toISOString(),
-  },
-  {
-    id: "n2",
-    source: "CNBC Finance & Markets",
-    source_domain: "cnbc.com",
-    trust_tier: "tier1",
-    is_verified_source: true,
-    corroborating_sources: ["Yahoo Finance Global"],
-    verified_corroborators: ["Yahoo Finance Global"],
-    verification_count: 2,
-    verified_source_count: 2,
-    category: "equities_macro",
-    title: "NASDAQ-100 futures climb ahead of US CPI as AI semiconductor revenue beats consensus",
-    url: "https://www.cnbc.com/",
-    affected_assets: ["USTEC"],
-    sentiment: "bullish",
-    impact_score: 8,
-    is_breaking: false,
-    published_at: new Date().toISOString(),
-  },
-  {
-    id: "n3",
-    source: "Federal Reserve Press Releases",
-    source_domain: "federalreserve.gov",
-    trust_tier: "official",
-    is_verified_source: true,
-    corroborating_sources: [],
-    verified_corroborators: [],
-    verification_count: 1,
-    verified_source_count: 1,
-    category: "central_banks",
-    title: "FOMC minutes highlight data-dependent rate path; traders monitor Treasury yields (US10Y)",
-    url: "https://www.federalreserve.gov/",
-    affected_assets: ["XAUUSD", "USTEC", "EURUSD"],
-    sentiment: "neutral",
-    impact_score: 9,
-    is_breaking: true,
-    published_at: new Date().toISOString(),
-  },
-];
-
 function WorldNewsAndGeminiPage() {
   const [assetFilter, setAssetFilter] = useState<string>("ALL");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
-  const [news, setNews] = useState<NewsRow[]>(PREVIEW_NEWS);
+  const [news, setNews] = useState<NewsRow[]>([]);
   const [sources, setSources] = useState<VerifiedSourceRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -124,10 +64,8 @@ function WorldNewsAndGeminiPage() {
     if (onlyVerified) params.set("verified_only", "true");
     const qs = params.toString() ? `?${params.toString()}` : "";
     apiRequest<NewsRow[]>(`/intelligence/news${qs}`)
-      .then((rows) => {
-        if (rows.length > 0) setNews(rows);
-      })
-      .catch(() => {});
+      .then((rows) => setNews(rows))
+      .catch(() => setNews([]));
   }
 
   function loadSources() {

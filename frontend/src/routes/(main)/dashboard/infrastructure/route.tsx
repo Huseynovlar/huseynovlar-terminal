@@ -23,14 +23,8 @@ interface ContainerRow {
   status: string;
 }
 
-const PREVIEW_CONTAINERS: ContainerRow[] = [
-  { id: "c1a2b3", name: "mt5-xauusd-usd", image: "mt5-wine-desktop:latest", state: "running", status: "Up 14 days" },
-  { id: "c4d5e6", name: "mt5-xauusd-usc", image: "mt5-wine-desktop:latest", state: "running", status: "Up 14 days" },
-  { id: "c7f8g9", name: "mt5-ustec-usd", image: "mt5-wine-desktop:latest", state: "running", status: "Up 9 days" },
-];
-
 function ContainersOpsPage() {
-  const [containers, setContainers] = useState<ContainerRow[]>(PREVIEW_CONTAINERS);
+  const [containers, setContainers] = useState<ContainerRow[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [logsTitle, setLogsTitle] = useState<string | null>(null);
   const [logsText, setLogsText] = useState<string>("");
@@ -46,10 +40,8 @@ function ContainersOpsPage() {
 
   function loadContainers() {
     apiRequest<ContainerRow[]>("/ops/containers")
-      .then((rows) => {
-        if (rows.length > 0) setContainers(rows);
-      })
-      .catch(() => {});
+      .then((rows) => setContainers(rows))
+      .catch(() => setContainers([]));
   }
 
   useEffect(() => {

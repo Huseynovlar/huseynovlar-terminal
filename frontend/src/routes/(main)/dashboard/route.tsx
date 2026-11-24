@@ -6,19 +6,17 @@ import { cn } from "cn";
 
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { users } from "@/data/users";
 import { apiRequest, type AuthTokenResponse, getAccessToken, setAccessToken } from "@/framework/api-client";
-import { getDashboardLayout } from "@/server/server-actions";
-
 import { BloombergTickerTape } from "@/framework/components/BloombergTickerTape";
 import { HotkeyEngine } from "@/framework/components/HotkeyEngine";
 import { TerminalHeaderControls } from "@/framework/components/TerminalHeaderControls";
+import { getDashboardLayout } from "@/server/server-actions";
 
 import { AccountSwitcher } from "./-components/header/account-switcher";
 import { LayoutControls } from "./-components/header/layout-controls";
 import { SearchDialog } from "./-components/header/search-dialog";
 import { ThemeSwitcher } from "./-components/header/theme-switcher";
-import { AppSidebar } from "./-components/sidebar/app-sidebar";
+import { AppSidebar, type CurrentTerminalUser } from "./-components/sidebar/app-sidebar";
 
 export const Route = createFileRoute("/(main)/dashboard")({
   loader: () => getDashboardLayout(),
@@ -27,7 +25,7 @@ export const Route = createFileRoute("/(main)/dashboard")({
 
 function DashboardLayout() {
   const { defaultOpen, variant, collapsible } = Route.useLoaderData();
-  const [authStatus, setAuthStatus] = useState<"checking" | "authed">("checking");
+  const [currentUser, setCurrentUser] = useState<CurrentTerminalUser | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,8 +37,23 @@ function DashboardLayout() {
             setAccessToken(refreshed.access_token);
           }
         }
-        await apiRequest("/profile/me");
-        if (!cancelled) setAuthStatus("authed");
+        const profile = await apiRequest<{
+          id: string;
+          username: string;
+          email: string;
+          display_name: string;
+          avatar_url: string;
+          role: string;
+        }>("/profile/me");
+        if (!cancelled) {
+          setCurrentUser({
+            id: profile.id,
+            name: profile.display_name || profile.username,
+            email: profile.email,
+            avatar: profile.avatar_url || "",
+            role: profile.role || "owner",
+          });
+        }
       } catch {
         setAccessToken(null);
         if (!cancelled) {
@@ -54,7 +67,7 @@ function DashboardLayout() {
     };
   }, []);
 
-  if (authStatus !== "authed") {
+  if (!currentUser) {
     return (
       <div className="bg-background text-muted-foreground flex h-dvh w-full items-center justify-center font-mono text-xs">
         Проверка доступа (Zero-Trust Session Guard)...
@@ -72,7 +85,7 @@ function DashboardLayout() {
       }
     >
       <HotkeyEngine />
-      <AppSidebar variant={variant} collapsible={collapsible} />
+      <AppSidebar variant={variant} collapsible={collapsible} currentUser={currentUser} />
       <SidebarInset
         className={cn(
           "[html[data-content-layout=centered]_&>*]:mx-auto",
@@ -87,7 +100,6 @@ function DashboardLayout() {
         <header
           className={cn(
             "flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12",
-            // Handle sticky navbar style with conditional classes so blur, background, z-index, and rounded corners remain consistent across all SidebarVariant layouts.
             "[html[data-navbar-style=sticky]_&]:bg-background/50 [html[data-navbar-style=sticky]_&]:sticky [html[data-navbar-style=sticky]_&]:top-0 [html[data-navbar-style=sticky]_&]:z-50 [html[data-navbar-style=sticky]_&]:overflow-hidden [html[data-navbar-style=sticky]_&]:rounded-t-[inherit] [html[data-navbar-style=sticky]_&]:backdrop-blur-md",
           )}
         >
@@ -108,11 +120,10 @@ function DashboardLayout() {
               />
               <LayoutControls />
               <ThemeSwitcher />
-              <AccountSwitcher users={users} />
+              <AccountSwitcher user={currentUser} />
             </div>
           </div>
         </header>
-        {/* Pages can set data-content-padding="false" to render full-bleed app layouts. */}
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 has-data-[content-padding=false]:p-0 md:p-6 md:has-data-[content-padding=false]:p-0">
           <Outlet />
         </div>

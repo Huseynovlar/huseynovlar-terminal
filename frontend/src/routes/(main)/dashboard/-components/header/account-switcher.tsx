@@ -1,7 +1,5 @@
-import { useState } from "react";
-
-import { cn } from "cn";
-import { BadgeCheck, Bell, Check, CreditCard, LogOut } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { BadgeCheck, LogOut, Settings } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -12,78 +10,54 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { authApi, setAccessToken } from "@/framework/api-client";
 import { getInitials } from "@/lib/utils";
 
-export function AccountSwitcher({
-  users,
-}: {
-  readonly users: ReadonlyArray<{
-    readonly id: string;
-    readonly name: string;
-    readonly email: string;
-    readonly avatar: string;
-    readonly role: string;
-  }>;
-}) {
-  const [activeUser, setActiveUser] = useState(users[0]);
+import type { CurrentTerminalUser } from "../sidebar/app-sidebar";
 
-  if (!activeUser) {
-    return null;
+export function AccountSwitcher({ user }: { readonly user: CurrentTerminalUser }) {
+  async function handleLogout() {
+    try {
+      await authApi.logout();
+    } catch {
+      // ignore
+    }
+    setAccessToken(null);
+    window.location.replace("/auth/v2/login");
   }
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger nativeButton={false} render={<Avatar className="size-9 rounded-lg" />}>
-        <AvatarImage src={activeUser.avatar || undefined} alt={activeUser.name} />
-        <AvatarFallback>{getInitials(activeUser.name)}</AvatarFallback>
+      <DropdownMenuTrigger nativeButton={false} render={<Avatar className="size-9 cursor-pointer rounded-lg" />}>
+        <AvatarImage src={user.avatar || undefined} alt={user.name} />
+        <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="min-w-56 space-y-1 rounded-lg" side="bottom" align="end" sideOffset={4}>
-        {users.map((user) => (
-          <DropdownMenuItem
-            key={user.email}
-            className={cn("p-0", user.id === activeUser.id && "bg-accent/50")}
-            aria-current={user.id === activeUser.id ? "true" : undefined}
-            onClick={() => setActiveUser(user)}
-          >
-            <div className="flex w-full items-center gap-2 px-1 py-1.5">
-              <Avatar className="size-9 rounded-lg">
-                <AvatarImage src={user.avatar || undefined} alt={user.name} />
-                <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
-              </Avatar>
-              <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">{user.name}</span>
-                <span className="truncate text-xs capitalize">{user.role}</span>
-              </div>
-              <span
-                className={cn(
-                  "text-primary mr-1 flex size-5 items-center justify-center rounded-full opacity-0",
-                  user.id === activeUser.id && "opacity-100",
-                )}
-              >
-                <Check aria-hidden="true" />
-              </span>
-            </div>
-          </DropdownMenuItem>
-        ))}
+        <div className="flex items-center gap-2 px-2 py-1.5">
+          <Avatar className="size-9 rounded-lg">
+            <AvatarImage src={user.avatar || undefined} alt={user.name} />
+            <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+          </Avatar>
+          <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+            <span className="truncate font-semibold">{user.name}</span>
+            <span className="text-muted-foreground truncate text-xs">{user.email}</span>
+          </div>
+        </div>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem>
+          <DropdownMenuItem render={<Link to="/dashboard/profile" />}>
             <BadgeCheck />
-            Account
+            Профиль и Безопасность
           </DropdownMenuItem>
-          <DropdownMenuItem>
-            <CreditCard />
-            Billing
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            <Bell />
-            Notifications
+          <DropdownMenuItem render={<Link to="/dashboard/roles" />}>
+            <Settings />
+            Настройки и Хоткеи
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={handleLogout}>
           <LogOut />
-          Log out
+          Выйти
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

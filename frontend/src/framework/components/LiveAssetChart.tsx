@@ -118,102 +118,8 @@ interface ChartBundle {
   deals: DealItem[];
 }
 
-function buildPreviewBundle(asset: string, tf: Timeframe): ChartBundle {
-  const stepSec =
-    tf === "M1" ? 60 : tf === "M5" ? 300 : tf === "M15" ? 900 : tf === "M30" ? 1800 : tf === "H1" ? 3600 : 14400;
-  const base = asset === "USTEC" ? 20810 : 2635;
-  const vol = asset === "USTEC" ? 22 : 2.8;
-  const now = Math.floor(Date.now() / 1000 / stepSec) * stepSec;
-  const bars: ChartBar[] = [];
-  let price = base;
-  for (let i = 100; i >= 0; i--) {
-    const t = now - i * stepSec;
-    const wave = Math.sin(i * 0.27) * vol * 0.6 + Math.cos(i * 0.11) * vol * 0.5;
-    const open = Number(price.toFixed(2));
-    const close = Number((open + wave).toFixed(2));
-    const high = Number((Math.max(open, close) + vol * 0.45).toFixed(2));
-    const low = Number((Math.min(open, close) - vol * 0.45).toFixed(2));
-    bars.push({ time: t, open, high, low, close, volume: 350 + ((i * 37) % 450) });
-    price = close;
-  }
-  const last = bars[bars.length - 1];
-  const entryIdx = bars.length - 18;
-  const exitIdx = bars.length - 8;
-  return {
-    asset_code: asset,
-    timeframe: tf,
-    bars,
-    open_positions: [
-      {
-        position_ticket: 90124,
-        account_id: "usd-1",
-        account_name: `${asset} Pro USD`,
-        currency: "USD",
-        magic_number: 77701,
-        symbol: asset,
-        side: "BUY",
-        volume: 0.25,
-        open_price: Number((last.close - vol * 1.4).toFixed(2)),
-        current_price: last.close,
-        sl: Number((last.close - vol * 3.2).toFixed(2)),
-        tp: Number((last.close + vol * 2.8).toFixed(2)),
-        profit_usd: asset === "USTEC" ? 184.5 : 96.4,
-        mae_usd: -28.0,
-        mfe_usd: 118.2,
-        open_time: bars[bars.length - 12].time,
-      },
-      {
-        position_ticket: 90125,
-        account_id: "usc-1",
-        account_name: `${asset} Cent USC`,
-        currency: "USC",
-        magic_number: 77702,
-        symbol: `${asset}c`,
-        side: "BUY",
-        volume: 1.5,
-        open_price: Number((last.close - vol * 0.9).toFixed(2)),
-        current_price: last.close,
-        sl: Number((last.close - vol * 2.9).toFixed(2)),
-        tp: Number((last.close + vol * 2.2).toFixed(2)),
-        profit_usd: 34.2,
-        mae_usd: -9.5,
-        mfe_usd: 41.0,
-        open_time: bars[bars.length - 7].time,
-      },
-    ],
-    deals: [
-      {
-        mt5_deal_ticket: 88001,
-        account_id: "usd-1",
-        account_name: `${asset} Pro USD`,
-        currency: "USD",
-        position_id: 88001,
-        magic_number: 77701,
-        symbol: asset,
-        side: "BUY",
-        entry: "IN",
-        volume: 0.3,
-        price: bars[entryIdx].open,
-        net_profit_usd: 0,
-        time_sec: bars[entryIdx].time,
-      },
-      {
-        mt5_deal_ticket: 88002,
-        account_id: "usd-1",
-        account_name: `${asset} Pro USD`,
-        currency: "USD",
-        position_id: 88001,
-        magic_number: 77701,
-        symbol: asset,
-        side: "SELL",
-        entry: "OUT",
-        volume: 0.3,
-        price: bars[exitIdx].close,
-        net_profit_usd: asset === "USTEC" ? 312.8 : 148.6,
-        time_sec: bars[exitIdx].time,
-      },
-    ],
-  };
+function emptyBundle(asset: string, tf: Timeframe): ChartBundle {
+  return { asset_code: asset, timeframe: tf, bars: [], open_positions: [], deals: [] };
 }
 
 export function LiveAssetChart() {
@@ -226,7 +132,7 @@ export function LiveAssetChart() {
   const [explorerMeta, setExplorerMeta] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<Timeframe>("M5");
   const [accountFilter, setAccountFilter] = useState<string>("ALL");
-  const [bundle, setBundle] = useState<ChartBundle>(() => buildPreviewBundle("XAUUSD", "M5"));
+  const [bundle, setBundle] = useState<ChartBundle>(() => emptyBundle("XAUUSD", "M5"));
   const [isLiveSource, setIsLiveSource] = useState(false);
 
   // Pro Drawing Tools & Technical Indicators
@@ -287,32 +193,59 @@ export function LiveAssetChart() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Load real chart bundle from backend (tracked MT5 asset OR instant any-symbol market explorer)
+  // Load real MT5 chart bundle; if MT5 hasn't streamed candles yet, load real market candles (ZERO fake trades)
   useEffect(() => {
     let cancelled = false;
-    const endpoint = isExplorerMode
-      ? `/charts/explore?symbol=${encodeURIComponent(asset)}&timeframe=${timeframe}`
-      : `/charts/${encodeURIComponent(asset)}?timeframe=${timeframe}`;
 
-    apiRequest<ChartBundle & { name?: string; change_pct?: number }>(endpoint)
-      .then((res) => {
+    async function loadChart() {
+      if (isExplorerMode) {
+        try {
+          const res = await apiRequest<ChartBundle & { name?: string; change_pct?: number }>(
+            `/charts/explore?symbol=${encodeURIComponent(asset)}&timeframe=${timeframe}`,
+          );
+          if (!cancelled) {
+            setBundle(res);
+            setIsLiveSource(false);
+            setExplorerMeta(res.name ? `${res.name} (${res.change_pct ?? 0}%)` : asset);
+          }
+        } catch {
+          if (!cancelled) setBundle(emptyBundle(asset, timeframe));
+        }
+        return;
+      }
+
+      try {
+        const res = await apiRequest<ChartBundle>(
+          `/charts/${encodeURIComponent(asset)}?timeframe=${timeframe}`,
+        );
         if (!cancelled && res.bars && res.bars.length > 0) {
           setBundle(res);
           setIsLiveSource(true);
-          setExplorerMeta(res.name ? `${res.name} (${res.change_pct ?? 0}%)` : null);
-        } else if (!cancelled && !isExplorerMode) {
-          setBundle(buildPreviewBundle(asset, timeframe));
+          setExplorerMeta(null);
+          return;
+        }
+        // Fallback to real market candles (Yahoo Finance) while keeping real open_positions & deals from DB
+        const market = await apiRequest<ChartBundle & { name?: string }>(
+          `/charts/explore?symbol=${encodeURIComponent(asset)}&timeframe=${timeframe}`,
+        );
+        if (!cancelled) {
+          setBundle({
+            ...market,
+            open_positions: res.open_positions || [],
+            deals: res.deals || [],
+          });
           setIsLiveSource(false);
           setExplorerMeta(null);
         }
-      })
-      .catch(() => {
-        if (!cancelled && !isExplorerMode) {
-          setBundle(buildPreviewBundle(asset, timeframe));
+      } catch {
+        if (!cancelled) {
+          setBundle(emptyBundle(asset, timeframe));
           setIsLiveSource(false);
-          setExplorerMeta(null);
         }
-      });
+      }
+    }
+
+    loadChart();
     return () => {
       cancelled = true;
     };
@@ -640,7 +573,7 @@ export function LiveAssetChart() {
               ? `EXPLORER: ${explorerMeta || asset}`
               : isLiveSource
                 ? "MT5 LIVE"
-                : "DEMO PREVIEW (ЖДЁТ MT5 BRIDGE)"}
+                : "MARKET FEED (ЖДЁТ MT5)"}
           </Badge>
         </div>
       </div>

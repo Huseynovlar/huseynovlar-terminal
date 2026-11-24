@@ -57,70 +57,40 @@ interface AnalyticsOverview {
   by_account: { account_name: string; currency: string; total_trades: number; win_rate_pct: number; net_pnl_usd: number }[];
 }
 
-const PREVIEW_ANALYTICS: AnalyticsOverview = {
-  portfolio: { total_balance_usd: 18450.0, total_equity_usd: 18680.5, total_floating_pnl_usd: 230.5, accounts_count: 4 },
+const EMPTY_ANALYTICS: AnalyticsOverview = {
+  portfolio: { total_balance_usd: 0, total_equity_usd: 0, total_floating_pnl_usd: 0, accounts_count: 0 },
   metrics: {
-    total_trades: 148,
-    wins: 102,
-    losses: 46,
-    win_rate_pct: 68.92,
-    net_pnl_usd: 4285.4,
-    profit_factor: 2.64,
-    expectancy_usd: 28.96,
-    payoff_ratio: 1.48,
-    max_drawdown_usd: 412.8,
-    max_drawdown_pct: 4.18,
-    recovery_factor: 10.38,
-    sharpe_ratio: 3.12,
-    total_lots: 64.5,
+    total_trades: 0,
+    wins: 0,
+    losses: 0,
+    win_rate_pct: 0,
+    net_pnl_usd: 0,
+    profit_factor: 0,
+    expectancy_usd: 0,
+    payoff_ratio: 0,
+    max_drawdown_usd: 0,
+    max_drawdown_pct: 0,
+    recovery_factor: 0,
+    sharpe_ratio: 0,
+    total_lots: 0,
   },
-  equity_curve: [
-    { date: "Nov 01", cum_pnl_usd: 320, drawdown_usd: 0 },
-    { date: "Nov 04", cum_pnl_usd: 780, drawdown_usd: -45 },
-    { date: "Nov 08", cum_pnl_usd: 640, drawdown_usd: -140 },
-    { date: "Nov 12", cum_pnl_usd: 1590, drawdown_usd: 0 },
-    { date: "Nov 15", cum_pnl_usd: 2140, drawdown_usd: -80 },
-    { date: "Nov 19", cum_pnl_usd: 3180, drawdown_usd: -210 },
-    { date: "Nov 22", cum_pnl_usd: 3890, drawdown_usd: -40 },
-    { date: "Nov 24", cum_pnl_usd: 4285, drawdown_usd: 0 },
-  ],
-  daily_calendar: [
-    { date: "2026-11-18", net_pnl_usd: 284.5, trades: 9 },
-    { date: "2026-11-19", net_pnl_usd: -95.2, trades: 6 },
-    { date: "2026-11-20", net_pnl_usd: 418.0, trades: 11 },
-    { date: "2026-11-21", net_pnl_usd: 192.4, trades: 7 },
-    { date: "2026-11-22", net_pnl_usd: 540.1, trades: 12 },
-    { date: "2026-11-23", net_pnl_usd: -42.0, trades: 4 },
-    { date: "2026-11-24", net_pnl_usd: 395.0, trades: 8 },
-  ],
-  hourly_heatmap: Array.from({ length: 24 }, (_, hour) => ({
-    hour,
-    net_pnl_usd: hour >= 9 && hour <= 18 ? Number((Math.sin(hour) * 180 + 160).toFixed(1)) : Number((Math.cos(hour) * 60).toFixed(1)),
-    trades: hour >= 9 && hour <= 18 ? 10 : 3,
-  })),
-  by_symbol: [
-    { symbol: "XAUUSD", total_trades: 94, win_rate_pct: 71.2, profit_factor: 2.85, net_pnl_usd: 2640.2 },
-    { symbol: "USTEC", total_trades: 54, win_rate_pct: 64.8, profit_factor: 2.34, net_pnl_usd: 1645.2 },
-  ],
-  by_account: [
-    { account_name: "XAUUSD Pro USD", currency: "USD", total_trades: 58, win_rate_pct: 72.4, net_pnl_usd: 1980.0 },
-    { account_name: "XAUUSD Cent USC", currency: "USC", total_trades: 36, win_rate_pct: 69.4, net_pnl_usd: 660.2 },
-    { account_name: "USTEC Pro USD", currency: "USD", total_trades: 54, win_rate_pct: 64.8, net_pnl_usd: 1645.2 },
-  ],
+  equity_curve: [],
+  daily_calendar: [],
+  hourly_heatmap: [],
+  by_symbol: [],
+  by_account: [],
 };
 
 function DeepAnalyticsPage() {
   const privacyMode = useTerminalStore((s) => s.privacyMode);
   const currencyMode = useTerminalStore((s) => s.currencyMode);
   const { connected } = useLiveTerminalSocket();
-  const [data, setData] = useState<AnalyticsOverview>(PREVIEW_ANALYTICS);
+  const [data, setData] = useState<AnalyticsOverview>(EMPTY_ANALYTICS);
 
   useEffect(() => {
     apiRequest<AnalyticsOverview>("/analytics/overview?days=90")
-      .then((res) => {
-        if (res.metrics.total_trades > 0) setData(res);
-      })
-      .catch(() => {});
+      .then((res) => setData(res))
+      .catch(() => setData(EMPTY_ANALYTICS));
   }, []);
 
   const fmt = (usd: number, signed = true) => {
