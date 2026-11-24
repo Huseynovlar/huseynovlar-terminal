@@ -7,8 +7,17 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM nginx:1.27-alpine
-COPY deploy/nginx/terminal.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/.output/public /usr/share/nginx/html
+FROM node:22-alpine
+WORKDIR /app
+
+RUN apk add --no-cache nginx curl
+
+COPY --from=builder /app/.output /app/.output
+COPY deploy/nginx/terminal.conf /etc/nginx/terminal.conf
+
+RUN printf '#!/bin/sh\nset -e\nPORT=3000 HOST=127.0.0.1 node /app/.output/server/index.mjs &\nexec nginx -e /dev/stderr -c /etc/nginx/terminal.conf -g "daemon off;"\n' > /app/start.sh \
+    && chmod +x /app/start.sh
+
+USER node
 EXPOSE 8080
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/app/start.sh"]
