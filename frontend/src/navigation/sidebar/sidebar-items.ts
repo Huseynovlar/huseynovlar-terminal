@@ -73,16 +73,20 @@ export function buildSidebarItems(dict: TranslationDict, hiddenPageIds: string[]
       id: 1,
       label: dict.nav.groupDesk,
       items: [
-        { id: "home", title: dict.nav.home, url: "/dashboard/crypto", icon: Home },
-        { id: "charts", title: dict.nav.charts, url: "/dashboard/crypto", icon: Activity },
-        { id: "accounts", title: dict.nav.accounts, url: "/dashboard/default", icon: Bot },
-        { id: "treasury", title: dict.nav.treasury, url: "/dashboard/finance", icon: Banknote },
+        { id: "home", title: dict.nav.home, url: "/dashboard/home", icon: Home },
+        { id: "charts", title: dict.nav.charts, url: "/dashboard/charts", icon: Activity },
+        { id: "accounts", title: dict.nav.accounts, url: "/dashboard/accounts", icon: Layers },
+        { id: "robots", title: dict.nav.robots, url: "/dashboard/robots", icon: Bot },
+        { id: "journal", title: dict.nav.journal, url: "/dashboard/journal", icon: BookOpen },
+        { id: "treasury", title: dict.nav.treasury, url: "/dashboard/treasury", icon: Banknote },
       ],
     },
     {
       id: 2,
       label: dict.nav.groupMarkets,
       items: [
+        { id: "hubs", title: dict.nav.hubs, url: "/dashboard/hubs", icon: Layers },
+        { id: "explorer", title: dict.nav.explorer, url: "/dashboard/explorer", icon: Compass },
         { id: "treemap", title: dict.nav.treemap, url: "/dashboard/treemap", icon: Grid2x2 },
         { id: "analytics", title: dict.nav.analytics, url: "/dashboard/analytics", icon: Gauge },
         { id: "calendar", title: dict.nav.calendar, url: "/dashboard/calendar", icon: Calendar },
@@ -92,8 +96,9 @@ export function buildSidebarItems(dict: TranslationDict, hiddenPageIds: string[]
       id: 3,
       label: dict.nav.groupIntelligence,
       items: [
-        { id: "news", title: dict.nav.news, url: "/dashboard/chat", icon: Newspaper },
-        { id: "ai", title: dict.nav.ai, url: "/dashboard/chat", icon: Sparkles },
+        { id: "news", title: dict.nav.news, url: "/dashboard/news", icon: Newspaper },
+        { id: "news-sources", title: dict.nav.newsSources, url: "/dashboard/news/sources", icon: ShieldCheck },
+        { id: "ai", title: dict.nav.ai, url: "/dashboard/ai", icon: Sparkles },
       ],
     },
     {
@@ -120,10 +125,6 @@ export function buildSidebarItems(dict: TranslationDict, hiddenPageIds: string[]
       ],
     },
   ];
-
-  // Keep icons imported for M5 expansion
-  void Compass;
-  void Layers;
 
   return groups
     .map((group) => ({

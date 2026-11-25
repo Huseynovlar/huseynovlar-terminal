@@ -1,0 +1,150 @@
+import { type FormEvent, useEffect, useState } from "react";
+
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { ArrowLeft, Save } from "lucide-react";
+
+import { AsyncButton } from "@/components/ui/async-button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PageSkeleton } from "@/components/ui/skeleton";
+import { notify } from "@/components/ui/toast";
+import { apiRequest } from "@/framework/api-client";
+import { useI18n } from "@/framework/i18n";
+import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import type { TradingAccountItem } from "@/routes/(main)/dashboard/accounts/index";
+
+export const Route = createFileRoute("/(main)/dashboard/accounts/$accountId/edit")({
+  component: AccountEditPage,
+});
+
+function AccountEditPage() {
+  const { accountId } = Route.useParams();
+  const { t } = useI18n();
+  const navigate = useNavigate();
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState("");
+  const [mt5Server, setMt5Server] = useState("");
+  const [accountType, setAccountType] = useState("PRO");
+  const [currency, setCurrency] = useState("USD");
+  const [leverage, setLeverage] = useState("2000");
+  const [isActive, setIsActive] = useState(true);
+
+  useEffect(() => {
+    apiRequest<TradingAccountItem>(`/accounts/${encodeURIComponent(accountId)}`)
+      .then((acc) => {
+        setName(acc.name);
+        setMt5Server(acc.mt5_server);
+        setAccountType(acc.account_type);
+        setCurrency(acc.currency);
+        setLeverage(String(acc.leverage));
+        setIsActive(acc.is_active);
+      })
+      .catch((err) => notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
+  }, [accountId, t.common.errorTitle]);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await apiRequest(`/accounts/${encodeURIComponent(accountId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: name.trim(),
+          mt5_server: mt5Server.trim(),
+          account_type: accountType,
+          currency,
+          leverage: Number(leverage) || 2000,
+          is_active: isActive,
+        }),
+      });
+      notify.success(t.common.savedSuccess, name);
+      void navigate({ to: "/dashboard/accounts/$accountId", params: { accountId } });
+    } catch (err) {
+      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <PageSkeleton />;
+
+  return (
+    <TerminalPageShell
+      title={t.accounts.editTitle}
+      actions={
+        <Link
+          to="/dashboard/accounts/$accountId"
+          params={{ accountId }}
+          className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
+        >
+          <ArrowLeft className="mr-1.5 size-3.5" />
+          {t.common.back}
+        </Link>
+      }
+    >
+      <Card className="max-w-2xl border-border/70">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">{t.accounts.editTitle}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={(e) => void handleSubmit(e)} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input id="edit-name" required value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-srv">MT5 Server</Label>
+              <Input id="edit-srv" required value={mt5Server} onChange={(e) => setMt5Server(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-type">Account Type</Label>
+              <select
+                id="edit-type"
+                value={accountType}
+                onChange={(e) => setAccountType(e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs"
+              >
+                <option value="PRO">PRO</option>
+                <option value="RAW">RAW Spread</option>
+                <option value="ZERO">ZERO</option>
+                <option value="STANDARD">STANDARD</option>
+                <option value="STANDARD_CENT">STANDARD CENT</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-curr">Currency</Label>
+              <select
+                id="edit-curr"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs"
+              >
+                <option value="USD">USD</option>
+                <option value="USC">USC (Cent ÷100)</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-lev">Leverage</Label>
+              <Input id="edit-lev" type="number" value={leverage} onChange={(e) => setLeverage(e.target.value)} />
+            </div>
+            <div className="flex items-center gap-2 pt-5">
+              <input id="edit-active" type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+              <Label htmlFor="edit-active">{t.common.active}</Label>
+            </div>
+            <div className="sm:col-span-2 pt-2">
+              <AsyncButton type="submit" loading={saving} loadingText={t.common.saving}>
+                <Save className="mr-1.5 size-4" />
+                {t.common.save}
+              </AsyncButton>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </TerminalPageShell>
+  );
+}

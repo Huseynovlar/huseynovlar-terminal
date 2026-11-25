@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { Download, Printer, Radio } from "lucide-react";
+import { Download, FileSpreadsheet, Filter, RefreshCw } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -9,24 +9,42 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 
-import { Badge } from "@/components/ui/badge";
+import { formatSignedUsd, formatUsd } from "@/components/m5/chart-indicators";
+import { AsyncButton } from "@/components/ui/async-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { apiRequest } from "@/framework/api-client";
-import { MarketTreemap } from "@/framework/components/MarketTreemap";
+import { Input } from "@/components/ui/input";
+import { ChartSkeleton, PageSkeleton } from "@/components/ui/skeleton";
+import { notify } from "@/components/ui/toast";
+import { apiDownload, apiRequest } from "@/framework/api-client";
+import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useTerminalStore } from "@/framework/terminal-store";
-import { useLiveTerminalSocket } from "@/framework/use-live-socket";
 
 export const Route = createFileRoute("/(main)/dashboard/analytics")({
-  component: DeepAnalyticsPage,
+  component: AnalyticsLabPage,
 });
+
+interface TradeStats {
+  total_trades: number;
+  win_rate_pct: number;
+  profit_factor: number;
+  net_pnl_usd: number;
+  expectancy_usd: number;
+  avg_win_usd: number;
+  avg_loss_usd: number;
+  max_drawdown_pct?: number;
+}
 
 interface AnalyticsOverview {
   portfolio: {
@@ -35,284 +53,343 @@ interface AnalyticsOverview {
     total_floating_pnl_usd: number;
     accounts_count: number;
   };
-  metrics: {
-    total_trades: number;
-    wins: number;
-    losses: number;
-    win_rate_pct: number;
-    net_pnl_usd: number;
-    profit_factor: number;
-    expectancy_usd: number;
-    payoff_ratio: number;
-    max_drawdown_usd: number;
-    max_drawdown_pct: number;
-    recovery_factor: number;
-    sharpe_ratio: number;
-    total_lots: number;
-  };
-  equity_curve: { date: string; cum_pnl_usd: number; drawdown_usd: number }[];
-  daily_calendar: { date: string; net_pnl_usd: number; trades: number }[];
-  hourly_heatmap: { hour: number; net_pnl_usd: number; trades: number }[];
-  by_symbol: { symbol: string; total_trades: number; win_rate_pct: number; profit_factor: number; net_pnl_usd: number }[];
-  by_account: { account_name: string; currency: string; total_trades: number; win_rate_pct: number; net_pnl_usd: number }[];
+  metrics: TradeStats;
+  equity_curve: Array<{ date?: string; ts?: string; equity_usd?: number; cumulative_pnl_usd?: number }>;
+  drawdown_curve: Array<{ date?: string; ts?: string; drawdown_pct: number }>;
+  daily_pnl: Array<{ date: string; net_pnl_usd: number; trades: number }>;
+  hourly_pnl: Array<{ hour: number; net_pnl_usd: number; trades: number; win_rate_pct: number }>;
+  by_symbol: Array<{ symbol: string; net_pnl_usd: number; total_trades: number; win_rate_pct: number }>;
+  by_robot: Array<{ robot_name: string; net_pnl_usd: number; total_trades: number; win_rate_pct: number }>;
+  long_short_breakdown: { long: TradeStats; short: TradeStats };
+  mae_mfe_scatter: Array<{ symbol: string; mae_usd: number; mfe_usd: number; net_profit_usd: number }>;
+  rolling_win_rate: Array<{ trade_index?: number; date?: string; win_rate_pct: number }>;
 }
 
-const EMPTY_ANALYTICS: AnalyticsOverview = {
-  portfolio: { total_balance_usd: 0, total_equity_usd: 0, total_floating_pnl_usd: 0, accounts_count: 0 },
-  metrics: {
-    total_trades: 0,
-    wins: 0,
-    losses: 0,
-    win_rate_pct: 0,
-    net_pnl_usd: 0,
-    profit_factor: 0,
-    expectancy_usd: 0,
-    payoff_ratio: 0,
-    max_drawdown_usd: 0,
-    max_drawdown_pct: 0,
-    recovery_factor: 0,
-    sharpe_ratio: 0,
-    total_lots: 0,
-  },
-  equity_curve: [],
-  daily_calendar: [],
-  hourly_heatmap: [],
-  by_symbol: [],
-  by_account: [],
-};
-
-function DeepAnalyticsPage() {
+function AnalyticsLabPage() {
+  const { t } = useI18n();
   const privacyMode = useTerminalStore((s) => s.privacyMode);
-  const currencyMode = useTerminalStore((s) => s.currencyMode);
-  const { connected } = useLiveTerminalSocket();
-  const [data, setData] = useState<AnalyticsOverview>(EMPTY_ANALYTICS);
+  const savedFilters = useTerminalStore((s) => s.analyticsFilters);
+  const setAnalyticsFilters = useTerminalStore((s) => s.setAnalyticsFilters);
+
+  const [days, setDays] = useState(String(savedFilters.days ?? "90"));
+  const [accountId, setAccountId] = useState(String(savedFilters.account_id ?? ""));
+  const [symbol, setSymbol] = useState(String(savedFilters.symbol ?? ""));
+  const [magicNumber, setMagicNumber] = useState(String(savedFilters.magic_number ?? ""));
+  const [side, setSide] = useState(String(savedFilters.side ?? ""));
+
+  const [accounts, setAccounts] = useState<Array<{ id: string; name: string; mt5_login: string }>>([]);
+  const [data, setData] = useState<AnalyticsOverview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState<string | null>(null);
 
   useEffect(() => {
-    apiRequest<AnalyticsOverview>("/analytics/overview?days=90")
-      .then((res) => setData(res))
-      .catch(() => setData(EMPTY_ANALYTICS));
+    apiRequest<Array<{ id: string; name: string; mt5_login: string }>>("/accounts")
+      .then((rows) => setAccounts(Array.isArray(rows) ? rows : []))
+      .catch(() => {});
   }, []);
 
-  const fmt = (usd: number, signed = true) => {
-    if (privacyMode) return "••••";
-    const val = currencyMode === "USC" ? usd * 100 : usd;
-    const prefix = currencyMode === "USC" ? "¢" : "$";
-    const sign = signed && val > 0 ? "+" : val < 0 ? "-" : "";
-    return `${sign}${prefix}${Math.abs(val).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
+  const loadAnalytics = useCallback(
+    async (overrides?: { days?: string; accountId?: string; symbol?: string; magicNumber?: string; side?: string }) => {
+      setLoading(true);
+      try {
+        const d = overrides?.days ?? days;
+        const acc = overrides?.accountId ?? accountId;
+        const sym = overrides?.symbol ?? symbol;
+        const mag = overrides?.magicNumber ?? magicNumber;
+        const sd = overrides?.side ?? side;
+
+        const qs = new URLSearchParams({ days: String(Number(d) || 90) });
+        if (acc) qs.set("account_id", acc);
+        if (sym.trim()) qs.set("symbol", sym.trim().toUpperCase());
+        if (mag.trim() && Number.isFinite(Number(mag))) qs.set("magic_number", mag.trim());
+        if (sd) qs.set("side", sd);
+
+        const res = await apiRequest<AnalyticsOverview>(`/analytics/overview?${qs.toString()}`);
+        setData(res);
+      } catch (err) {
+        notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [accountId, days, magicNumber, side, symbol, t.common.errorTitle],
+  );
+
+  useEffect(() => {
+    void loadAnalytics();
+  }, [loadAnalytics]);
+
+  function applyFilters() {
+    setAnalyticsFilters({
+      days: Number(days) || 90,
+      account_id: accountId,
+      symbol: symbol.trim().toUpperCase(),
+      magic_number: magicNumber.trim(),
+      side,
+    });
+    void loadAnalytics();
+    notify.success(t.analytics.applyFilters);
+  }
+
+  async function handleExport(fmt: "csv" | "xlsx") {
+    setExporting(fmt);
+    try {
+      const fn = await apiDownload(`/analytics/statement.${fmt}`, `analytics_statement.${fmt}`);
+      notify.success(t.common.download, fn);
+    } catch (err) {
+      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  if (loading && !data) return <PageSkeleton />;
+
+  const m = data?.metrics;
+  const eqData = (data?.equity_curve ?? []).map((p, i) => ({
+    x: p.date || p.ts || `#${i + 1}`,
+    val: Number(p.equity_usd ?? p.cumulative_pnl_usd ?? 0),
+  }));
+  const ddData = (data?.drawdown_curve ?? []).map((p, i) => ({
+    x: p.date || p.ts || `#${i + 1}`,
+    val: Number(p.drawdown_pct ?? 0),
+  }));
+  const lsData = [
+    {
+      side: "LONG",
+      net_pnl_usd: data?.long_short_breakdown?.long?.net_pnl_usd ?? 0,
+      win_rate_pct: data?.long_short_breakdown?.long?.win_rate_pct ?? 0,
+    },
+    {
+      side: "SHORT",
+      net_pnl_usd: data?.long_short_breakdown?.short?.net_pnl_usd ?? 0,
+      win_rate_pct: data?.long_short_breakdown?.short?.win_rate_pct ?? 0,
+    },
+  ];
 
   return (
     <TerminalPageShell
-      title="Аналитика, Risk Lab и Полный отчёт Exness"
-      subtitle="Сводная институциональная статистика по всем счетам (USD + USC), активам XAUUSD / USTEC и роботам."
-      badge={connected ? "WS LIVE" : "RISK LAB"}
+      title={t.analytics.title}
+      subtitle={t.analytics.subtitle}
+      badge={`${days}D`}
       actions={
         <>
-          <Badge variant={connected ? "default" : "secondary"} className="gap-1 font-mono text-[11px]">
-            <Radio className="size-3" />
-            {connected ? "WebSocket Live" : "Standby"}
-          </Badge>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5 text-xs"
-            onClick={() => {
-              void import("@/framework/api-client").then(({ apiDownload }) =>
-                apiDownload("/analytics/statement.csv", "statement.csv"),
-              );
-            }}
-          >
-            <Download className="size-3.5" />
-            Exness Statement (CSV / Excel)
-          </Button>
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => window.print()}>
-            <Printer className="size-3.5" />
-            PDF / Печать
+          <AsyncButton size="sm" variant="outline" loading={exporting === "csv"} onClick={() => void handleExport("csv")}>
+            <Download className="mr-1.5 size-3.5" />
+            CSV
+          </AsyncButton>
+          <AsyncButton size="sm" variant="outline" loading={exporting === "xlsx"} onClick={() => void handleExport("xlsx")}>
+            <FileSpreadsheet className="mr-1.5 size-3.5" />
+            Excel
+          </AsyncButton>
+          <Button size="sm" variant="outline" onClick={() => void loadAnalytics()}>
+            <RefreshCw className="mr-1.5 size-3.5" />
+            {t.common.refresh}
           </Button>
         </>
       }
     >
-      {/* Institutional KPI Grid */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: `Чистая прибыль (${currencyMode})`, val: fmt(data.metrics.net_pnl_usd), accent: "text-emerald-500" },
-          { label: "Profit Factor / Expectancy", val: `${data.metrics.profit_factor} • ${fmt(data.metrics.expectancy_usd)}`, accent: "" },
-          { label: "Win Rate / Сделки", val: `${data.metrics.win_rate_pct}% (${data.metrics.wins}W / ${data.metrics.losses}L)`, accent: "" },
-          { label: "Max Drawdown / Recovery", val: `${fmt(-data.metrics.max_drawdown_usd)} (${data.metrics.max_drawdown_pct}%) • RF ${data.metrics.recovery_factor}`, accent: "text-rose-500" },
-          { label: "Общий Equity портфеля", val: fmt(data.portfolio.total_equity_usd, false), accent: "" },
-          { label: "Плавающий PnL", val: fmt(data.portfolio.total_floating_pnl_usd), accent: data.portfolio.total_floating_pnl_usd >= 0 ? "text-emerald-500" : "text-rose-500" },
-          { label: "Sharpe / Payoff Ratio", val: `${data.metrics.sharpe_ratio} • ${data.metrics.payoff_ratio}`, accent: "" },
-          { label: "Проторговано объёма", val: `${data.metrics.total_lots} lots (${data.portfolio.accounts_count} счетов)`, accent: "" },
-        ].map((kpi) => (
-          <Card key={kpi.label}>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-muted-foreground text-xs font-normal">{kpi.label}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={`font-mono text-lg font-semibold ${kpi.accent}`}>{kpi.val}</div>
+      {/* Server-Persisted Filter Bar */}
+      <Card className="border-border/70">
+        <CardContent className="flex flex-wrap items-center gap-2 p-3 text-xs">
+          <select value={days} onChange={(e) => setDays(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
+            <option value="7">7D</option>
+            <option value="30">30D</option>
+            <option value="90">90D</option>
+            <option value="365">365D</option>
+          </select>
+          <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
+            <option value="">{t.analytics.allAccounts}</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>{a.name} (#{a.mt5_login})</option>
+            ))}
+          </select>
+          <Input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder={t.analytics.symbolFilter} className="h-8 w-28 text-xs" />
+          <Input value={magicNumber} onChange={(e) => setMagicNumber(e.target.value)} placeholder={t.analytics.magicFilter} className="h-8 w-24 text-xs" />
+          <select value={side} onChange={(e) => setSide(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
+            <option value="">{t.analytics.allSides}</option>
+            <option value="BUY">LONG / BUY</option>
+            <option value="SELL">SHORT / SELL</option>
+          </select>
+          <Button size="sm" onClick={applyFilters}>
+            <Filter className="mr-1.5 size-3.5" />
+            {t.analytics.applyFilters}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* KPI Strip */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">Net PnL</div><div className={`mt-1 font-mono text-lg font-bold ${(m?.net_pnl_usd ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500"}`}>{formatSignedUsd(m?.net_pnl_usd, privacyMode)}</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">Trades</div><div className="mt-1 font-mono text-lg font-bold">{m?.total_trades ?? 0}</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">Win Rate</div><div className="mt-1 font-mono text-lg font-bold">{(m?.win_rate_pct ?? 0).toFixed(1)}%</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">Profit Factor</div><div className="mt-1 font-mono text-lg font-bold">{(m?.profit_factor ?? 0).toFixed(2)}</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">Expectancy</div><div className="mt-1 font-mono text-lg font-bold">{formatSignedUsd(m?.expectancy_usd, privacyMode)}</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">Live Equity</div><div className="mt-1 font-mono text-lg font-bold">{formatUsd(data?.portfolio?.total_equity_usd, privacyMode)}</div></CardContent></Card>
+      </div>
+
+      {/* 8 Interactive Recharts Visualizations */}
+      {loading ? (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <ChartSkeleton height={220} />
+          <ChartSkeleton height={220} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {/* 1. Equity Curve */}
+          <Card className="border-border/70">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">{t.analytics.chartEquity}</CardTitle></CardHeader>
+            <CardContent className="h-[220px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={eqData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                  <XAxis dataKey="x" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} width={56} />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="val" stroke="#f97316" fill="rgba(249,115,22,0.2)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
             </CardContent>
           </Card>
-        ))}
-      </div>
 
-      {/* StockCharts / Finviz Global Market Heatmap */}
-      <MarketTreemap />
+          {/* 2. Drawdown */}
+          <Card className="border-border/70">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">{t.analytics.chartDrawdown}</CardTitle></CardHeader>
+            <CardContent className="h-[220px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={ddData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                  <XAxis dataKey="x" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} width={48} />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="val" stroke="#f43f5e" fill="rgba(244,63,94,0.2)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
 
-      {/* Equity Curve & Underwater Drawdown */}
-      <div className="grid gap-4 lg:grid-cols-12">
-        <Card className="lg:col-span-7">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Кривая накопленной прибыли (Net Equity Curve)</CardTitle>
-          </CardHeader>
-          <CardContent className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.equity_curve}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Area type="monotone" dataKey="cum_pnl_usd" stroke="#10b981" fill="#10b981" fillOpacity={0.18} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+          {/* 3. Daily PnL */}
+          <Card className="border-border/70">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">{t.analytics.chartDaily}</CardTitle></CardHeader>
+            <CardContent className="h-[220px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data?.daily_pnl ?? []}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} width={52} />
+                  <Tooltip />
+                  <Bar dataKey="net_pnl_usd">
+                    {(data?.daily_pnl ?? []).map((entry, idx) => (
+                      <Cell key={idx} fill={entry.net_pnl_usd >= 0 ? "#10b981" : "#f43f5e"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
 
-        <Card className="lg:col-span-5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Underwater Drawdown (Просадка)</CardTitle>
-          </CardHeader>
-          <CardContent className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.equity_curve}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Area type="monotone" dataKey="drawdown_usd" stroke="#ef4444" fill="#ef4444" fillOpacity={0.22} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
+          {/* 4. Hourly Session TCA */}
+          <Card className="border-border/70">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">{t.analytics.chartHourly}</CardTitle></CardHeader>
+            <CardContent className="h-[220px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data?.hourly_pnl ?? []}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                  <XAxis dataKey="hour" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} width={52} />
+                  <Tooltip />
+                  <Bar dataKey="net_pnl_usd">
+                    {(data?.hourly_pnl ?? []).map((entry, idx) => (
+                      <Cell key={idx} fill={entry.net_pnl_usd >= 0 ? "#10b981" : "#f43f5e"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
 
-      {/* Hourly Heatmap & Daily PnL Calendar */}
-      <div className="grid gap-4 lg:grid-cols-12">
-        <Card className="lg:col-span-7">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Прибыльность по часам суток (00:00 – 23:00 UTC)</CardTitle>
-          </CardHeader>
-          <CardContent className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.hourly_heatmap}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                <XAxis dataKey="hour" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="net_pnl_usd">
-                  {data.hourly_heatmap.map((h) => (
-                    <Cell key={h.hour} fill={h.net_pnl_usd >= 0 ? "#10b981" : "#ef4444"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+          {/* 5. Symbol Attribution */}
+          <Card className="border-border/70">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">{t.analytics.chartSymbol}</CardTitle></CardHeader>
+            <CardContent className="h-[220px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data?.by_symbol ?? []}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                  <XAxis dataKey="symbol" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} width={52} />
+                  <Tooltip />
+                  <Bar dataKey="net_pnl_usd" fill="#f97316" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
 
-        <Card className="lg:col-span-5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Календарь доходности по дням</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {data.daily_calendar.map((day) => (
-              <div
-                key={day.date}
-                className={`rounded-lg border p-2.5 font-mono text-xs ${
-                  day.net_pnl_usd >= 0
-                    ? "border-emerald-500/30 bg-emerald-500/10"
-                    : "border-rose-500/30 bg-rose-500/10"
-                }`}
-              >
-                <div className="text-muted-foreground text-[10px]">{day.date}</div>
-                <div className={`font-semibold ${day.net_pnl_usd >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                  {fmt(day.net_pnl_usd)}
-                </div>
-                <div className="text-muted-foreground text-[10px]">{day.trades} сделок</div>
+          {/* 6. Robot Attribution */}
+          <Card className="border-border/70">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">{t.analytics.chartRobot}</CardTitle></CardHeader>
+            <CardContent className="h-[220px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data?.by_robot ?? []}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                  <XAxis dataKey="robot_name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} width={52} />
+                  <Tooltip />
+                  <Bar dataKey="net_pnl_usd" fill="#38bdf8" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* 7. Long vs Short Payoff */}
+          <Card className="border-border/70">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">{t.analytics.chartLongShort}</CardTitle></CardHeader>
+            <CardContent className="h-[220px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={lsData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                  <XAxis dataKey="side" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 10 }} width={52} />
+                  <Tooltip />
+                  <Bar dataKey="net_pnl_usd">
+                    {lsData.map((entry, idx) => (
+                      <Cell key={idx} fill={entry.side === "LONG" ? "#10b981" : "#f43f5e"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* 8. MAE / MFE Scatter & Rolling Win-Rate */}
+          <Card className="border-border/70">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">{t.analytics.chartMaeMfe}</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                    <XAxis type="number" dataKey="mae_usd" name="MAE" tick={{ fontSize: 10 }} />
+                    <YAxis type="number" dataKey="mfe_usd" name="MFE" tick={{ fontSize: 10 }} width={40} />
+                    <Tooltip />
+                    <Scatter data={data?.mae_mfe_scatter ?? []} fill="#f97316" />
+                  </ScatterChart>
+                </ResponsiveContainer>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Asset & Multi-Account Breakdown */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Разрез по активам (XAUUSD vs USTEC)</CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto p-0">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-muted/40 text-muted-foreground border-y border-border/60">
-                <tr>
-                  <th className="px-3 py-2">Актив</th>
-                  <th className="px-3 py-2">Сделок</th>
-                  <th className="px-3 py-2">Win Rate</th>
-                  <th className="px-3 py-2">PF</th>
-                  <th className="px-3 py-2 text-right">Net PnL</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50 font-mono">
-                {data.by_symbol.map((row) => (
-                  <tr key={row.symbol}>
-                    <td className="px-3 py-2 font-semibold">{row.symbol}</td>
-                    <td className="px-3 py-2">{row.total_trades}</td>
-                    <td className="px-3 py-2">{row.win_rate_pct}%</td>
-                    <td className="px-3 py-2">{row.profit_factor}</td>
-                    <td className={`px-3 py-2 text-right font-semibold ${row.net_pnl_usd >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                      {fmt(row.net_pnl_usd)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Разрез по счетам (USD + USC)</CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto p-0">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-muted/40 text-muted-foreground border-y border-border/60">
-                <tr>
-                  <th className="px-3 py-2">Счёт</th>
-                  <th className="px-3 py-2">Валюта</th>
-                  <th className="px-3 py-2">Сделок</th>
-                  <th className="px-3 py-2">Win Rate</th>
-                  <th className="px-3 py-2 text-right">Net PnL</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50 font-mono">
-                {data.by_account.map((row) => (
-                  <tr key={row.account_name}>
-                    <td className="px-3 py-2 font-sans font-medium">{row.account_name}</td>
-                    <td className="px-3 py-2">
-                      <Badge variant="outline" className="text-[10px]">
-                        {row.currency}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2">{row.total_trades}</td>
-                    <td className="px-3 py-2">{row.win_rate_pct}%</td>
-                    <td className={`px-3 py-2 text-right font-semibold ${row.net_pnl_usd >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                      {fmt(row.net_pnl_usd)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      </div>
+              <div className="h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={data?.rolling_win_rate ?? []}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                    <XAxis dataKey="trade_index" tick={{ fontSize: 10 }} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} width={36} />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="win_rate_pct" stroke="#10b981" dot={false} strokeWidth={2} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </TerminalPageShell>
   );
 }

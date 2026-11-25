@@ -1,20 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { MarketTreemap } from "@/framework/components/MarketTreemap";
+import { SquarifiedTreemap } from "@/components/m5/SquarifiedTreemap";
+import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 
 export const Route = createFileRoute("/(main)/dashboard/treemap")({
-  component: MarketTreemapPage,
+  component: TreemapPage,
 });
 
-function MarketTreemapPage() {
+function TreemapPage() {
+  const { t } = useI18n();
   return (
-    <TerminalPageShell
-      title="Карта рынка (Market Treemap)"
-      subtitle="Тепловая карта секторов и лидеров рынка (NASDAQ-100, S&P 500, Золото и сырьё)."
-      badge="TREEMAP"
-    >
-      <MarketTreemap />
+    <TerminalPageShell title={t.treemap.title} subtitle={t.treemap.subtitle} badge="LIVE">
+      <SquarifiedTreemap fullPage={true} />
     </TerminalPageShell>
   );
 }
