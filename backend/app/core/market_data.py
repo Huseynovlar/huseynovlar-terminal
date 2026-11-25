@@ -197,7 +197,11 @@ async def _yahoo_crumb(http: httpx.AsyncClient) -> str | None:
         text = resp.text.strip()
         if resp.status_code == 200 and text and "<" not in text and len(text) < 64:
             _state["crumb"] = text
-            _state["cookies"] = dict(http.cookies)
+            try:
+                _state["cookies"] = dict(http.cookies)
+            except (TypeError, AttributeError):
+                # Test doubles may not expose an iterable cookie jar.
+                _state["cookies"] = {}
             return text
     except httpx.HTTPError:
         return None
