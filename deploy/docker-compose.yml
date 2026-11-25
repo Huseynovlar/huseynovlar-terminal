@@ -79,6 +79,7 @@ services:
       exness_mt5_ingest:
         aliases:
           - ingest.terminal.local
+      huseynovlar_webhooks: {}
     dns: [1.1.1.1, 9.9.9.9]
     depends_on:
       postgres:
@@ -117,7 +118,7 @@ services:
       ALERTS_BOT_WEBHOOK_SECRET: ${ALERTS_BOT_WEBHOOK_SECRET:-}
     volumes:
       - ${CONFIG_HOST_DIR:-./config}:/app/config:ro
-    networks: [panel_internal, panel_egress]
+    networks: [panel_internal, panel_egress, huseynovlar_webhooks]
     dns: [1.1.1.1, 9.9.9.9]
     depends_on:
       postgres:
@@ -196,6 +197,9 @@ networks:
     driver: bridge
   exness_mt5_ingest:
     external: true
+  huseynovlar_webhooks:
+    external: true
+    name: huseynovlar_webhooks
 
 volumes:
   terminal_pgdata:
