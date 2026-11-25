@@ -755,7 +755,7 @@ async def test_gemini_integration(
             detail="Gemini API key is not configured in /opt/huseynovlar-terminal/.env or Vault",
         )
 
-    model = settings.google_ai_default_model or "gemini-2.5-flash"
+    model = settings.google_ai_default_model or "gemini-3.8-flash"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     started = time.perf_counter()
     try:

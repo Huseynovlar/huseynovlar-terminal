@@ -58,7 +58,7 @@ else
   fi
   [[ -n "$WEBHOOK_SECRET" ]] || WEBHOOK_SECRET="$(generate_secret)"
   ensure_kv GEMINI_API_KEY ""
-  ensure_kv GEMINI_DEFAULT_MODEL gemini-2.5-flash
+  ensure_kv GEMINI_DEFAULT_MODEL gemini-3.8-flash
   ensure_kv TELEGRAM_WEBHOOK_URL http://huseynovlar-core:8080/internal/webhooks/trading
   ensure_kv TELEGRAM_WEBHOOK_SECRET "$WEBHOOK_SECRET"
   ensure_kv IP_GEO_API_URL ""

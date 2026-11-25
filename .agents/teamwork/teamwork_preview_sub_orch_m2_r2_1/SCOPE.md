@@ -75,7 +75,7 @@
    - Load `/etc/huseynovlar-terminal/integrations.env` (with `INTEGRATIONS_ENV_FILE` env var override for isolated unit testing, defaulting to `"/etc/huseynovlar-terminal/integrations.env"`):
      - If the file exists and is readable, parse `KEY=VALUE` lines (stripping comments `#`, blank lines, optional `export ` prefix, and surrounding single/double quotes) and populate/override settings (with fallback to `.env` / process env):
        - `GEMINI_API_KEY` or `GOOGLE_AI_API_KEY` -> `settings.google_ai_api_key`
-       - `GEMINI_DEFAULT_MODEL` or `GEMINI_MODEL` or `GOOGLE_AI_DEFAULT_MODEL` -> `settings.google_ai_default_model` (default `"gemini-2.5-flash"`)
+       - `GEMINI_DEFAULT_MODEL` or `GEMINI_MODEL` or `GOOGLE_AI_DEFAULT_MODEL` -> `settings.google_ai_default_model` (default `"gemini-3.8-flash"`)
        - `TELEGRAM_WEBHOOK_URL` or `ALERTS_BOT_WEBHOOK_URL` -> `settings.alerts_bot_webhook_url`
        - `TELEGRAM_WEBHOOK_SECRET` or `TRADING_WEBHOOK_SECRET` or `ALERTS_BOT_WEBHOOK_SECRET` -> `settings.alerts_bot_webhook_secret`
        - `IP_GEO_API_URL` -> `settings.ip_geo_api_url` (default `"https://ipwho.is/{ip}"`)

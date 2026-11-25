@@ -87,7 +87,7 @@ class Settings(BaseSettings):
         alias="INTEGRATIONS_ENV_PATH",
     )
     google_ai_api_key: str = Field(default="", alias="GOOGLE_AI_API_KEY")
-    google_ai_default_model: str = Field(default="gemini-2.5-flash", alias="GOOGLE_AI_DEFAULT_MODEL")
+    google_ai_default_model: str = Field(default="gemini-3.8-flash", alias="GOOGLE_AI_DEFAULT_MODEL")
     alerts_bot_webhook_url: str = Field(default="", alias="ALERTS_BOT_WEBHOOK_URL")
     alerts_bot_webhook_secret: str = Field(default="", alias="ALERTS_BOT_WEBHOOK_SECRET")
     ip_geo_api_url: str = Field(default="https://ipwho.is/{ip}", alias="IP_GEO_API_URL")
@@ -96,7 +96,7 @@ class Settings(BaseSettings):
         # Support alternative env names if primary aliases are empty
         if not self.google_ai_api_key:
             self.google_ai_api_key = os.getenv("GEMINI_API_KEY", "").strip()
-        if self.google_ai_default_model == "gemini-2.5-flash":
+        if self.google_ai_default_model == "gemini-3.8-flash":
             alt_model = os.getenv("GEMINI_DEFAULT_MODEL", "").strip()
             if alt_model:
                 self.google_ai_default_model = alt_model

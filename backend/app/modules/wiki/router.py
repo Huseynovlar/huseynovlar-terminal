@@ -46,7 +46,7 @@ INITIAL_WIKI_PLAYBOOKS: list[dict[str, Any]] = [
             "`/opt/huseynovlar-terminal/.env` on the VPS host:\n\n"
             "```env\n"
             "GEMINI_API_KEY=your_google_ai_studio_key\n"
-            "GEMINI_DEFAULT_MODEL=gemini-2.5-flash\n"
+            "GEMINI_DEFAULT_MODEL=gemini-3.8-flash\n"
             "TELEGRAM_WEBHOOK_URL=http://huseynovlar-core:8080/internal/webhooks/trading\n"
             "TELEGRAM_WEBHOOK_SECRET=your_shared_secret\n"
             "```\n\n"

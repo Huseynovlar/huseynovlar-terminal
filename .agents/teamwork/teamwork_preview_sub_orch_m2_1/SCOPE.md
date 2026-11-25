@@ -53,7 +53,7 @@ Forbidden paths (owned by concurrent milestones M1, M3, M4, M5, E2E):
    - Fix `config_dir` resolution: `CONFIG_DIR` env var if set and non-empty -> `Path("/app/config")` if `/app/config` exists -> repo `<root>/config` (NEVER `/config`!).
    - Load `/etc/huseynovlar-terminal/integrations.env` (or `INTEGRATIONS_ENV_FILE` env override for testability, defaulting to `/etc/huseynovlar-terminal/integrations.env`) when the file exists and is readable, with fallback to `.env` / environment variables for:
      - `GEMINI_API_KEY` / `GOOGLE_AI_API_KEY` -> `settings.google_ai_api_key`
-     - `GEMINI_DEFAULT_MODEL` / `GOOGLE_AI_DEFAULT_MODEL` -> `settings.google_ai_default_model` (default `"gemini-2.5-flash"`)
+     - `GEMINI_DEFAULT_MODEL` / `GOOGLE_AI_DEFAULT_MODEL` -> `settings.google_ai_default_model` (default `"gemini-3.8-flash"`)
      - `TELEGRAM_WEBHOOK_URL` / `ALERTS_BOT_WEBHOOK_URL` -> `settings.alerts_bot_webhook_url`
      - `TELEGRAM_WEBHOOK_SECRET` / `ALERTS_BOT_WEBHOOK_SECRET` -> `settings.alerts_bot_webhook_secret`
      - `IP_GEO_API_URL` -> `settings.ip_geo_api_url` (default `"https://ipwho.is/{ip}"`)

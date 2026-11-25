@@ -9,7 +9,7 @@
   - `networks.exness_mt5_ingest` (`L175-176`): currently `external: true` (already passes `docker compose config --quiet` in CI!).
   - `backend` (`L45-81`):
     - `command` (`L49`): append `"--forwarded-allow-ips=*"`.
-    - `environment` (`L50-63`): add `CONFIG_DIR: /app/config`, `INTEGRATIONS_ENV_FILE: /etc/huseynovlar-terminal/integrations.env`, `GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}`, `GOOGLE_AI_DEFAULT_MODEL: ${GOOGLE_AI_DEFAULT_MODEL:-gemini-2.5-flash}`, `ALERTS_BOT_WEBHOOK_URL: ${ALERTS_BOT_WEBHOOK_URL:-}`, `ALERTS_BOT_WEBHOOK_SECRET: ${ALERTS_BOT_WEBHOOK_SECRET:-}`.
+    - `environment` (`L50-63`): add `CONFIG_DIR: /app/config`, `INTEGRATIONS_ENV_FILE: /etc/huseynovlar-terminal/integrations.env`, `GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}`, `GOOGLE_AI_DEFAULT_MODEL: ${GOOGLE_AI_DEFAULT_MODEL:-gemini-3.8-flash}`, `ALERTS_BOT_WEBHOOK_URL: ${ALERTS_BOT_WEBHOOK_URL:-}`, `ALERTS_BOT_WEBHOOK_SECRET: ${ALERTS_BOT_WEBHOOK_SECRET:-}`.
     - `networks` (`L65`): convert from list `[panel_internal, exness_mt5_ingest, panel_docker_proxy]` to map so `exness_mt5_ingest: { aliases: [ingest.terminal.local] }`, plus `panel_internal: {}`, `panel_egress: {}`, `panel_docker_proxy: {}`; add `dns: [1.1.1.1, 9.9.9.9]`.
   - `worker` (`L82-109`): add `CONFIG_DIR: /app/config` and `INTEGRATIONS_ENV_FILE: /etc/huseynovlar-terminal/integrations.env` to `environment` (`L88-98`); optionally drop legacy `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` or keep empty-defaulted.
   - `docker-proxy` (`L159-161`): currently only `CONTAINERS: 1` and `POST: 1`; add `INFO: 1` and `NETWORKS: 1`.

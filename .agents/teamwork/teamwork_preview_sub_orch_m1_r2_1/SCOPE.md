@@ -50,7 +50,7 @@ Workers under `M1` MAY ONLY create/edit files inside:
   - **MUST pass `docker compose -f deploy/docker-compose.yml config --quiet` on an unmodified VPS without uncreated external networks or uncreated `/etc` files!** (Verify how `exness_mt5_ingest` and existing networks are declared today and preserve deploy safety on `git push`).
   - `backend`:
     - Networks: include `panel_egress` and `dns: [1.1.1.1, 9.9.9.9]`; attach alias `ingest.terminal.local` on `exness_mt5_ingest` (`exness_mt5_ingest: { aliases: [ingest.terminal.local] }`).
-    - Environment: include `CONFIG_DIR: /app/config`, `INTEGRATIONS_ENV_FILE: /etc/huseynovlar-terminal/integrations.env`, `GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}`, `GOOGLE_AI_DEFAULT_MODEL: ${GOOGLE_AI_DEFAULT_MODEL:-gemini-2.5-flash}`, `ALERTS_BOT_WEBHOOK_URL: ${ALERTS_BOT_WEBHOOK_URL:-}`, `ALERTS_BOT_WEBHOOK_SECRET: ${ALERTS_BOT_WEBHOOK_SECRET:-}`.
+    - Environment: include `CONFIG_DIR: /app/config`, `INTEGRATIONS_ENV_FILE: /etc/huseynovlar-terminal/integrations.env`, `GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}`, `GOOGLE_AI_DEFAULT_MODEL: ${GOOGLE_AI_DEFAULT_MODEL:-gemini-3.8-flash}`, `ALERTS_BOT_WEBHOOK_URL: ${ALERTS_BOT_WEBHOOK_URL:-}`, `ALERTS_BOT_WEBHOOK_SECRET: ${ALERTS_BOT_WEBHOOK_SECRET:-}`.
     - Command: include `--forwarded-allow-ips=*` on `uvicorn`.
   - `worker`:
     - Environment: include `CONFIG_DIR: /app/config` and `INTEGRATIONS_ENV_FILE: /etc/huseynovlar-terminal/integrations.env` (alongside its existing `panel_egress`, `dns: [1.1.1.1, 9.9.9.9]`, and AI/Webhook env vars).

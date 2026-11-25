@@ -431,7 +431,7 @@ class AiBriefing(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="copilot")
-    model_name: Mapped[str] = mapped_column(String(64), nullable=False, default="gemini-2.5-flash")
+    model_name: Mapped[str] = mapped_column(String(64), nullable=False, default="gemini-3.8-flash")
     prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
     response_md: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)

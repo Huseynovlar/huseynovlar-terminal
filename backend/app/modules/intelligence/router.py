@@ -1151,7 +1151,7 @@ async def gemini_ai_copilot(
         if vault_entry:
             api_key = decrypt_secret(vault_entry.value_enc, settings.vault_master_key).strip()
 
-    model_name = (body.model or settings.google_ai_default_model or "gemini-2.5-flash").strip()
+    model_name = (body.model or settings.google_ai_default_model or "gemini-3.8-flash").strip()
 
     accounts = (await db.execute(select(TradingAccount))).scalars().all()
     positions = (await db.execute(select(OpenPositionLive))).scalars().all()

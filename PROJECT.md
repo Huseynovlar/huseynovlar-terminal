@@ -217,7 +217,7 @@ Every Survey feature (`REQ-01`–`REQ-33` across `ORIGINAL_REQUEST.md` and `docs
 ### 4. Ops, MQL5 Downloads, `/etc` Integrations, Wiki & Telegram Webhook (`M1` ↔ `M2` ↔ `M4`)
 - `backend/app/core/config.py`:
   - `config_dir` resolves to `Path(os.environ["CONFIG_DIR"])` if set, else `Path("/app/config")` if `/app/config` exists, else repo `<root>/config`.
-  - Loads `/opt/huseynovlar-terminal/.env` (if file exists and is readable) to populate/override `google_ai_api_key` (`GEMINI_API_KEY` or `GOOGLE_AI_API_KEY`), `google_ai_default_model` (`GEMINI_DEFAULT_MODEL` or `GOOGLE_AI_DEFAULT_MODEL`, default `"gemini-2.5-flash"`), `alerts_bot_webhook_url` (`TELEGRAM_WEBHOOK_URL` or `ALERTS_BOT_WEBHOOK_URL`), `alerts_bot_webhook_secret` (`TELEGRAM_WEBHOOK_SECRET` or `ALERTS_BOT_WEBHOOK_SECRET`), and `ip_geo_api_url` (`IP_GEO_API_URL`).
+  - Loads `/opt/huseynovlar-terminal/.env` (if file exists and is readable) to populate/override `google_ai_api_key` (`GEMINI_API_KEY` or `GOOGLE_AI_API_KEY`), `google_ai_default_model` (`GEMINI_DEFAULT_MODEL` or `GOOGLE_AI_DEFAULT_MODEL`, default `"gemini-3.8-flash"`), `alerts_bot_webhook_url` (`TELEGRAM_WEBHOOK_URL` or `ALERTS_BOT_WEBHOOK_URL`), `alerts_bot_webhook_secret` (`TELEGRAM_WEBHOOK_SECRET` or `ALERTS_BOT_WEBHOOK_SECRET`), and `ip_geo_api_url` (`IP_GEO_API_URL`).
 - Ops Endpoints (`/api/v1/ops`):
   - `GET /ops/containers`, `POST /ops/containers`, `GET /ops/containers/{id_or_name}`, `PATCH /ops/containers/{id_or_name}`, `DELETE /ops/containers/{id_or_name}`
   - `POST /ops/containers/{name}/{start|stop|restart}`, `GET /ops/containers/{name}/logs?tail=200`

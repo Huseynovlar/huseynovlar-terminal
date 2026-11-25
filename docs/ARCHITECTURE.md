@@ -64,7 +64,7 @@ flowchart LR
 
 Внешние интеграционные ключи вынесены из UI в файл хоста **`/opt/huseynovlar-terminal/.env`** (права `0640`), который подключается в `terminal-backend` и `terminal-worker` через `env_file` (`required: false`) и читается загрузчиком `backend/app/core/config.py` (с фолбеком на `.env`):
 
-- `GEMINI_API_KEY` / `GOOGLE_AI_API_KEY` + `GEMINI_DEFAULT_MODEL` (`gemini-2.5-flash`).
+- `GEMINI_API_KEY` / `GOOGLE_AI_API_KEY` + `GEMINI_DEFAULT_MODEL` (`gemini-3.8-flash`).
 - `TELEGRAM_WEBHOOK_URL=http://huseynovlar-core:8080/internal/webhooks/trading` + `TELEGRAM_WEBHOOK_SECRET`.
 - `IP_GEO_API_URL` (опционально, по умолчанию `http://ip-api.com/json/{ip}`).
 

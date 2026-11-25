@@ -7,7 +7,7 @@
 ## 1. Какие ключи нужны, где их получить и куда добавить
 
 ### 1.1. Google AI (Gemini) — для AI Co-Pilot (`/dashboard/ai`)
-- **Переменная:** `GEMINI_API_KEY` (опционально `GEMINI_DEFAULT_MODEL=gemini-2.5-flash`)
+- **Переменная:** `GEMINI_API_KEY` (опционально `GEMINI_DEFAULT_MODEL=gemini-3.8-flash`)
 - **Где получить:** [Google AI Studio — API Keys](https://aistudio.google.com/apikey) → кнопка **Create API key**.
 - **Куда добавить:** в файл `/opt/huseynovlar-terminal/.env` на VPS (см. скрипт в разделе 2). В интерфейсе панели вводить ключ не нужно — он подхватывается автоматически с хоста и отображается в статусе `/dashboard/setup`.
 
@@ -63,7 +63,7 @@ set_kv() {  # set_kv KEY VALUE: заменить значение, если KEY 
   fi
 }
 set_kv GEMINI_API_KEY "$GEMINI_KEY"
-set_kv GEMINI_DEFAULT_MODEL gemini-2.5-flash
+set_kv GEMINI_DEFAULT_MODEL gemini-3.8-flash
 set_kv TELEGRAM_WEBHOOK_URL http://huseynovlar-core:8080/internal/webhooks/trading
 set_kv TELEGRAM_WEBHOOK_SECRET "$WEBHOOK_SECRET"
 chmod 640 "$ENV_FILE"
