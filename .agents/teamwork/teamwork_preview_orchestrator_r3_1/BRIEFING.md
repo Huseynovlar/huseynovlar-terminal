@@ -52,12 +52,13 @@ Execute STEP 0 backup/push and implement, verify, and push milestones M1–M6 (F
 |-------|------|-----------|--------|---------|
 | worker_step0_sync | teamwork_preview_worker | STEP 0 git sync & backup | completed | a3b9f15ff1fa8d41b4a65a7db4fecbac |
 | worker_m1_impl | teamwork_preview_worker | M1 infra, config, MQL5 & bot | completed | e761dd74decd53ff1f146e5303a6be0d |
-| worker_m2_impl | teamwork_preview_worker | M2 backend core, auth, ops, wiki | in-progress | f556b8fe67a275115ea23e732831b332 |
+| worker_m2_impl | teamwork_preview_worker | M2 backend core, auth, ops, wiki | completed | f556b8fe67a275115ea23e732831b332 |
+| worker_m3_impl | teamwork_preview_worker | M3 backend trading, intel, worker | in-progress | 98e2992f6c0342445df8bfe273713326 |
 
 ## Succession Status
 - Succession required: no
-- Spawn count: 3 / 20
-- Pending subagents: f556b8fe67a275115ea23e732831b332
+- Spawn count: 4 / 20
+- Pending subagents: 98e2992f6c0342445df8bfe273713326
 - Predecessor: none
 - Successor spawned: not yet spawned
 - Successor generation: none

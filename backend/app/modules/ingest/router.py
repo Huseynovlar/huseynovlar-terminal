@@ -18,6 +18,7 @@ from app.db.models import (
     MarketBar,
     OpenPositionLive,
     PendingCommand,
+    Robot,
     TradingAccount,
 )
 
@@ -36,6 +37,60 @@ def _classify_balance_op(amount: float, comment: str) -> str:
     if "rebate" in low or "bonus" in low or "credit" in low:
         return "REBATE"
     return "DEPOSIT" if amount >= 0 else "WITHDRAWAL"
+
+
+async def _upsert_robot_telemetry(
+    db: AsyncSession,
+    account: TradingAccount,
+    *,
+    magic_number: int,
+    ea_name: str = "",
+    symbol: str = "",
+    version: str = "",
+    status_str: str = "RUNNING",
+    execution_ms: int = 0,
+    state_json: dict[str, Any] | None = None,
+    now: datetime,
+) -> Robot:
+    robot = (
+        await db.execute(select(Robot).where(Robot.account_id == account.id, Robot.magic_number == magic_number))
+    ).scalar_one_or_none()
+    clean_ea = ea_name.strip()
+    clean_sym = symbol.strip().upper()
+    if robot is None:
+        robot = Robot(
+            account_id=account.id,
+            asset_id=account.primary_asset_id,
+            magic_number=magic_number,
+            name=clean_ea or f"EA #{magic_number}",
+            symbol=clean_sym,
+            program_name=clean_ea,
+            version=version.strip() or "auto",
+            strategy_notes="Auto-discovered via MT5 bridge telemetry",
+            live_status=status_str[:64],
+            live_state_json=state_json or {},
+            last_execution_ms=max(0, execution_ms),
+            last_heartbeat_at=now,
+            is_active=True,
+        )
+        db.add(robot)
+        await db.flush()
+    else:
+        robot.live_status = status_str[:64]
+        if state_json:
+            merged = dict(robot.live_state_json or {})
+            merged.update(state_json)
+            robot.live_state_json = merged
+        if clean_ea and not robot.program_name:
+            robot.program_name = clean_ea
+        if clean_sym and not robot.symbol:
+            robot.symbol = clean_sym
+        if version.strip() and robot.version in ("", "1.0", "auto"):
+            robot.version = version.strip()
+        if execution_ms > 0:
+            robot.last_execution_ms = execution_ms
+        robot.last_heartbeat_at = now
+    return robot
 
 
 class BootstrapPayload(BaseModel):
@@ -68,10 +123,23 @@ class OpenPositionItem(BaseModel):
 
 
 class RobotLiveStateItem(BaseModel):
-    magic_number: int
+    magic_number: int = Field(ge=0)
+    ea_name: str = ""
+    program_name: str = ""
+    symbol: str = ""
+    version: str = ""
     status: str = "RUNNING"
     execution_ms: int = 0
     state_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class SiblingChartEA(BaseModel):
+    chart_id: int = 0
+    symbol: str = ""
+    timeframe: str = ""
+    ea_name: str = ""
+    magic_number: int = 0
+    status: str = "ATTACHED"
 
 
 class SnapshotPayload(BaseModel):
@@ -90,6 +158,7 @@ class SnapshotPayload(BaseModel):
     spread_pts: int = 0
     open_positions: list[OpenPositionItem] = Field(default_factory=list)
     robot_states: list[RobotLiveStateItem] = Field(default_factory=list)
+    sibling_eas: list[SiblingChartEA] = Field(default_factory=list)
 
 
 class TradeEventPayload(BaseModel):
@@ -107,6 +176,7 @@ class TradeEventPayload(BaseModel):
     profit: float = 0.0
     fee: float = 0.0
     comment: str = ""
+    ea_name: str = ""
     time_msc: int = 0
 
 
@@ -133,6 +203,7 @@ async def ingest_bootstrap(
 ) -> dict[str, Any]:
     account.last_seen_at = datetime.now(UTC)
     account.algo_trading_enabled = body.algo_trading_enabled
+    account.terminal_connected = True
     if body.leverage > 0:
         account.leverage = body.leverage
     if body.balance:
@@ -154,19 +225,21 @@ async def ingest_snapshot(
     account: TradingAccount = Depends(verify_account_api_key),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    from app.db.models import Robot
-
     now = datetime.now(UTC)
     div = account.currency_divisor or 1.0
     balance_usd = round(body.balance / div, 4)
     equity_usd = round(body.equity / div, 4)
     floating_usd = round(body.floating_pnl / div, 4)
 
+    last_seen = account.last_seen_at
+    if last_seen is not None and last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=UTC)
+
     changed = (
         abs(account.last_equity - body.equity) > 1e-6
         or abs(account.last_balance - body.balance) > 1e-6
-        or account.last_seen_at is None
-        or (now - account.last_seen_at).total_seconds() >= 30
+        or last_seen is None
+        or (now - last_seen).total_seconds() >= 30
     )
 
     account.last_seen_at = now
@@ -178,19 +251,49 @@ async def ingest_snapshot(
     account.last_floating_pnl = body.floating_pnl
     account.last_margin_level = body.margin_level
 
-    # Update live robot statuses reported by ExnessPanelHook.mqh / Bridge
-    for rs in body.robot_states:
-        robot = (
-            await db.execute(select(Robot).where(Robot.account_id == account.id, Robot.magic_number == rs.magic_number))
-        ).scalar_one_or_none()
-        if robot:
-            robot.live_status = rs.status[:64]
-            robot.live_state_json = rs.state_json
-            if rs.execution_ms > 0:
-                robot.last_execution_ms = rs.execution_ms
-            robot.last_heartbeat_at = now
+    updated_robots: list[Robot] = []
+    seen_magics: set[int] = set()
 
-    # Replace live open positions for this account atomically
+    # 1. Process explicit robot_states (from ExnessPanelHook.mqh / ep_ipc / Bridge)
+    for rs in body.robot_states:
+        ea_label = rs.ea_name or rs.program_name or str(rs.state_json.get("ea_name") or "")
+        sym = rs.symbol or str(rs.state_json.get("symbol") or body.symbol or "")
+        robot = await _upsert_robot_telemetry(
+            db,
+            account,
+            magic_number=rs.magic_number,
+            ea_name=ea_label,
+            symbol=sym,
+            version=rs.version or str(rs.state_json.get("version") or ""),
+            status_str=rs.status,
+            execution_ms=rs.execution_ms,
+            state_json=rs.state_json,
+            now=now,
+        )
+        updated_robots.append(robot)
+        seen_magics.add(rs.magic_number)
+
+    # 2. Process sibling-chart EA discoveries reported by ExnessPanelBridge.mq5
+    for sea in body.sibling_eas:
+        if sea.magic_number > 0 and sea.magic_number not in seen_magics:
+            robot = await _upsert_robot_telemetry(
+                db,
+                account,
+                magic_number=sea.magic_number,
+                ea_name=sea.ea_name,
+                symbol=sea.symbol or body.symbol,
+                status_str=sea.status or "ATTACHED",
+                state_json={
+                    "chart_id": sea.chart_id,
+                    "timeframe": sea.timeframe,
+                    "discovery_source": "sibling_chart",
+                },
+                now=now,
+            )
+            updated_robots.append(robot)
+            seen_magics.add(sea.magic_number)
+
+    # 3. Replace live open positions for this account atomically & auto-discover active magic numbers
     await db.execute(delete(OpenPositionLive).where(OpenPositionLive.account_id == account.id))
     for p in body.open_positions:
         db.add(
@@ -215,6 +318,19 @@ async def ingest_snapshot(
                 updated_at=now,
             )
         )
+        if p.magic_number > 0 and p.magic_number not in seen_magics:
+            robot = await _upsert_robot_telemetry(
+                db,
+                account,
+                magic_number=p.magic_number,
+                ea_name=p.comment if p.comment and len(p.comment) <= 64 else "",
+                symbol=p.symbol,
+                status_str="ACTIVE_POSITION",
+                state_json={"discovery_source": "open_position"},
+                now=now,
+            )
+            updated_robots.append(robot)
+            seen_magics.add(p.magic_number)
 
     if changed:
         db.add(
@@ -251,19 +367,42 @@ async def ingest_snapshot(
         "snapshot",
         {
             "account_id": account.id,
+            "mt5_login": account.mt5_login,
+            "account_name": account.name,
             "currency": account.currency,
             "balance_usd": balance_usd,
             "equity_usd": equity_usd,
             "floating_pnl_usd": floating_usd,
             "margin_level": body.margin_level,
+            "algo_trading_enabled": body.algo_trading_enabled,
+            "terminal_connected": body.terminal_connected,
+            "ping_ms": max(0, body.ping_ms),
             "symbol": body.symbol.upper(),
             "bid": body.bid,
             "ask": body.ask,
             "spread_pts": body.spread_pts,
             "open_count": len(body.open_positions),
+            "ts": now.isoformat(),
         },
     )
-    return {"status": "ok", "pending_commands": cmd_list}
+
+    for robot in updated_robots:
+        await ws_hub.broadcast(
+            "robot_state",
+            {
+                "robot_id": robot.id,
+                "account_id": account.id,
+                "magic_number": robot.magic_number,
+                "name": robot.name,
+                "symbol": robot.symbol,
+                "live_status": robot.live_status,
+                "live_state_json": robot.live_state_json or {},
+                "last_execution_ms": robot.last_execution_ms,
+                "last_heartbeat_at": now.isoformat(),
+            },
+        )
+
+    return {"status": "ok", "pending_commands": cmd_list, "robots_updated": len(updated_robots)}
 
 
 @router.post("/trade-event")
@@ -273,6 +412,7 @@ async def ingest_trade_event(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     div = account.currency_divisor or 1.0
+    now = datetime.now(UTC)
 
     # Separate balance/treasury/Vault operations from trading deals
     if body.deal_type in BALANCE_DEAL_TYPES or not body.symbol.strip():
@@ -288,13 +428,14 @@ async def ingest_trade_event(
             return {"status": "duplicate", "kind": "balance_operation"}
 
         op_kind = _classify_balance_op(body.profit, body.comment)
+        amount_usd = round(body.profit / div, 4)
         db.add(
             BalanceOperation(
                 account_id=account.id,
                 mt5_deal_ticket=body.mt5_deal_ticket,
                 op_kind=op_kind,
                 amount=body.profit,
-                amount_usd=round(body.profit / div, 4),
+                amount_usd=amount_usd,
                 comment=body.comment,
                 time_msc=body.time_msc,
             )
@@ -302,6 +443,16 @@ async def ingest_trade_event(
         if body.mt5_deal_ticket > account.last_synced_deal_ticket:
             account.last_synced_deal_ticket = body.mt5_deal_ticket
         await db.commit()
+        await ws_hub.broadcast(
+            "trade_event",
+            {
+                "kind": "balance_operation",
+                "account_id": account.id,
+                "op_kind": op_kind,
+                "amount_usd": amount_usd,
+                "time_msc": body.time_msc,
+            },
+        )
         return {"status": "recorded", "kind": "balance_operation", "op_kind": op_kind}
 
     # Trading deal — idempotent by (account_id, mt5_deal_ticket)
@@ -313,6 +464,7 @@ async def ingest_trade_event(
     if exists_deal:
         return {"status": "duplicate", "kind": "deal"}
 
+    sym = body.symbol.strip().upper()
     net_profit = body.profit + body.commission + body.swap + body.fee
     net_profit_usd = round(net_profit / div, 4)
 
@@ -323,7 +475,7 @@ async def ingest_trade_event(
             order_ticket=body.order_ticket,
             position_id=body.position_id,
             magic_number=body.magic_number,
-            symbol=body.symbol.strip().upper(),
+            symbol=sym,
             deal_type=body.deal_type,
             entry_type=body.entry_type,
             volume=body.volume,
@@ -338,6 +490,19 @@ async def ingest_trade_event(
             time_msc=body.time_msc,
         )
     )
+
+    if body.magic_number > 0:
+        await _upsert_robot_telemetry(
+            db,
+            account,
+            magic_number=body.magic_number,
+            ea_name=body.ea_name,
+            symbol=sym,
+            status_str="TRADING",
+            state_json={"last_deal_ticket": body.mt5_deal_ticket, "discovery_source": "trade_event"},
+            now=now,
+        )
+
     if body.mt5_deal_ticket > account.last_synced_deal_ticket:
         account.last_synced_deal_ticket = body.mt5_deal_ticket
     await db.commit()
@@ -345,8 +510,9 @@ async def ingest_trade_event(
     await ws_hub.broadcast(
         "trade_event",
         {
+            "kind": "deal",
             "account_id": account.id,
-            "symbol": body.symbol.strip().upper(),
+            "symbol": sym,
             "magic_number": body.magic_number,
             "entry_type": body.entry_type,
             "deal_type": body.deal_type,
@@ -367,6 +533,7 @@ async def ingest_bars(
 ) -> dict[str, Any]:
     sym = body.symbol.strip().upper()
     upserted = 0
+    latest_bar: BarItem | None = None
     for b in body.bars:
         existing = (
             await db.execute(
@@ -394,6 +561,25 @@ async def ingest_bars(
                     volume=b.volume,
                 )
             )
+        if latest_bar is None or b.time >= latest_bar.time:
+            latest_bar = b
         upserted += 1
     await db.commit()
+
+    if latest_bar is not None:
+        await ws_hub.broadcast(
+            "bar_update",
+            {
+                "symbol": sym,
+                "timeframe": body.timeframe,
+                "bar": {
+                    "time": latest_bar.time,
+                    "open": latest_bar.open,
+                    "high": latest_bar.high,
+                    "low": latest_bar.low,
+                    "close": latest_bar.close,
+                    "volume": latest_bar.volume,
+                },
+            },
+        )
     return {"status": "ok", "upserted": upserted}
