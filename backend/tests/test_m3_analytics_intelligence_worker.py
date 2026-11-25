@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-
 from httpx import AsyncClient
 from openpyxl import load_workbook
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
