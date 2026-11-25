@@ -198,8 +198,8 @@ networks:
   exness_mt5_ingest:
     external: true
   huseynovlar_webhooks:
-    external: true
     name: huseynovlar_webhooks
+    internal: true
 
 volumes:
   terminal_pgdata:
