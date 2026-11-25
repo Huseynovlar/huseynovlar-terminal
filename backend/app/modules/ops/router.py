@@ -681,7 +681,7 @@ async def get_integrations_status(
 
 @router.post("/alerts/test")
 async def send_test_alert(
-    body: TestAlertRequest,
+    body: TestAlertRequest = TestAlertRequest(),
     _: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
