@@ -55,12 +55,15 @@ Execute STEP 0 backup/push and implement, verify, and push milestones M1–M6 (F
 | worker_m2_impl | teamwork_preview_worker | M2 backend core, auth, ops, wiki | completed | f556b8fe67a275115ea23e732831b332 |
 | worker_m3_impl | teamwork_preview_worker | M3 backend trading, intel, worker | completed | 98e2992f6c0342445df8bfe273713326 |
 | worker_m4_impl | teamwork_preview_worker | M4 frontend core, shell, ops/sys | completed | db8b006ade6f80350549c4c88ef5db0a |
-| worker_m5_impl | teamwork_preview_worker | M5 frontend trading, intel, AI | in-progress | 628ecc7e4e2f4d194a32ed9069c660f8 |
+| worker_m5_impl | teamwork_preview_worker | M5 frontend trading, intel, AI | completed | 628ecc7e4e2f4d194a32ed9069c660f8 |
+| worker_m6_verify_docs | teamwork_preview_worker | M6 E2E verify & docs/RU guide | completed | a95fa89c39ffda7fa34db7185a6280de |
+| auditor_m6_final | teamwork_preview_auditor | M6 whole-project forensic audit | completed (CLEAN) | a5a14ad6b19747ab26ec1e859625c5b9 |
+| worker_m6_release | teamwork_preview_worker | M6 final sync, release & prod push | in-progress | 5e503bd7546e5d0f47c9b9f2c78feb96 |
 
 ## Succession Status
 - Succession required: no
-- Spawn count: 6 / 20
-- Pending subagents: 628ecc7e4e2f4d194a32ed9069c660f8
+- Spawn count: 9 / 20
+- Pending subagents: 5e503bd7546e5d0f47c9b9f2c78feb96
 - Predecessor: none
 - Successor spawned: not yet spawned
 - Successor generation: none

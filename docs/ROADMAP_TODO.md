@@ -1,100 +1,74 @@
 # Huseynovlar Terminal — Master Roadmap & Progress Checklist
 
-> **Репозиторий:** `huseynovlar-terminal` (монорепозиторий)  
-> **Домен:** `https://terminal.huseynovlar.org` (только внутри NetBird VPN, TLS через существующий Caddy)  
-> **Дизайн-база фронтенда:** Studio Admin (`arhamkhnz` — React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui + TanStack Table + Zustand)  
+> **Репозиторий:** `Huseynovlar/huseynovlar-terminal` (монорепозиторий) + `Huseynovlar/server_telegram_bot`  
+> **Домен:** `https://terminal.huseynovlar.org` (только внутри NetBird VPN, TLS через Caddy DNS-01)  
+> **Фронтенд:** TanStack Start + TanStack Router + React 19 + TypeScript + Vite 8 + Nitro SSR + Tailwind v4 + shadcn/ui (`@base-ui/react`) + Zustand + Lightweight Charts v5 + Recharts v3  
 > **Бэкенд / БД / Воркер:** Python 3.12 (FastAPI) + PostgreSQL 16 + Redis 7 + Async Worker  
-> **Правило ведения:** после каждого завершённого шага/группы шагов обновлять `[x]`, фиксировать ключевые файлы, конфиги и следующий шаг для бесшовного продолжения в любом чате.
+> **Дизайн-стандарт:** `tangerine` preset + `floating` sidebar + Bloomberg-only compact density + реактивный `RU / EN / AZ` i18n
 
 ---
 
 ## Текущий статус
-- **Активная фаза:** Продакшн-релиз на VPS (`https://terminal.huseynovlar.org`) + Bloomberg-усиление!
-- **Последнее действие:** Полностью завершены **Фаза 6 + все расширенные функции реального времени и безопасности**:
-  - Исправлен `terminal-frontend` (Nitro SSR + unprivileged Nginx `user: 1000:1000` + корректный healthcheck `/auth/v2/login`).
-  - **Безопасность и карта IP (`profile/route.tsx`, `auth/router.py`):** таблица активных сессий (с защитой текущей), интерактивная карта геолокации IP (OpenStreetMap + определение `NetBird VPN 100.104.x.x`), история входов, управление WebAuthn Passkeys с подтверждением **2FA TOTP** при удалении.
-  - **Реестр проверенных источников новостей (`config/news_sources.yaml`, `intelligence/router.py`, `worker/main.py`, `chat/route.tsx`):** зелёная галочка `✓` только у доверенных первоисточников, автоматическая группировка и кросс-проверка новостей между СМИ («Подтверждено: N СМИ»), отдельный блок «Реестр проверенных источников».
-  - **Bloomberg Pro Charts (`LiveAssetChart.tsx`, `charts/router.py`):** мгновенный поиск и просмотр графиков **любого мирового актива** без добавления в БД (`/charts/explore`), интерактивное рисование (`Уровень S/R`, `Тренд`, `Фибоначчи`) с сохранением в `localStorage`, индикаторы `EMA20 / EMA50 / EMA200 / BB(20,2)`.
-  - **Живой пинг (`ms`), точные live-статусы роботов и мировые сессии (`default/route.tsx`)** + форма **«+ Добавить MT5 контейнер»** (`infrastructure/route.tsx`, `POST /ops/containers`).
-  - Исправлен парсинг `.env` в `deploy/scripts/backup-db.sh` (безопасное чтение переменных с пробелами).
-- **Бэклог на будущее (запланировано по запросу владельца):**
-  - [x] **Общий агрегированный баланс со всех счетов** (реализовано в `default/route.tsx`: Total Balance / Equity / Floating PnL + рабочая форма добавления счёта Exness).
-  - [ ] **Отдельные детальные View-страницы для каждой сущности:** отдельная страница истории входов (с фильтрами и картой IP), отдельная страница активных сессий, отдельная страница новости (с полным разбором и списком подтвердивших источников), отдельные карточки/View для каждого счёта, робота, сделки и Docker-контейнера.
-  - [ ] **Смена пароля (`POST /api/v1/auth/change-password`) + полноценный мастер настройки 2FA (QR-код + отключение + backup-коды)** в разделе «Профиль и Безопасность».
-  - [ ] **Полная зачистка неиспользуемых демо-страниц шаблона Studio Admin** (`data/users.ts`, `file-manager`, `invoice`, `hr`, `productivity`, `crm-v1`, `finance-v1`, `MarketTreemap` preview fallback) + полный аудит всех кнопок и форм на баги.
-  - [ ] **Мульти-брокер / мульти-платформенная архитектура** (поддержка не только Exness/MT5, но и других брокеров/криптобирж через единый адаптер провайдеров).
-  - [ ] **Оптимизация лимитов AI (Gemini):** кэширование ответов, дневной бюджет токенов/запросов, умный контекст без лишних вызовов.
-  - [ ] **Kanban / Todo-лист / Watchlist-трекер** для отслеживания целевых активов, торговых идей и планов.
-  - [ ] **Расширенный каталог активов + дополнительные круглосуточные новостные источники** (максимальное покрытие рынков и 24/7 свежих новостей с автообновлением).
-  - [ ] **Единая конфигурация всех внешних провайдеров и URL** (как `IP_GEO_API_URL` — вынести все внешние API, провайдеры котировок, карт и новостей в конфиги для замены без правки кода).
-  - [ ] Интеграция бэкапа `/var/backups/huseynovlar-terminal` в существующий **Google Drive (`restic`)** на VPS.
-  - [ ] Подключение **SMTP** для email-уведомлений и отчётов (отложено по решению владельца).
-  - [ ] Подключение физического макропада (Stream Deck / QMK `F13–F24`).
+- **Активная фаза:** **Полная пересборка и модернизация M1–M6 завершена — все 36 пунктов спецификации (`F01`–`F36`) реализованы и верифицированы!**
+- **Сводка верификации:**
+  - **Backend (`huseynovlar-terminal/backend` + `worker/main.py`):** `ruff check` — 0 ошибок; `pytest -v` — полный проход включая `test_e2e_full_journey.py` (все 36 фич `F01`–`F36`).
+  - **Frontend (`huseynovlar-terminal/frontend`):** `npx tsc --noEmit`, `npm test`, `npm run build` — без ошибок; 0 нативных `window.confirm`/`prompt`/`alert`; 0 демо-фолбеков (`PREVIEW_TREEMAP`, `demoEvents`).
+  - **Infra & Configs:** `docker compose --env-file .env.example -f deploy/docker-compose.yml config --quiet`, PyYAML валидация всех 5 `config/*.yaml`, `bash -n deploy/scripts/*.sh` — OK.
+  - **Alerts Bot (`server_telegram_bot`):** `ruff check .` — 0 ошибок; `pytest -q` — **164 passed** (включая fail-closed `POST /internal/webhooks/trading` в `DEFAULT_AUTH_SKIP_PATHS`).
+- **Инструкция по ключам и подключению MT5:** см. [`docs/MT5_AND_KEYS_GUIDE_RU.md`](./MT5_AND_KEYS_GUIDE_RU.md).
 
 ---
 
-## Фаза 0: Инициализация репозитория, конфиги и Docker-топология
-- [x] Создать структуру монорепозитория (`config/`, `backend/`, `worker/`, `frontend/`, `mql5/`, `deploy/`, `docs/`)
-- [x] Перенести в репозиторий `docs/ARCHITECTURE.md` и `docs/ROADMAP_TODO.md`
-- [x] Импортировать UI-базу **Studio Admin** (`arhamkhnz/tanstack-shadcn-admin-dashboard`) в `frontend/`
-- [x] Создать централизованные YAML-конфиги:
-  - [x] `config/assets.default.yaml` (`XAUUSD`, `USTEC`, Watchlist, алиасы, новостные теги)
-  - [x] `config/news_sources.yaml` (12 резервных бесплатных источников RSS/Atom, GDELT, ForexFactory JSON, макро-котировки)
-  - [x] `config/treemap.yaml` (NASDAQ-100, S&P 500, Global Top, Gold & Commodities)
-  - [x] `config/alerts.default.yaml` (шаблоны правил уведомлений)
-- [x] Создать `deploy/docker-compose.yml` (6 изолированных контейнеров с security hardening: `terminal-frontend`, `terminal-backend`, `terminal-worker`, `terminal-postgres`, `terminal-redis`, `terminal-docker-proxy`)
-- [x] Создать `deploy/caddy/terminal.Caddyfile` (`terminal.huseynovlar.org` под NetBird) и `deploy/nginx/terminal.conf`
-- [x] Создать `deploy/scripts/backup-db.sh` (`pg_dump` → `${BACKUP_HOST_DIR}` под Google Drive `restic`) и `.env.example`
-- [x] Настроить базовый CI (`.github/workflows/ci.yml` + `.github/workflows/deploy-production.yml`)
+## Полный реестр выполненных требований (`F01`–`F36`)
 
-## Фаза 1: Фундамент безопасности (FIDO2/WebAuthn), Профиль, Мини-фреймворк и CRUD
-- [x] **Backend Core:** модульная архитектура (`backend/app/core/module_registry.py`), SQLAlchemy 2.0 async, Alembic env, AES-256-GCM шифрование секретов (`backend/app/core/crypto.py`)
-- [x] **Схема БД (`backend/app/db/models.py`):** users, webauthn_credentials, sessions, preferences, audit_logs, exness_profiles, docker_containers, trading_accounts (`USD`/`USC` + `currency_divisor` + `last_ping_ms`), assets (+ Watchlist), robots (`live_status`, `last_execution_ms`), secret_vault
-- [x] **Auth & Security (`backend/app/modules/auth/router.py`):** Argon2id + 2FA TOTP + **FIDO2 / WebAuthn Passkeys** (`RP_ID=terminal.huseynovlar.org`) + JWT / HttpOnly Refresh + Активные сессии (завершение других, защита текущей) + История входов + Audit Log
-- [x] **CRUD API (`profile`, `assets`, `accounts`, `audit`):** Exness-профили, мульти-счета (`USD` + `USC` на один актив), активы + Watchlist + YAML seed, роботы, генерация/ротация `X-Account-Api-Key` (SHA-256), профиль пользователя (аватар, био, соцсети, encrypted vault)
-- [x] **Тесты Фазы 1A:** `ruff check` + `pytest -v` + `backend-check` в CI
-- [x] **Frontend (Studio Admin + Mini-Framework — Фаза 1B):**
-  - [x] Реализовать `frontend/src/framework/` (`pages.config.ts`, `terminal-store.ts`, `api-client.ts`, `<TerminalPageShell>` единый шаблон страниц)
-  - [x] Реализовать Split-Screen страницу **Login / Bootstrap** (`auth/v2/login`: FIDO2 Passkey 1-click + пароль + 2FA TOTP)
-  - [x] Реализовать **бегущую строку в шапке (`BloombergTickerTape`)** + `TerminalHeaderControls` (`USD/USC`, `Privacy Shift+M`, `UTC`, `RU/EN/AZ`, `Ticker`, звук) + `HotkeyEngine` (`Shift+M/C/T`, `G D/A/M/N/C/I`, `?`, готовность под `F13–F24`)
-  - [x] Обновить левое меню под группы `Huseynovlar Terminal` (`Терминал`, `Хабы активов`, `Рынок и ИИ`, `Инфраструктура`, `Система`)
-  - [x] Проверить `npm run build` (успешно, exit code 0) и обновить `docs/ROADMAP_TODO.md`
+### Авторизация, сессии, безопасность и загрузки
+- [x] **F01: WebAuthn Passkeys** — исправлена ошибка `TypeError` (`base64url <-> Uint8Array` и `serializeCredential`), Redis-хранилище challenge (`TTL=300s`), отображение `sign_count` и метаданных устройства.
+- [x] **F09: Бесшовные Auth-куки, Refresh, Signed Downloads (`?dl_token=`) и инкогнито** — `ht_access_token` и `ht_refresh_token` (`HttpOnly; SameSite=Lax; Path=/`), `POST /api/v1/auth/download-token` (`TTL=900s`), `apiDownload()` blob-хелпер, поиск `bridge.set` по UUID или `mt5_login` (`253752700`), скачивание `.set`/`.mq5`/`.mqh`/`.csv`/`.xlsx` работает даже в инкогнито.
+- [x] **F17: Управление пользователями (RBAC CRUD + View)** — `/api/v1/users` и `/dashboard/users` (`ADMIN / OPERATOR / VIEWER`) с защитой последнего администратора и запретом самоудаления.
+- [x] **F30: Институциональный экран входа** — правая панель `/auth/v2/login` обновлена на мульти-активную институциональную концепцию (без привязки к XAUUSD/Asia/Baku) на `RU/EN/AZ`.
+- [x] **F31: Выделенная страница безопасности (`/dashboard/security`)** — смена пароля Argon2id (`POST /auth/change-password`), 2FA TOTP мастер с inline SVG QR-кодом + 10 одноразовых backup-кодов + отключение 2FA, управление Passkeys.
+- [x] **F32: Активные сессии, История входов, Аудит и реальный IP Geo** — `--forwarded-allow-ips=*` + извлечение реального клиентского/NetBird IP, отдельные страницы `/dashboard/sessions`, `/dashboard/login-history` (с картой IP), `/dashboard/audit` с детальными View-страницами.
+- [x] **F35: Гарантированное удаление `UserSession` при `/auth/logout`** — claim `sid` в JWT access-токене, проверка активности сессии в `get_current_user`, отзыв/удаление `UserSession` по Bearer `sid` И/ИЛИ `ht_refresh_token` куке, очистка кук по всем путям.
+- [x] **F36: Продлённый TTL токена (120 мин) + тихий `401 -> /auth/refresh` + мгновенный редирект на `/auth/v2/login`** — единый single-flight refresh в `api-client.ts` с автоматическим повтором запроса и чистым редиректом при истечении/отзыве сессии.
 
-## Фаза 2: Zero-Latency MQL5 + Живые графики (`M1`–`W1`), Ордера на графике, DOM и Звук
-- [x] **MQL5:** написан `mql5/ExnessPanelBridge.mq5` (отдельный поток, `OnInit` sync, `OnTradeTransaction`, `OnTimer` тики/свечи/снэпшоты/MAE-MFE/живой пинг `TERMINAL_PING_LAST`, предохранитель `AllowRemoteClose = false`)
-- [x] **MQL5 Hook:** написан `mql5/ExnessPanelHook.mqh` (0 сетевых вызовов, `< 0.05 мс` IPC для версии/пресета/задержки исполнения/ошибок)
-- [x] **Ingestion API & Live Stream:** `backend/app/modules/ingest/router.py` (идемпотентность по `mt5_deal_ticket`, `USC / 100`, отделение `DEAL_TYPE_BALANCE` / Exness Vault, `ping_ms` + `robot_states`) + `ws_hub.py` + `WS /api/v1/ws/live`
-- [x] **Charts Engine (Frontend):** **TradingView Lightweight Charts** (`LiveAssetChart.tsx`: `M1`–`W1`, хоткеи `1`–`8`, Bid/Ask/Spread, **линии активных ордеров `Entry`/`SL`/`TP`**, **маркеры входов/выходов истории на свечах**, клик из таблицы ордеров → фокус на графике)
-- [x] **DOM & Supply/Demand:** панель стакана / Bid-Ask Pressure / Session POC рядом с графиком
-- [x] **Фильтр мульти-счетов (`USD` + `USC`):** переключение «Все счета по активу (USD + USC)» ↔ «Конкретный счёт» прямо над графиком
-- [x] **Звуковой движок (Web Audio API):** `sound-engine.ts` (открытие ордера, прибыль, крупная прибыль, срочные новости, алерты + кнопка звука в шапке)
-- [x] **Тесты Фазы 2:** `ruff check` + `pytest -v` + `npm run build`
+### UI/UX, дизайн-система, локализация и персистентность
+- [x] **F02: Полная реактивная локализация `RU / EN / AZ`** — единые словари `useI18n()` во всём интерфейсе с серверной синхронизацией.
+- [x] **F03: Только компактная плотность Bloomberg** — удалён переключатель плотности Apple/Comfortable, везде применён институциональный компактный режим (`tabular-nums`).
+- [x] **F06: Shimmer-скелетоны (слева направо) и `<AsyncButton>` лоадеры** — анимированные скелетоны на загрузках и спиннеры с текстом прогресса на всех кнопках действий/сохранения/авторизации.
+- [x] **F07: Toast-уведомления справа** — единые уведомления на каждое создание, сохранение, удаление, скачивание, копирование и ошибку API.
+- [x] **F10: Дефолтная тема `tangerine` + `floating` сайдбар + `/dashboard/preferences`** — полная настройка темы, шрифта, сайдбара, языка, часового пояса (`UTC`), звука и тикера с сохранением на сервере.
+- [x] **F11: Переработанная шапка, часы `1s` рядом с профилем, чистый сайдбар и Lock Screen** — убран выбор валюты и таймзоны из шапки, часы `1000ms` перенесены к профилю, убран `<NavUser>` из подвала сайдбара, добавлена блокировка экрана в меню профиля.
+- [x] **F13: Звуковой отклик и единое поведение во всём UI** — воспроизведение тестового звукового сигнала при включении звука из любой точки интерфейса + превью звуков в настройках.
+- [x] **F16: 5-групповая выделенная многостраничная архитектура** — раздельные страницы List / Create / View / Edit / Delete для каждой сущности (22 чистых модуля без «каши»).
+- [x] **F26: Универсальная серверная персистентность** — настройки графиков (таймфрейм, индикаторы, линии/Фибоначчи) в `chart_states`, пользовательские фильтры/раскладки/хоткеи в `users.preferences`.
+- [x] **F33: Полная зачистка демо-роутов Studio Admin + Markdown Wiki CRUD + Backup Script + Русское руководство** — удалены все 26 шаблонных демо-роутов и фейковые данные; реализован `/dashboard/wiki` с автосидированием.
+- [x] **F34: Ноль нативных диалогов браузера** — 100% `window.confirm` / `window.prompt` / `alert` заменены на стилизованные shadcn `AlertDialog` / `Dialog`.
 
-## Фаза 3: Asset Hubs, Полный отчёт Exness, Аналитика и Казначейство (Treasury)
-- [x] **Accounts & Robots UI (`default/route.tsx`):** мульти-счета `USD` + `USC`, статус `AlgoTrading`, Balance/Equity/Floating, API-ключ префикс
-- [x] **Deep Analytics & Risk Lab (`analytics/router.py` + `analytics/route.tsx`):** Win Rate, Profit Factor, Expectancy, Payoff Ratio, Max Drawdown, Recovery Factor, Sharpe, Equity & Underwater Drawdown графики, Hourly Heatmap (00–23), Daily PnL Calendar, разрезы по активам (`XAUUSD`/`USTEC`) и счетам (`USD`/`USC`)
-- [x] **Полный отчёт Exness (`GET /api/v1/analytics/statement.csv` + Print/PDF):** выгрузка Excel-совместимого UTF-8 BOM CSV и печать в PDF
-- [x] **Казначейство / Treasury (`GET /api/v1/analytics/treasury` + `finance/route.tsx`):** учёт `DEAL_TYPE_BALANCE` (депозиты, выводы, внутренние переводы, Хранилище Exness) + индикатор цели фиксации прибыли в Хранилище
-- [x] **Live WebSocket Hook (`use-live-socket.ts`):** автопереподключение `/api/v1/ws/live` + триггеры звуковых эффектов на сделки, крупную прибыль и срочные новости
-- [x] **Тесты Фазы 3:** `ruff check` + `pytest -v` + `npm run build`
+### Торговый деск, MT5 Bridge, Docker Ops и `/etc` интеграции
+- [x] **F08: Доменный Docker-алиас `ingest.terminal.local:8000` и фикс `err=4014`** — алиас с точкой в сети `exness_mt5_ingest`, обновлённый дефолт и диагностика `4014` в `ExnessPanelBridge.mq5` и Setup Wizard.
+- [x] **F12: Реальные MT5 Docker-контейнеры (`mt5-xau`, `mt5-ustec`) Ops CRUD + View** — `/dashboard/containers` (список, регистрация, просмотр инспекции/ресурсов/редактированных логов, правка, удаление, Start/Stop/Restart и Kill-Switch).
+- [x] **F14: Профили Exness и Торговые счета Full CRUD + View + `api_key_enc`** — Fernet-шифрование ключа моста `htk_...` для автоподстановки в `bridge.set`, ротация ключа, чёткое разделение `AccountApiKey` и опционального Exness PA API.
+- [x] **F15: Redis Pub/Sub WebSocket Live Hub (`terminal:live`)** — аутентифицированный `WS /api/v1/ws/live` с мгновенным `welcome`, `10s` `heartbeat`, `ping/pong` RTT-индикатором `WS LIVE • <N>ms` в шапке и live-обновлением балансов/позиций/роботов/графиков/новостей.
+- [x] **F18: `/etc/huseynovlar-terminal/integrations.env` и фикс `server_telegram_bot`** — загрузка `GEMINI_API_KEY`, `TELEGRAM_WEBHOOK_URL`, `TELEGRAM_WEBHOOK_SECRET` с хоста (с фолбеком `.env`), убраны лишние `bot_token`/`chat_id` из UI, добавлен `/internal/webhooks/trading` в `DEFAULT_AUTH_SKIP_PATHS` в `server_telegram_bot`, статус и тест-кнопки в `/dashboard/setup`.
+- [x] **F23: Единый журнал сделок и Казначейство (Treasury CRUD + View)** — закрытые сделки, открытые позиции, заметки/теги к сделкам, `/dashboard/journal/deals/$dealId`, ручные/MT5 переводы и Exness Vault в `/dashboard/treasury`, экспорт `.csv` и `.xlsx`.
+- [x] **F24: Выделенная страница роботов (`/dashboard/robots`) CRUD + View + `1s` таймер + MQL5 downloads** — двойной роутинг `/api/v1/robots` и `/api/v1/accounts/robots`, автообнаружение по `MagicNumber`, ровные секундные часы, скачивание `.mq5`/`.mqh`/`.set`.
+- [x] **F25: Работа 2 советников в MT5 и IPC-мост `ExnessPanelHook.mqh`** — обнаружение соседних советников (`ChartFirst/ChartNext`) + безопасное чтение `ep_ipc\events_<login>.jsonl` без задержек для торгового робота.
 
-## Фаза 4: Market Treemap (StockCharts), Резервные мировые новости, Календарь и Google AI (Gemini)
-- [x] **Market Treemap Heatmap:** `GET /api/v1/intelligence/treemap` + `MarketTreemap.tsx` (NASDAQ-100 `USTEC`, S&P 500, Gold & Commodities `XAUUSD`, периоды `1D`/`1W`/`1M`/`YTD`)
-- [x] **Redundant World News & Calendar:** 12 резервных источников в `config/news_sources.yaml`, устойчивый RSS/Atom парсер с изоляцией сбоев, полями кросс-проверки (`corroborating_sources`, `verification_count`) и WS-рассылкой Breaking News (`intelligence/router.py`) + `worker/main.py`
-- [x] **Google AI (Gemini) Co-Pilot:** `POST /api/v1/intelligence/ai/analyze` (зашифрованный ключ из Secret Vault, живой контекст портфеля/позиций/новостей) + UI `chat/route.tsx` (утренний брифинг, риск-анализ, интерактивный чат)
-- [x] **Единое время `UTC` по умолчанию + 3 языка (`RU` / `EN` / `AZ`)**
-- [x] **Тесты Фазы 4:** `ruff check` + `pytest -v` + `npm run build`
+### Рынки, Аналитика, Новости, Календарь и Gemini AI
+- [x] **F04: Реальный Экономический календарь и календарь PnL + Event View** — сбор ForexFactory JSON / RSS в `worker` и `/api/v1/intelligence/calendar`, реальный UI `/dashboard/calendar` и `/dashboard/calendar/$eventId`.
+- [x] **F05: Живая карта рынка (Market Treemap) и 100% рабочие фильтры** — `CONFIG_DIR=/app/config`, `panel_egress` + DNS, реальные котировки Yahoo Finance (`S&P 500`, `NASDAQ-100`, `Global`, `Gold & Commodities`, `Crypto`, `Forex`, периоды `1D/1W/1M/3M/YTD`), полноэкранный 2D squarified treemap с логотипами и детальной карточкой.
+- [x] **F19: Динамическая лента мировых новостей (`/dashboard/news`) + Story View** — фильтрация по активам из БД, поиску, источнику, сентименту и верификации; детальная страница `/dashboard/news/$newsId`.
+- [x] **F20: Выделенный Google AI (Gemini) Co-Pilot (`/dashboard/ai`)** — утренний брифинг, риск-аудит, разбор актива, Post-Mortem, кастомный промпт с живым контекстом портфеля, история брифингов.
+- [x] **F21: Реестр проверенных источников новостей в БД (`/dashboard/news/sources`) CRUD + View** — автосидирование из `config/news_sources.yaml`, проверка фида (`POST /sources/{id}/test`) и строгая защита от SSRF (блокировка `127.0.0.1`, `169.254.169.254`, `10.0.0.0/8`, `file://`).
+- [x] **F22: Хабы активов (`/dashboard/hubs`) с реальной сводкой новостей + Asset Explorer (`/dashboard/explorer`)** — мульти-счетная статистика, `news_digest`, глобальный поиск и фильтрация новостей на одном экране.
+- [x] **F27: Флагманская главная страница (`/dashboard/home`)** — живые KPI портфеля по WS, кривая эквити, пульс счетов/роботов, `1s` мировые сессии, макро-лента с логотипами, мини-карта секторов, срочные новости и обратный отсчёт календаря.
+- [x] **F28: Универсальные логотипы активов (`/api/v1/assets/logo/{symbol}`)** — same-origin SVG/кэш прокси с `200 OK` для любых символов (акции, индексы, металлы, валюты, крипто) и `<AssetLogo>`.
+- [x] **F29: Глубокая аналитика и Risk Lab (`/dashboard/analytics`)** — исправлен делитель `USC / 100` для комиссий и свопов; 8 интерактивных графиков (Equity, Drawdown, Daily PnL, Hourly TCA, Symbol, Robot, Long/Short, MAE/MFE & Rolling Win-Rate) с серверным сохранением фильтров.
 
-## Фаза 5: Docker Ops, Kill-Switch, Telegram-алерты, Hotkeys/Macro-Pad и Setup Wizard / Wiki
-- [x] **Docker Containers Ops (`ops/router.py` + `infrastructure/route.tsx`):** интеграция `docker-socket-proxy` (label `exness-panel.managed=true` + allowlist), просмотр логов, подтверждаемый Restart/Start/Stop + Audit Log
-- [x] **Аварийный Kill-Switch:** `POST /ops/kill-switch/{account_id}` с двойной защитой (`CLOSE ALL` + `AllowRemoteClose=true` в MT5)
-- [x] **Центр уведомлений Telegram (`POST /ops/alerts/test` + `profile/route.tsx`):** интеграция с `huseynovlar-alerts-bot` (`/internal/webhooks/trading`) и/или выделенный TG-бот + кнопка `Test Telegram Alert`
-- [x] **Visual Hotkey & Macro-Pad Editor (`roles/route.tsx`):** перенастройка хоткеев, поддержка `F13`–`F24`, экспорт JSON, конструктор левого меню, плотность Apple/Bloomberg, 3 языка `RU/EN/AZ`, единое время `UTC`
-- [x] **Instructions & Setup Wizard (`GET /ops/setup-wizard/{id}/bridge.set` + `academy/route.tsx`):** автогенерация `.set`-файла для `ExnessPanelBridge.mq5` + docker network команда + пошаговая инструкция
-- [x] **Тесты Фазы 5:** `ruff check` + `pytest -v` (**9/9 PASSED**) + `npm run build`
+---
 
-## Фаза 6: Финальный Hardening, Google Drive Backup и Production Launch
-- [x] Production `frontend/Dockerfile` (multi-stage Node 22 → Nginx) + `backend/Dockerfile`
-- [x] `deploy/scripts/deploy.sh` + `.github/workflows/deploy-production.yml` (точная схема NetBird `https://vpn.huseynovlar.org` → `100.104.116.58` с откатом при ошибке)
-- [x] Добавлен fail-closed endpoint `POST /internal/webhooks/trading` в `server_telegram_bot` (`19a9ed7`)
-- [x] Подготовлены цельные copy-paste блоки команд для запуска на VPS (Caddy, `.env`, `exness_mt5_ingest`, `deploy-bot`, Google Drive `restic` backup)
+## Бэклог развития (v3.0 — опционально)
+- [ ] Мульти-брокерские адаптеры (дополнительные брокеры / криптобиржи сверх Exness MT5).
+- [ ] Автоматический учёт дневного бюджета токенов Gemini AI и расширенное кэширование брифингов.
+- [ ] Подключение SMTP для email-отчётов (отложено по решению владельца).
+- [ ] Аппаратная интеграция с макропадом Stream Deck / QMK (`F13–F24` уже поддерживаются в редакторе хоткеев).
