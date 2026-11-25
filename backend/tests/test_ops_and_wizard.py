@@ -10,6 +10,12 @@ async def test_container_allowlist_kill_switch_and_mt5_set_generator(client: Asy
     )
     h = {"Authorization": f"Bearer {boot.json()['access_token']}"}
 
+    # The setup UI triggers the Telegram test without a JSON body. It must reach
+    # integration configuration checks instead of failing FastAPI body validation.
+    alert_test = await client.post("/api/v1/ops/alerts/test", headers=h)
+    assert alert_test.status_code == 400
+    assert "Telegram alerts webhook is not configured" in alert_test.json()["detail"]
+
     # 1. Non-allowlisted container MUST be rejected with 403
     bad_restart = await client.post("/api/v1/ops/containers/some-random-db/restart", headers=h)
     assert bad_restart.status_code == 403
