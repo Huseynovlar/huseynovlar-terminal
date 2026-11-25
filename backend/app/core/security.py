@@ -17,6 +17,26 @@ from app.core.config import Settings
 
 _password_hasher = PasswordHasher()
 
+PASSWORD_MIN_LENGTH = 8
+PASSWORD_POLICY_MESSAGE = (
+    "Password must be at least 8 characters and contain an uppercase letter, "
+    "a lowercase letter, a digit and a special character"
+)
+
+
+def validate_password_strength(password: str) -> str:
+    """Enforce 8+ chars with upper, lower, digit and special character; returns the password."""
+    ok = (
+        len(password) >= PASSWORD_MIN_LENGTH
+        and any(c.isupper() for c in password)
+        and any(c.islower() for c in password)
+        and any(c.isdigit() for c in password)
+        and any(not c.isalnum() for c in password)
+    )
+    if not ok:
+        raise ValueError(PASSWORD_POLICY_MESSAGE)
+    return password
+
 
 def hash_password(password: str) -> str:
     return _password_hasher.hash(password)

@@ -15,11 +15,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import market_data
 from app.core.config import Settings, get_settings
 from app.core.crypto import decrypt_secret
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
+from app.core.pagination import Page
 from app.core.ws_hub import ws_hub
 from app.db.models import (
     AiBriefing,
@@ -34,6 +36,8 @@ from app.db.models import (
     User,
 )
 
+NEWS_STREAM_SCAN_CAP = 5000
+
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
 
 _YAHOO_HEADERS = {
@@ -43,18 +47,77 @@ _YAHOO_HEADERS = {
 }
 
 _STOPWORDS = {
-    "this", "that", "with", "from", "have", "will", "into", "over", "after", "more", "than",
-    "what", "when", "where", "about", "their", "there", "could", "would", "should", "says",
-    "amid", "news", "market", "markets", "stock", "stocks", "price", "prices",
+    "this",
+    "that",
+    "with",
+    "from",
+    "have",
+    "will",
+    "into",
+    "over",
+    "after",
+    "more",
+    "than",
+    "what",
+    "when",
+    "where",
+    "about",
+    "their",
+    "there",
+    "could",
+    "would",
+    "should",
+    "says",
+    "amid",
+    "news",
+    "market",
+    "markets",
+    "stock",
+    "stocks",
+    "price",
+    "prices",
 }
 
 _BULLISH_WORDS = {
-    "surge", "surges", "rally", "rallies", "jump", "jumps", "gain", "gains", "bullish",
-    "record high", "all-time high", "soar", "soars", "beats", "beat", "dovish", "rate cut", "rebound",
+    "surge",
+    "surges",
+    "rally",
+    "rallies",
+    "jump",
+    "jumps",
+    "gain",
+    "gains",
+    "bullish",
+    "record high",
+    "all-time high",
+    "soar",
+    "soars",
+    "beats",
+    "beat",
+    "dovish",
+    "rate cut",
+    "rebound",
 }
 _BEARISH_WORDS = {
-    "plunge", "plunges", "drop", "drops", "fall", "falls", "slump", "slumps", "bearish",
-    "crash", "tumble", "tumbles", "selloff", "sell-off", "hawkish", "rate hike", "miss", "misses", "recession",
+    "plunge",
+    "plunges",
+    "drop",
+    "drops",
+    "fall",
+    "falls",
+    "slump",
+    "slumps",
+    "bearish",
+    "crash",
+    "tumble",
+    "tumbles",
+    "selloff",
+    "sell-off",
+    "hawkish",
+    "rate hike",
+    "miss",
+    "misses",
+    "recession",
 }
 
 _ASSET_CURRENCY_MAP: dict[str, set[str]] = {
@@ -298,6 +361,7 @@ async def list_verified_sources(
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     """Return the database-backed Verified News Sources Registry (auto-seeded from YAML on first read)."""
     sources = await ensure_default_news_sources(db, settings)
@@ -305,7 +369,7 @@ async def list_verified_sources(
     counts: dict[str, int] = {}
     for src in rows:
         counts[src] = counts.get(src, 0) + 1
-    return [_serialize_source(s, live_items_count=counts.get(s.name, s.article_count)) for s in sources]
+    return page.apply([_serialize_source(s, live_items_count=counts.get(s.name, s.article_count)) for s in sources])
 
 
 @router.post("/sources", status_code=status.HTTP_201_CREATED)
@@ -535,16 +599,17 @@ async def list_news(
     source_id: str | None = None,
     verified_only: bool = False,
     sentiment: str | None = Query(default=None, pattern="^(bullish|bearish|neutral)$"),
-    limit: int = Query(default=40, ge=1, le=200),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
+    """Full news stream, newest first, paginated via ?limit=&offset= (X-Total-Count header)."""
     sources = await ensure_default_news_sources(db, settings)
     source_map = {s.name: s for s in sources}
     source_by_id = {s.id: s for s in sources}
 
-    stmt = select(NewsItem).order_by(NewsItem.published_at.desc()).limit(limit * 4)
+    stmt = select(NewsItem).order_by(NewsItem.published_at.desc()).limit(NEWS_STREAM_SCAN_CAP)
     if source_id and source_id in source_by_id:
         stmt = stmt.where(NewsItem.source == source_by_id[source_id].name)
     if sentiment:
@@ -566,9 +631,7 @@ async def list_news(
         if verified_only and item["verified_source_count"] == 0:
             continue
         out.append(item)
-        if len(out) >= limit:
-            break
-    return out
+    return page.apply(out)
 
 
 @router.get("/news/explore")
@@ -824,6 +887,7 @@ async def list_economic_calendar(
     limit: int = Query(default=120, ge=1, le=500),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(EconomicEvent).order_by(EconomicEvent.event_time.asc())
     if impact:
@@ -848,18 +912,20 @@ async def list_economic_calendar(
             stmt = stmt.where(EconomicEvent.event_time <= dt_to)
 
     rows = (await db.execute(stmt.limit(limit))).scalars().all()
-    return [
-        {
-            "id": e.id,
-            "title": e.title,
-            "currency": e.currency,
-            "impact": e.impact,
-            "forecast": e.forecast,
-            "previous": e.previous,
-            "event_time": e.event_time.isoformat(),
-        }
-        for e in rows
-    ]
+    return page.apply(
+        [
+            {
+                "id": e.id,
+                "title": e.title,
+                "currency": e.currency,
+                "impact": e.impact,
+                "forecast": e.forecast,
+                "previous": e.previous,
+                "event_time": e.event_time.isoformat(),
+            }
+            for e in rows
+        ]
+    )
 
 
 @router.get("/calendar/{event_id}")
@@ -901,82 +967,11 @@ async def refresh_economic_calendar(
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_yahoo_treemap_quotes(tickers: list[str], period: str) -> dict[str, dict[str, Any]]:
-    """Fetch real Yahoo Finance quotes & period returns for a list of tickers."""
-    quotes_map: dict[str, dict[str, Any]] = {}
-    if not tickers:
-        return quotes_map
-
-    async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as http:
-        # 1. Batch quote endpoint (fast path for 1D price, change_pct, marketCap, volume)
-        try:
-            resp = await http.get(
-                "https://query1.finance.yahoo.com/v7/finance/quote",
-                params={"symbols": ",".join(tickers)},
-                headers=_YAHOO_HEADERS,
-            )
-            if resp.status_code == 200:
-                for q in ((resp.json().get("quoteResponse") or {}).get("result")) or []:
-                    sym = str(q.get("symbol") or "").upper()
-                    if not sym:
-                        continue
-                    quotes_map[sym] = {
-                        "name": q.get("shortName") or q.get("longName") or sym,
-                        "price": round(float(q["regularMarketPrice"]), 4)
-                        if q.get("regularMarketPrice") is not None
-                        else None,
-                        "change_pct": round(float(q["regularMarketChangePercent"]), 2)
-                        if q.get("regularMarketChangePercent") is not None
-                        else None,
-                        "market_cap": float(q["marketCap"]) if q.get("marketCap") else None,
-                        "volume": float(q["regularMarketVolume"]) if q.get("regularMarketVolume") else None,
-                        "live": q.get("regularMarketPrice") is not None,
-                    }
-        except Exception:
-            pass
-
-        # 2. If period != 1D or batch quote returned empty (e.g. Yahoo v7 crumb restriction), fetch v8 chart
-        need_chart = [t for t in tickers if period != "1D" or t.upper() not in quotes_map]
-        if need_chart:
-            interval, yrange = _PERIOD_TO_YAHOO_RANGE.get(period, ("1d", "5d"))
-            for sym in need_chart[:30]:
-                try:
-                    cresp = await http.get(
-                        f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}",
-                        params={"interval": interval, "range": yrange},
-                        headers=_YAHOO_HEADERS,
-                    )
-                    if cresp.status_code != 200:
-                        continue
-                    res_list = ((cresp.json().get("chart") or {}).get("result")) or []
-                    if not res_list:
-                        continue
-                    meta = res_list[0].get("meta") or {}
-                    closes = [
-                        c
-                        for c in ((((res_list[0].get("indicators") or {}).get("quote") or [{}])[0]).get("close") or [])
-                        if c is not None
-                    ]
-                    reg = meta.get("regularMarketPrice") or (closes[-1] if closes else None)
-                    base_price = closes[0] if (period != "1D" and len(closes) >= 2) else (
-                        meta.get("chartPreviousClose") or meta.get("previousClose")
-                    )
-                    chg: float | None = None
-                    if reg is not None and base_price:
-                        chg = round(((float(reg) - float(base_price)) / float(base_price)) * 100.0, 2)
-                    existing = quotes_map.get(sym.upper(), {})
-                    quotes_map[sym.upper()] = {
-                        "name": existing.get("name") or meta.get("shortName") or meta.get("longName") or sym,
-                        "price": round(float(reg), 4) if reg is not None else existing.get("price"),
-                        "change_pct": chg if chg is not None else existing.get("change_pct"),
-                        "market_cap": existing.get("market_cap"),
-                        "volume": existing.get("volume") or meta.get("regularMarketVolume"),
-                        "live": reg is not None,
-                    }
-                except Exception:
-                    continue
-
-    return quotes_map
+async def _fetch_yahoo_treemap_quotes(
+    tickers: list[str], period: str, stale: dict[str, dict[str, Any]] | None = None
+) -> dict[str, dict[str, Any]]:
+    """Real period % changes via the resilient provider chain (Yahoo -> Stooq/Binance/Frankfurter -> cache)."""
+    return await market_data.fetch_quotes(tickers, period, stale=stale)
 
 
 async def refresh_treemap_universe(
@@ -994,7 +989,19 @@ async def refresh_treemap_universe(
     uni = universes[universe]
     sectors_cfg: dict[str, list[str]] = uni.get("sectors", {})
     all_tickers = [t for tickers in sectors_cfg.values() for t in tickers]
-    quotes = await _fetch_yahoo_treemap_quotes(all_tickers, period)
+    prev_row = await db.get(MarketCache, f"treemap:{universe}:{period}")
+    stale: dict[str, dict[str, Any]] = {}
+    for prev_sector in ((prev_row.payload_json or {}).get("sectors") or []) if prev_row else []:
+        for prev_item in prev_sector.get("items") or []:
+            if prev_item.get("price") is not None and prev_item.get("change_pct") is not None:
+                stale[str(prev_item.get("ticker", "")).upper()] = {
+                    "name": prev_item.get("name"),
+                    "price": prev_item.get("price"),
+                    "change_pct": prev_item.get("change_pct"),
+                    "market_cap": prev_item.get("market_cap"),
+                    "volume": prev_item.get("volume"),
+                }
+    quotes = await _fetch_yahoo_treemap_quotes(all_tickers, period, stale=stale)
 
     live_count = 0
     sectors_out: list[dict[str, Any]] = []
@@ -1029,8 +1036,7 @@ async def refresh_treemap_universe(
         "linked_asset": uni.get("linked_asset", ""),
         "period": period,
         "available_universes": [
-            {"id": k, "name": v.get("name", k), "linked_asset": v.get("linked_asset", "")}
-            for k, v in universes.items()
+            {"id": k, "name": v.get("name", k), "linked_asset": v.get("linked_asset", "")} for k, v in universes.items()
         ],
         "data_status": "live" if live_count > 0 else "unavailable",
         "live_tickers": live_count,
@@ -1163,13 +1169,13 @@ async def gemini_ai_copilot(
     if not api_key:
         reply = (
             "**Google AI (Gemini) ключ не настроен.**\n\n"
-            "Добавьте `GEMINI_API_KEY` (или `google_ai_api_key`) в `/etc/huseynovlar-terminal/integrations.env` "
+            "Добавьте `GEMINI_API_KEY` (или `google_ai_api_key`) в `/opt/huseynovlar-terminal/.env` "
             "на сервере и перезапустите backend.\n\n"
             f"Живой контекст портфеля, готовый для передачи в Gemini:\n> {context_text}"
         )
         return {
             "configured": False,
-            "error": "Gemini API key not configured in /etc/huseynovlar-terminal/integrations.env",
+            "error": "Gemini API key not configured in /opt/huseynovlar-terminal/.env",
             "model": model_name,
             "response_md": reply,
         }
@@ -1206,12 +1212,7 @@ async def gemini_ai_copilot(
             detail=f"Gemini API unreachable: {exc}",
         ) from exc
 
-    text_out = (
-        data.get("candidates", [{}])[0]
-        .get("content", {})
-        .get("parts", [{}])[0]
-        .get("text", "")
-    )
+    text_out = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
     if not text_out:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Empty response from Gemini API")
 
@@ -1235,22 +1236,25 @@ async def list_ai_briefings(
     limit: int = Query(default=50, ge=1, le=200),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(AiBriefing).order_by(AiBriefing.created_at.desc()).limit(limit)
     if kind:
         stmt = stmt.where(AiBriefing.kind == kind)
     rows = (await db.execute(stmt)).scalars().all()
-    return [
-        {
-            "id": b.id,
-            "kind": b.kind,
-            "model_name": b.model_name,
-            "prompt": b.prompt,
-            "response_md": b.response_md,
-            "created_at": b.created_at.isoformat(),
-        }
-        for b in rows
-    ]
+    return page.apply(
+        [
+            {
+                "id": b.id,
+                "kind": b.kind,
+                "model_name": b.model_name,
+                "prompt": b.prompt,
+                "response_md": b.response_md,
+                "created_at": b.created_at.isoformat(),
+            }
+            for b in rows
+        ]
+    )
 
 
 @router.get("/ai/briefings/{briefing_id}")

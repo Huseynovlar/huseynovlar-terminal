@@ -1,6 +1,6 @@
 # Инструкция: Ключи интеграций, настройка VPS и подключение 2 советников в MT5
 
-Краткое практическое руководство по настройке ключей в `/etc/huseynovlar-terminal/integrations.env`, запуску стека на VPS и подключению `ExnessPanelBridge.mq5` рядом с торговыми роботами в контейнерах `mt5-xau` и `mt5-ustec` (с решением ошибки `err=4014`).
+Краткое практическое руководство по настройке ключей в `/opt/huseynovlar-terminal/.env`, запуску стека на VPS и подключению `ExnessPanelBridge.mq5` рядом с торговыми роботами в контейнерах `mt5-xau` и `mt5-ustec` (с решением ошибки `err=4014`).
 
 ---
 
@@ -9,10 +9,10 @@
 ### 1.1. Google AI (Gemini) — для AI Co-Pilot (`/dashboard/ai`)
 - **Переменная:** `GEMINI_API_KEY` (опционально `GEMINI_DEFAULT_MODEL=gemini-2.5-flash`)
 - **Где получить:** [Google AI Studio — API Keys](https://aistudio.google.com/apikey) → кнопка **Create API key**.
-- **Куда добавить:** в файл `/etc/huseynovlar-terminal/integrations.env` на VPS (см. скрипт в разделе 2). В интерфейсе панели вводить ключ не нужно — он подхватывается автоматически с хоста и отображается в статусе `/dashboard/setup`.
+- **Куда добавить:** в файл `/opt/huseynovlar-terminal/.env` на VPS (см. скрипт в разделе 2). В интерфейсе панели вводить ключ не нужно — он подхватывается автоматически с хоста и отображается в статусе `/dashboard/setup`.
 
 ### 1.2. Telegram-уведомления — через ваш `server_telegram_bot`
-- **Переменные в `/etc/huseynovlar-terminal/integrations.env`:**
+- **Переменные в `/opt/huseynovlar-terminal/.env`:**
   - `TELEGRAM_WEBHOOK_URL=http://huseynovlar-core:8080/internal/webhooks/trading`
   - `TELEGRAM_WEBHOOK_SECRET=<ваш_секрет>`
 - **Важно:** значение `TELEGRAM_WEBHOOK_SECRET` **должно в точности совпадать** с переменной `TRADING_WEBHOOK_SECRET` в `.env` вашего `server_telegram_bot` (`/opt/huseynovlar-bot/.env`).
@@ -24,7 +24,7 @@
 
 ---
 
-## 2. Готовый скрипт для VPS (`/etc/huseynovlar-terminal/integrations.env` + Docker-сети + перезапуск)
+## 2. Готовый скрипт для VPS (`/opt/huseynovlar-terminal/.env` + Docker-сети + перезапуск)
 
 Выполните на VPS один самодостаточный блок (замените `PASTE_YOUR_GEMINI_API_KEY` на ваш ключ из Google AI Studio; если `TELEGRAM_WEBHOOK_SECRET` уже задан в `/opt/huseynovlar-bot/.env`, скрипт автоматически считает его оттуда, либо сгенерирует новый):
 
@@ -32,9 +32,8 @@
 sudo bash << 'SCRIPT'
 set -euo pipefail
 
-ETC_DIR="/etc/huseynovlar-terminal"
-ENV_FILE="${ETC_DIR}/integrations.env"
 TERMINAL_DIR="/opt/huseynovlar-terminal"
+ENV_FILE="${TERMINAL_DIR}/.env"
 BOT_DIR="/opt/huseynovlar-bot"
 
 # 1. Вставьте ваш ключ Google AI Studio (или оставьте пустым, чтобы заполнить позже)
@@ -53,20 +52,20 @@ if [[ -z "$WEBHOOK_SECRET" ]]; then
   echo "[!] Сгенерирован новый TELEGRAM_WEBHOOK_SECRET — добавьте его в ${BOT_DIR}/.env как TRADING_WEBHOOK_SECRET=${WEBHOOK_SECRET}"
 fi
 
-# 3. Создаём /etc/huseynovlar-terminal/integrations.env с безопасными правами 0640
-install -d -m 750 "$ETC_DIR"
-cat > "$ENV_FILE" <<EOF
-# Huseynovlar Terminal — Host Integrations Secrets (0640)
-GEMINI_API_KEY=${GEMINI_KEY}
-GOOGLE_AI_API_KEY=${GEMINI_KEY}
-GEMINI_DEFAULT_MODEL=gemini-2.5-flash
-GOOGLE_AI_DEFAULT_MODEL=gemini-2.5-flash
-
-TELEGRAM_WEBHOOK_URL=http://huseynovlar-core:8080/internal/webhooks/trading
-ALERTS_BOT_WEBHOOK_URL=http://huseynovlar-core:8080/internal/webhooks/trading
-TELEGRAM_WEBHOOK_SECRET=${WEBHOOK_SECRET}
-ALERTS_BOT_WEBHOOK_SECRET=${WEBHOOK_SECRET}
-EOF
+# 3. Добавляем недостающие ключи в /opt/huseynovlar-terminal/.env (существующие значения не затираются)
+touch "$ENV_FILE"
+set_kv() {  # set_kv KEY VALUE: заменить значение, если KEY уже есть, иначе дописать
+  local k="$1" v="$2"
+  if grep -qE "^${k}=" "$ENV_FILE"; then
+    if [[ -n "$v" ]]; then sed -i "s|^${k}=.*|${k}=${v}|" "$ENV_FILE"; fi
+  else
+    echo "${k}=${v}" >> "$ENV_FILE"
+  fi
+}
+set_kv GEMINI_API_KEY "$GEMINI_KEY"
+set_kv GEMINI_DEFAULT_MODEL gemini-2.5-flash
+set_kv TELEGRAM_WEBHOOK_URL http://huseynovlar-core:8080/internal/webhooks/trading
+set_kv TELEGRAM_WEBHOOK_SECRET "$WEBHOOK_SECRET"
 chmod 640 "$ENV_FILE"
 echo "[OK] Обновлён ${ENV_FILE} (chmod 640)"
 

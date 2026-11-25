@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import market_data
 from app.core.config import Settings, get_settings
 from app.core.database import get_db, get_session_factory
 from app.core.deps import get_current_user
@@ -88,57 +89,30 @@ class ChartStateUpsert(BaseModel):
 
 
 async def fetch_yahoo_chart(symbol: str, timeframe: str = "H1") -> dict[str, Any]:
+    """OHLC bars with 429-resistant caching and Binance/Frankfurter/Stooq fallbacks."""
     clean = symbol.strip().upper().replace(" ", "")
     yahoo_sym = _YAHOO_SYMBOL_ALIASES.get(clean, clean)
     interval, range_str = _TF_TO_YAHOO.get(timeframe, ("60m", "1mo"))
 
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_sym}"
-    async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as http:
-        resp = await http.get(url, params={"interval": interval, "range": range_str}, headers=_YAHOO_HEADERS)
-        resp.raise_for_status()
-        payload = resp.json()
+    res = await market_data.fetch_chart_with_fallback(yahoo_sym, timeframe, interval, range_str)
+    if not res:
+        raise ValueError(f"Symbol '{clean}' unavailable: all market data providers failed or rate-limited")
 
-    results = (payload.get("chart") or {}).get("result") or []
-    if not results:
-        raise ValueError(f"Symbol '{clean}' not found")
-
-    res = results[0]
-    meta = res.get("meta") or {}
-    timestamps = res.get("timestamp") or []
-    quote = ((res.get("indicators") or {}).get("quote") or [{}])[0]
-    opens = quote.get("open") or []
-    highs = quote.get("high") or []
-    lows = quote.get("low") or []
-    closes = quote.get("close") or []
-    volumes = quote.get("volume") or []
-
-    bars: list[dict[str, Any]] = []
-    for idx, ts in enumerate(timestamps):
-        if idx >= len(closes) or opens[idx] is None or closes[idx] is None or highs[idx] is None or lows[idx] is None:
-            continue
-        bars.append(
-            {
-                "time": int(ts),
-                "open": float(opens[idx]),
-                "high": float(highs[idx]),
-                "low": float(lows[idx]),
-                "close": float(closes[idx]),
-                "volume": float(volumes[idx] or 0) if idx < len(volumes) else 0.0,
-            }
-        )
-
-    reg_price = float(meta.get("regularMarketPrice") or (bars[-1]["close"] if bars else 0.0))
-    prev_close = float(meta.get("chartPreviousClose") or meta.get("previousClose") or reg_price or 1.0)
+    bars = res["bars"]
+    reg_price = float(res["price"])
+    prev_close = float(res.get("prev_close") or (bars[-2]["close"] if len(bars) >= 2 else reg_price) or 1.0)
     change_pct = round(((reg_price - prev_close) / prev_close) * 100.0, 2) if prev_close else 0.0
 
     return {
         "asset_code": clean,
         "yahoo_symbol": yahoo_sym,
-        "name": meta.get("longName") or meta.get("shortName") or clean,
-        "currency": meta.get("currency") or "USD",
+        "name": res.get("name") or clean,
+        "currency": res.get("currency") or "USD",
         "price": round(reg_price, 4),
         "change_pct": change_pct,
-        "timeframe": timeframe,
+        "timeframe": res.get("timeframe") or timeframe,
+        "requested_timeframe": timeframe,
+        "source": res.get("source", "yahoo"),
         "logo_url": f"/api/v1/assets/logo/{clean}",
         "bars": bars[-500:],
     }
@@ -157,45 +131,37 @@ async def refresh_macro_quotes(db: AsyncSession, settings: Settings) -> list[dic
         {"code": "BTCUSD", "yahoo": "BTC-USD", "label": "Bitcoin USD"},
     ]
 
+    prev_row = await db.get(MarketCache, "macro:quotes")
+    stale = (
+        {
+            str(q.get("yahoo_symbol", "")).upper(): q
+            for q in ((prev_row.payload_json or {}).get("quotes") or [])
+            if q.get("price") is not None
+        }
+        if prev_row
+        else {}
+    )
+    live_quotes = await market_data.fetch_quotes(
+        [str(i.get("yahoo", i.get("code", ""))) for i in symbols_cfg], "1D", stale=stale
+    )
+
     quotes: list[dict[str, Any]] = []
-    async with httpx.AsyncClient(timeout=7.0, follow_redirects=True) as http:
-        for item in symbols_cfg:
-            code = str(item.get("code", "")).upper()
-            yahoo_sym = str(item.get("yahoo", code))
-            label = str(item.get("label", code))
-            price: float | None = None
-            change_pct: float = 0.0
-            live = False
-            try:
-                resp = await http.get(
-                    f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_sym}",
-                    params={"interval": "1d", "range": "5d"},
-                    headers=_YAHOO_HEADERS,
-                )
-                resp.raise_for_status()
-                res_list = ((resp.json().get("chart") or {}).get("result")) or []
-                if res_list:
-                    meta = res_list[0].get("meta") or {}
-                    reg = meta.get("regularMarketPrice")
-                    prev = meta.get("chartPreviousClose") or meta.get("previousClose")
-                    if reg is not None:
-                        price = round(float(reg), 4)
-                        if prev:
-                            change_pct = round(((float(reg) - float(prev)) / float(prev)) * 100.0, 2)
-                        live = True
-            except Exception:
-                pass
-            quotes.append(
-                {
-                    "code": code,
-                    "yahoo_symbol": yahoo_sym,
-                    "label": label,
-                    "price": price,
-                    "change_pct": change_pct,
-                    "live": live,
-                    "logo_url": f"/api/v1/assets/logo/{code}",
-                }
-            )
+    for item in symbols_cfg:
+        code = str(item.get("code", "")).upper()
+        yahoo_sym = str(item.get("yahoo", code))
+        q = live_quotes.get(yahoo_sym.upper()) or {}
+        quotes.append(
+            {
+                "code": code,
+                "yahoo_symbol": yahoo_sym,
+                "label": str(item.get("label", code)),
+                "price": q.get("price"),
+                "change_pct": q.get("change_pct") if q.get("change_pct") is not None else 0.0,
+                "live": bool(q.get("live")),
+                "source": q.get("source", "none"),
+                "logo_url": f"/api/v1/assets/logo/{code}",
+            }
+        )
 
     now = datetime.now(UTC)
     cache_row = await db.get(MarketCache, "macro:quotes")
@@ -285,7 +251,7 @@ async def search_symbols(
                 headers=_YAHOO_HEADERS,
             )
             if resp.status_code == 200:
-                for item in (resp.json().get("quotes") or []):
+                for item in resp.json().get("quotes") or []:
                     sym = str(item.get("symbol") or "").upper()
                     if not sym or sym in seen:
                         continue

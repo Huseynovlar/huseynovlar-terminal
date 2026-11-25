@@ -30,7 +30,7 @@ flowchart LR
             DPROXY["terminal-docker-proxy<br/>Allowlist / Label Only"]
         end
 
-        ETC["/etc/huseynovlar-terminal/integrations.env<br/>(0640: GEMINI_API_KEY, TELEGRAM_WEBHOOK_*)"]
+        ETC["/opt/huseynovlar-terminal/.env<br/>(0640: GEMINI_API_KEY, TELEGRAM_WEBHOOK_*)"]
         DSOCK[("/var/run/docker.sock:ro")]
         BOT["server_telegram_bot (huseynovlar-core:8080)<br/>POST /internal/webhooks/trading"]
     end
@@ -60,9 +60,9 @@ flowchart LR
 
 ---
 
-## 2. Секреты хоста (`/etc/huseynovlar-terminal/integrations.env`) и Webhook-контракт `server_telegram_bot`
+## 2. Секреты хоста (`/opt/huseynovlar-terminal/.env`) и Webhook-контракт `server_telegram_bot`
 
-Внешние интеграционные ключи вынесены из UI в файл хоста **`/etc/huseynovlar-terminal/integrations.env`** (права `0640`), который подключается в `terminal-backend` и `terminal-worker` через `env_file` (`required: false`) и читается загрузчиком `backend/app/core/config.py` (с фолбеком на `.env`):
+Внешние интеграционные ключи вынесены из UI в файл хоста **`/opt/huseynovlar-terminal/.env`** (права `0640`), который подключается в `terminal-backend` и `terminal-worker` через `env_file` (`required: false`) и читается загрузчиком `backend/app/core/config.py` (с фолбеком на `.env`):
 
 - `GEMINI_API_KEY` / `GOOGLE_AI_API_KEY` + `GEMINI_DEFAULT_MODEL` (`gemini-2.5-flash`).
 - `TELEGRAM_WEBHOOK_URL=http://huseynovlar-core:8080/internal/webhooks/trading` + `TELEGRAM_WEBHOOK_SECRET`.

@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_operator
 from app.core.ip_utils import extract_client_ip
-from app.db.models import User, WikiPage
+from app.core.pagination import Page
+from app.db.models import User, WikiCategory, WikiPage
 
 router = APIRouter(prefix="/wiki", tags=["wiki"])
 
@@ -36,13 +37,13 @@ INITIAL_WIKI_PLAYBOOKS: list[dict[str, Any]] = [
     },
     {
         "slug": "integrations-etc-secrets",
-        "title": "Server Secrets (/etc/huseynovlar-terminal/integrations.env)",
+        "title": "Server Secrets (/opt/huseynovlar-terminal/.env)",
         "category": "operations",
         "is_pinned": True,
         "content_md": (
             "# Server-Managed Integrations (`/etc`)\n\n"
             "Gemini AI and Telegram Alerts Webhook credentials are loaded from "
-            "`/etc/huseynovlar-terminal/integrations.env` on the VPS host:\n\n"
+            "`/opt/huseynovlar-terminal/.env` on the VPS host:\n\n"
             "```env\n"
             "GEMINI_API_KEY=your_google_ai_studio_key\n"
             "GEMINI_DEFAULT_MODEL=gemini-2.5-flash\n"
@@ -136,6 +137,7 @@ async def list_wiki_pages(
     q: str | None = Query(default=None),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     await seed_initial_wiki_pages(db)
     stmt = select(WikiPage).order_by(WikiPage.is_pinned.desc(), WikiPage.updated_at.desc())
@@ -147,7 +149,7 @@ async def list_wiki_pages(
             WikiPage.title.ilike(pattern) | WikiPage.slug.ilike(pattern) | WikiPage.content_md.ilike(pattern)
         )
     pages = (await db.execute(stmt)).scalars().all()
-    return [_serialize_page(p) for p in pages]
+    return page.apply([_serialize_page(p) for p in pages])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -184,6 +186,183 @@ async def create_wiki_page(
     await db.commit()
     await db.refresh(page)
     return _serialize_page(page)
+
+
+class WikiCategoryCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    slug: str | None = Field(default=None, max_length=64)
+    description: str = Field(default="", max_length=500)
+    sort_order: int = 0
+
+
+class WikiCategoryUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    slug: str | None = Field(default=None, max_length=64)
+    description: str | None = Field(default=None, max_length=500)
+    sort_order: int | None = None
+
+
+def _serialize_category(c: WikiCategory, pages_count: int = 0) -> dict[str, Any]:
+    return {
+        "id": c.id,
+        "slug": c.slug,
+        "name": c.name,
+        "description": c.description,
+        "sort_order": c.sort_order,
+        "pages_count": pages_count,
+        "created_at": c.created_at.isoformat(),
+    }
+
+
+async def _ensure_categories(db: AsyncSession) -> None:
+    """Backfill the category registry from existing page categories (idempotent)."""
+    known = {c.slug for c in (await db.execute(select(WikiCategory))).scalars().all()}
+    used = (await db.execute(select(WikiPage.category).distinct())).scalars().all()
+    added = False
+    for raw in used:
+        slug = _slugify(raw)[:64]
+        if slug and slug not in known:
+            db.add(WikiCategory(slug=slug, name=raw.strip().title() or slug))
+            known.add(slug)
+            added = True
+    if added:
+        await db.commit()
+
+
+async def _category_pages_count(db: AsyncSession, slug: str) -> int:
+    return int(await db.scalar(select(func.count()).select_from(WikiPage).where(WikiPage.category == slug)) or 0)
+
+
+async def _resolve_category(db: AsyncSession, slug_or_id: str) -> WikiCategory | None:
+    stmt = select(WikiCategory).where((WikiCategory.id == slug_or_id) | (WikiCategory.slug == slug_or_id))
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+@router.get("/categories")
+async def list_wiki_categories(
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
+) -> list[dict[str, Any]]:
+    await seed_initial_wiki_pages(db)
+    await _ensure_categories(db)
+    rows = (
+        (await db.execute(select(WikiCategory).order_by(WikiCategory.sort_order.asc(), WikiCategory.name.asc())))
+        .scalars()
+        .all()
+    )
+    return page.apply([_serialize_category(c, await _category_pages_count(db, c.slug)) for c in rows])
+
+
+@router.post("/categories", status_code=status.HTTP_201_CREATED)
+async def create_wiki_category(
+    body: WikiCategoryCreate,
+    request: Request,
+    user: User = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    slug = _slugify(body.slug or body.name)[:64]
+    if await _resolve_category(db, slug):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Wiki category '{slug}' already exists")
+    cat = WikiCategory(
+        slug=slug, name=body.name.strip(), description=body.description.strip(), sort_order=body.sort_order
+    )
+    db.add(cat)
+    await db.flush()
+    await record_audit(
+        db,
+        action="wiki_category.created",
+        user_id=user.id,
+        resource_type="wiki_category",
+        resource_id=cat.slug,
+        ip_address=extract_client_ip(request),
+    )
+    await db.commit()
+    await db.refresh(cat)
+    return _serialize_category(cat)
+
+
+@router.get("/categories/{slug_or_id}")
+async def get_wiki_category(
+    slug_or_id: str,
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    cat = await _resolve_category(db, slug_or_id)
+    if not cat:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wiki category not found")
+    return _serialize_category(cat, await _category_pages_count(db, cat.slug))
+
+
+@router.patch("/categories/{slug_or_id}")
+async def update_wiki_category(
+    slug_or_id: str,
+    body: WikiCategoryUpdate,
+    request: Request,
+    user: User = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    cat = await _resolve_category(db, slug_or_id)
+    if not cat:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wiki category not found")
+    old_slug = cat.slug
+    if body.slug is not None:
+        new_slug = _slugify(body.slug)[:64]
+        dup = (
+            await db.execute(select(WikiCategory).where(WikiCategory.slug == new_slug, WikiCategory.id != cat.id))
+        ).scalar_one_or_none()
+        if dup:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=f"Wiki category '{new_slug}' already exists"
+            )
+        cat.slug = new_slug
+    if body.name is not None:
+        cat.name = body.name.strip()
+    if body.description is not None:
+        cat.description = body.description.strip()
+    if body.sort_order is not None:
+        cat.sort_order = body.sort_order
+    if cat.slug != old_slug:
+        for p in (await db.execute(select(WikiPage).where(WikiPage.category == old_slug))).scalars().all():
+            p.category = cat.slug
+    await record_audit(
+        db,
+        action="wiki_category.updated",
+        user_id=user.id,
+        resource_type="wiki_category",
+        resource_id=cat.slug,
+        ip_address=extract_client_ip(request),
+    )
+    await db.commit()
+    await db.refresh(cat)
+    return _serialize_category(cat, await _category_pages_count(db, cat.slug))
+
+
+@router.delete("/categories/{slug_or_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_wiki_category(
+    slug_or_id: str,
+    request: Request,
+    user: User = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    cat = await _resolve_category(db, slug_or_id)
+    if not cat:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wiki category not found")
+    if await _category_pages_count(db, cat.slug):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Category still has wiki pages; move or delete them first"
+        )
+    slug = cat.slug
+    await db.delete(cat)
+    await record_audit(
+        db,
+        action="wiki_category.deleted",
+        user_id=user.id,
+        resource_type="wiki_category",
+        resource_id=slug,
+        ip_address=extract_client_ip(request),
+    )
+    await db.commit()
 
 
 @router.get("/{slug_or_id}")

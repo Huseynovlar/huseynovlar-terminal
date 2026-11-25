@@ -2,20 +2,19 @@
 set -euo pipefail
 
 # Idempotent VPS integrations setup for Huseynovlar Terminal & server_telegram_bot.
-# - Creates /etc/huseynovlar-terminal/integrations.env (0640) if missing
+# - Merges missing integration keys into /opt/huseynovlar-terminal/.env (existing values preserved)
 # - Ensures shared internal Docker networks (exness_mt5_ingest, huseynovlar_webhooks)
 # - Writes optional docker-compose.override.yml files for cross-stack webhook routing
 #
 # Environment overrides (useful for dry-run / testing):
-#   ETC_DIR=/etc/huseynovlar-terminal
+#   INTEGRATIONS_FILE=/opt/huseynovlar-terminal/.env
 #   TERMINAL_DIR=/opt/huseynovlar-terminal
 #   BOT_DIR=/opt/huseynovlar-bot
 #   SKIP_DOCKER=0
 #   DRY_RUN=0
 
-ETC_DIR="${ETC_DIR:-/etc/huseynovlar-terminal}"
-INTEGRATIONS_FILE="${ETC_DIR}/integrations.env"
 TERMINAL_DIR="${TERMINAL_DIR:-/opt/huseynovlar-terminal}"
+INTEGRATIONS_FILE="${INTEGRATIONS_FILE:-${TERMINAL_DIR}/.env}"
 BOT_DIR="${BOT_DIR:-/opt/huseynovlar-bot}"
 SKIP_DOCKER="${SKIP_DOCKER:-0}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -38,39 +37,32 @@ generate_secret() {
   fi
 }
 
-log "Ensuring ${ETC_DIR} exists..."
-run_cmd install -d -m 750 "$ETC_DIR"
-
-if [[ ! -f "$INTEGRATIONS_FILE" ]]; then
-  WEBHOOK_SECRET="$(generate_secret)"
-  log "Creating ${INTEGRATIONS_FILE} with generated TELEGRAM_WEBHOOK_SECRET..."
-  if [[ "$DRY_RUN" == "1" ]]; then
-    echo "[dry-run] write ${INTEGRATIONS_FILE}"
-  else
-    cat > "$INTEGRATIONS_FILE" <<EOF
-# Huseynovlar Terminal — Host-level Integrations Secrets
-# Loaded automatically by terminal-backend & terminal-worker via compose env_file.
-# Permissions: 0640 (do NOT commit to git)
-
-# Google AI Studio (Gemini) — https://aistudio.google.com/apikey
-GEMINI_API_KEY=
-GOOGLE_AI_API_KEY=
-GEMINI_DEFAULT_MODEL=gemini-2.5-flash
-GOOGLE_AI_DEFAULT_MODEL=gemini-2.5-flash
-
-# server_telegram_bot internal trading alerts webhook
-TELEGRAM_WEBHOOK_URL=http://huseynovlar-core:8080/internal/webhooks/trading
-ALERTS_BOT_WEBHOOK_URL=http://huseynovlar-core:8080/internal/webhooks/trading
-TELEGRAM_WEBHOOK_SECRET=${WEBHOOK_SECRET}
-ALERTS_BOT_WEBHOOK_SECRET=${WEBHOOK_SECRET}
-
-# Optional IP Geolocation endpoint (default: http://ip-api.com/json/{ip})
-IP_GEO_API_URL=
-EOF
-    chmod 640 "$INTEGRATIONS_FILE"
+ensure_kv() {
+  # ensure_kv KEY VALUE: append KEY=VALUE to the .env only when KEY is not set yet (preserves existing secrets).
+  local key="$1" value="$2"
+  if grep -qE "^${key}=" "$INTEGRATIONS_FILE" 2>/dev/null; then
+    return 0
   fi
+  echo "${key}=${value}" >> "$INTEGRATIONS_FILE"
+}
+
+log "Ensuring ${INTEGRATIONS_FILE} exists..."
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "[dry-run] merge integration keys into ${INTEGRATIONS_FILE}"
 else
-  log "${INTEGRATIONS_FILE} already exists — preserving existing secrets."
+  install -d -m 755 "$(dirname "$INTEGRATIONS_FILE")"
+  touch "$INTEGRATIONS_FILE"
+  WEBHOOK_SECRET=""
+  if [[ -f "${BOT_DIR}/.env" ]]; then
+    WEBHOOK_SECRET="$(grep -E '^TRADING_WEBHOOK_SECRET=' "${BOT_DIR}/.env" | tail -n1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)"
+  fi
+  [[ -n "$WEBHOOK_SECRET" ]] || WEBHOOK_SECRET="$(generate_secret)"
+  ensure_kv GEMINI_API_KEY ""
+  ensure_kv GEMINI_DEFAULT_MODEL gemini-2.5-flash
+  ensure_kv TELEGRAM_WEBHOOK_URL http://huseynovlar-core:8080/internal/webhooks/trading
+  ensure_kv TELEGRAM_WEBHOOK_SECRET "$WEBHOOK_SECRET"
+  ensure_kv IP_GEO_API_URL ""
+  chmod 640 "$INTEGRATIONS_FILE"
 fi
 
 if [[ "$SKIP_DOCKER" != "1" ]] && command -v docker >/dev/null 2>&1; then

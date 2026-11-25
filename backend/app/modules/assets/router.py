@@ -14,6 +14,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
+from app.core.pagination import Page
 from app.db.models import AssetHub, Deal, NewsItem, OpenPositionLive, Robot, TradingAccount, User
 
 router = APIRouter(prefix="/assets", tags=["assets"])
@@ -272,6 +273,7 @@ async def list_assets(
     status_filter: str | None = None,
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(AssetHub).order_by(AssetHub.status.asc(), AssetHub.code.asc())
     if status_filter:
@@ -289,7 +291,7 @@ async def list_assets(
         if r.asset_id:
             rob_by_asset[r.asset_id] = rob_by_asset.get(r.asset_id, 0) + 1
 
-    return [
+    return page.apply([
         _serialize_asset(
             r,
             extra={
@@ -298,7 +300,7 @@ async def list_assets(
             },
         )
         for r in rows
-    ]
+    ])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

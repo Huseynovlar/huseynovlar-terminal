@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from webauthn import (
@@ -29,11 +29,13 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
+from app.core.audit_events import audit_event_label
 from app.core.config import Settings, get_settings
 from app.core.crypto import decrypt_secret, encrypt_secret, hash_api_key
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit
 from app.core.ip_utils import extract_client_ip
+from app.core.pagination import Page
 from app.core.security import (
     build_totp_uri,
     consume_backup_code,
@@ -45,6 +47,7 @@ from app.core.security import (
     generate_totp_qr_svg,
     generate_totp_secret,
     hash_password,
+    validate_password_strength,
     verify_password,
     verify_totp_code,
 )
@@ -143,13 +146,19 @@ DEFAULT_USER_PREFERENCES: dict[str, Any] = {
 class BootstrapRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     email: EmailStr
-    password: str = Field(min_length=10, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
     display_name: str = Field(default="Owner", max_length=120)
+
+
+    @field_validator("password")
+    @classmethod
+    def _strong_password(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 class LoginRequest(BaseModel):
     username: str
-    password: str
+    password: str = Field(min_length=8, max_length=128)
     totp_code: str | None = None
 
 
@@ -164,8 +173,14 @@ class TokenResponse(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=10, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+    totp_code: str | None = Field(default=None, max_length=16)
     revoke_other_sessions: bool = True
+
+    @field_validator("new_password")
+    @classmethod
+    def _strong_password(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 class TOTPVerifyRequest(BaseModel):
@@ -232,7 +247,10 @@ async def _issue_session_tokens(
     response: Response,
     db: AsyncSession,
     settings: Settings,
+    mark_login: bool = False,
 ) -> TokenResponse:
+    if mark_login:
+        user.last_login_at = datetime.now(UTC)
     expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
     session = UserSession(
         user_id=user.id,
@@ -313,7 +331,9 @@ async def bootstrap_owner(
         resource_id=user.id,
         ip_address=extract_client_ip(request),
     )
-    tokens = await _issue_session_tokens(user=user, request=request, response=response, db=db, settings=settings)
+    tokens = await _issue_session_tokens(
+        user=user, request=request, response=response, db=db, settings=settings, mark_login=True
+    )
     await db.commit()
     return tokens
 
@@ -352,7 +372,9 @@ async def login(
         ip_address=extract_client_ip(request),
         details={"used_backup_code": used_backup} if used_backup else {},
     )
-    tokens = await _issue_session_tokens(user=user, request=request, response=response, db=db, settings=settings)
+    tokens = await _issue_session_tokens(
+        user=user, request=request, response=response, db=db, settings=settings, mark_login=True
+    )
     await db.commit()
     return tokens
 
@@ -488,6 +510,17 @@ async def change_password(
 ) -> dict[str, Any]:
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    if user.totp_enabled and user.totp_secret_enc:
+        if not body.totp_code:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP code required")
+        secret = decrypt_secret(user.totp_secret_enc, settings.vault_master_key)
+        valid = verify_totp_code(secret, body.totp_code)
+        if not valid:
+            valid, remaining = consume_backup_code(body.totp_code, list(user.totp_backup_hashes or []))
+            if valid:
+                user.totp_backup_hashes = remaining
+        if not valid:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP or backup code")
     if body.current_password == body.new_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -622,7 +655,9 @@ async def webauthn_register_options(
         ),
     )
     await _store_challenge(f"reg:{user.id}", options.challenge, settings)
-    return json.loads(options_to_json(options))
+    payload = json.loads(options_to_json(options))
+    # Wrapped under "options" (same contract as /webauthn/login/options); top-level fields kept for compatibility.
+    return {**payload, "options": payload}
 
 
 @router.post("/webauthn/register/verify")
@@ -753,7 +788,9 @@ async def webauthn_login_verify(
         resource_id=cred.id,
         ip_address=extract_client_ip(request),
     )
-    tokens = await _issue_session_tokens(user=user, request=request, response=response, db=db, settings=settings)
+    tokens = await _issue_session_tokens(
+        user=user, request=request, response=response, db=db, settings=settings, mark_login=True
+    )
     await db.commit()
     return tokens
 
@@ -762,9 +799,10 @@ async def webauthn_login_verify(
 async def list_passkeys(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     creds = (await db.execute(select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id))).scalars().all()
-    return [
+    return page.apply([
         {
             "id": c.id,
             "device_name": c.device_name,
@@ -774,7 +812,7 @@ async def list_passkeys(
             "last_used_at": c.last_used_at.isoformat() if c.last_used_at else None,
         }
         for c in creds
-    ]
+    ])
 
 
 @router.delete("/webauthn/credentials/{cred_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -891,6 +929,7 @@ async def list_active_sessions(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     """List active non-revoked, non-expired sessions with is_current flag."""
     current_sid = _resolve_current_sid(request, settings)
@@ -908,7 +947,7 @@ async def list_active_sessions(
         .all()
     )
 
-    return [
+    return page.apply([
         {
             "id": s.id,
             "ip_address": s.ip_address,
@@ -919,7 +958,7 @@ async def list_active_sessions(
         }
         for s in rows
         if _as_utc(s.expires_at) > now
-    ]
+    ])
 
 
 @router.get("/sessions/{session_id}")
@@ -1022,20 +1061,27 @@ async def revoke_session(
 async def get_login_history(
     action: str | None = Query(default=None),
     ip: str | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(AuditLog).where(AuditLog.user_id == user.id, AuditLog.action.like("auth.%"))
     if action:
         stmt = stmt.where(AuditLog.action == action.strip())
     if ip:
         stmt = stmt.where(AuditLog.ip_address.ilike(f"%{ip.strip()}%"))
-    rows = (await db.execute(stmt.order_by(AuditLog.created_at.desc()).limit(limit))).scalars().all()
+    total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
+    page.set_headers(int(total or 0))
+    rows = (
+        (await db.execute(stmt.order_by(AuditLog.created_at.desc()).limit(page.limit).offset(page.offset)))
+        .scalars()
+        .all()
+    )
     return [
         {
             "id": r.id,
             "action": r.action,
+            "action_label": audit_event_label(r.action),
             "ip_address": r.ip_address,
             "details": r.details,
             "created_at": r.created_at.isoformat(),

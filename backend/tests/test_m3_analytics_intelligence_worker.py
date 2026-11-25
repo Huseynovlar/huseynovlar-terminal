@@ -117,8 +117,8 @@ async def test_analytics_usc_divisor_fix_8_charts_journal_treasury_and_xlsx(clie
 
     # 3. Journal Deals & Notes/Tags CRUD
     deals_res = (await client.get("/api/v1/journal/deals?symbol=XAU", headers=h)).json()
-    assert deals_res["total"] == 2
-    deal_id = deals_res["items"][0]["id"]
+    assert len(deals_res) == 2
+    deal_id = deals_res[0]["id"]
 
     upd = await client.patch(
         f"/api/v1/journal/deals/{deal_id}",

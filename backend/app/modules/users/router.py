@@ -3,14 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
-from app.core.security import hash_password
+from app.core.pagination import Page
+from app.core.security import hash_password, validate_password_strength
 from app.db.models import User
 from app.modules.auth.router import DEFAULT_USER_PREFERENCES
 
@@ -22,18 +23,28 @@ VALID_ROLES = {"ADMIN", "OPERATOR", "VIEWER"}
 class UserCreateRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     email: EmailStr
-    password: str = Field(min_length=10, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
     role: str = Field(default="VIEWER", pattern="^(ADMIN|OPERATOR|VIEWER)$")
     display_name: str = Field(default="", max_length=120)
     is_active: bool = True
 
+    @field_validator("password")
+    @classmethod
+    def _strong_password(cls, v: str) -> str:
+        return validate_password_strength(v)
+
 
 class UserUpdateRequest(BaseModel):
     email: EmailStr | None = None
-    password: str | None = Field(default=None, min_length=10, max_length=128)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
     role: str | None = Field(default=None, pattern="^(ADMIN|OPERATOR|VIEWER)$")
     display_name: str | None = Field(default=None, max_length=120)
     is_active: bool | None = None
+
+    @field_validator("password")
+    @classmethod
+    def _strong_password(cls, v: str | None) -> str | None:
+        return validate_password_strength(v) if v is not None else v
 
 
 def _serialize_user(u: User) -> dict[str, Any]:
@@ -47,6 +58,7 @@ def _serialize_user(u: User) -> dict[str, Any]:
         "bio": u.bio,
         "avatar_url": u.avatar_url,
         "totp_enabled": u.totp_enabled,
+        "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
         "created_at": u.created_at.isoformat(),
         "updated_at": u.updated_at.isoformat() if u.updated_at else u.created_at.isoformat(),
     }
@@ -65,6 +77,7 @@ async def list_users(
     q: str | None = Query(default=None),
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(User).order_by(User.created_at.asc())
     if role and role.upper() in VALID_ROLES:
@@ -75,7 +88,7 @@ async def list_users(
             User.username.ilike(pattern) | User.email.ilike(pattern) | User.display_name.ilike(pattern)
         )
     users = (await db.execute(stmt)).scalars().all()
-    return [_serialize_user(u) for u in users]
+    return page.apply([_serialize_user(u) for u in users])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

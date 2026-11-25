@@ -19,6 +19,7 @@ from app.core.crypto import decrypt_secret
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_operator
 from app.core.ip_utils import extract_client_ip
+from app.core.pagination import Page
 from app.db.models import DockerContainer, PendingCommand, SecretVaultEntry, TradingAccount, User
 
 router = APIRouter(prefix="/ops", tags=["ops"])
@@ -231,6 +232,7 @@ async def list_managed_containers(
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     """List allowlisted, labeled (exness-panel.managed=true), or DB-registered MT5/OS containers."""
     registered = (await db.execute(select(DockerContainer))).scalars().all()
@@ -299,7 +301,7 @@ async def list_managed_containers(
                     "linked_accounts": linked_by_cid.get(ref.id, []),
                 }
             )
-    return out
+    return page.apply(out)
 
 
 @router.get("/containers/{id_or_name}")
@@ -703,7 +705,7 @@ async def send_test_alert(
     if not (webhook_url and webhook_secret):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Telegram alerts webhook is not configured in /etc/huseynovlar-terminal/integrations.env or Vault",
+            detail="Telegram alerts webhook is not configured in /opt/huseynovlar-terminal/.env or Vault",
         )
 
     delivered: list[str] = []
@@ -739,7 +741,7 @@ async def test_gemini_integration(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    """Verify Google Gemini API connectivity using /etc/huseynovlar-terminal/integrations.env or Vault key."""
+    """Verify Google Gemini API connectivity using /opt/huseynovlar-terminal/.env or Vault key."""
     gemini_key, _ = await _resolve_integration_secret(
         db,
         settings,
@@ -750,7 +752,7 @@ async def test_gemini_integration(
     if not gemini_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Gemini API key is not configured in /etc/huseynovlar-terminal/integrations.env or Vault",
+            detail="Gemini API key is not configured in /opt/huseynovlar-terminal/.env or Vault",
         )
 
     model = settings.google_ai_default_model or "gemini-2.5-flash"

@@ -13,6 +13,7 @@ from app.core.crypto import encrypt_secret, generate_account_api_key
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
+from app.core.pagination import Page
 from app.db.models import Deal, ExnessProfile, OpenPositionLive, Robot, TradingAccount, User
 
 router = APIRouter(tags=["accounts"])
@@ -195,13 +196,14 @@ def _serialize_robot(r: Robot, account: TradingAccount | None = None) -> dict[st
 async def list_exness_profiles(
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     rows = (await db.execute(select(ExnessProfile).order_by(ExnessProfile.created_at.asc()))).scalars().all()
     counts_q = await db.execute(
         select(TradingAccount.profile_id, func.count(TradingAccount.id)).group_by(TradingAccount.profile_id)
     )
     counts = {pid: int(cnt) for pid, cnt in counts_q.all()}
-    return [_serialize_profile(p, accounts_count=counts.get(p.id, 0)) for p in rows]
+    return page.apply([_serialize_profile(p, accounts_count=counts.get(p.id, 0)) for p in rows])
 
 
 @router.post("/profiles", status_code=status.HTTP_201_CREATED)
@@ -361,6 +363,7 @@ async def list_accounts(
     asset_id: str | None = None,
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(TradingAccount).order_by(TradingAccount.created_at.asc())
     if profile_id:
@@ -370,7 +373,7 @@ async def list_accounts(
     rows = (await db.execute(stmt)).scalars().all()
     rc_q = await db.execute(select(Robot.account_id, func.count(Robot.id)).group_by(Robot.account_id))
     rc_map = {aid: int(cnt) for aid, cnt in rc_q.all()}
-    return [_serialize_account(r, robots_count=rc_map.get(r.id, 0)) for r in rows]
+    return page.apply([_serialize_account(r, robots_count=rc_map.get(r.id, 0)) for r in rows])
 
 
 @router.post("/accounts", status_code=status.HTTP_201_CREATED)
@@ -452,6 +455,7 @@ async def list_robots(
     asset_id: str | None = None,
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(Robot).order_by(Robot.created_at.asc())
     if account_id:
@@ -460,7 +464,7 @@ async def list_robots(
         stmt = stmt.where(Robot.asset_id == asset_id)
     rows = (await db.execute(stmt)).scalars().all()
     accounts = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}
-    return [_serialize_robot(r, accounts.get(r.account_id)) for r in rows]
+    return page.apply([_serialize_robot(r, accounts.get(r.account_id)) for r in rows])
 
 
 @router.post("/robots", status_code=status.HTTP_201_CREATED)

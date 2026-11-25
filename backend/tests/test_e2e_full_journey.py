@@ -447,8 +447,8 @@ async def test_e2e_full_platform_journey_f01_to_f36(client: AsyncClient, test_se
         assert chart_key in overview
 
     deals_page = (await client.get("/api/v1/journal/deals?symbol=USTEC", headers=auth_h)).json()
-    assert deals_page["total"] == 2
-    deal_id = deals_page["items"][0]["id"]
+    assert len(deals_page) == 2
+    deal_id = deals_page[0]["id"]
     deal_upd = await client.patch(
         f"/api/v1/journal/deals/{deal_id}",
         headers=auth_h,

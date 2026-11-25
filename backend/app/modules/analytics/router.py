@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
+from app.core.pagination import Page
 from app.db.models import (
     BalanceOperation,
     Deal,
@@ -646,11 +647,10 @@ async def list_journal_deals(
     q: str | None = None,
     from_date: str | None = Query(default=None, alias="from"),
     to_date: str | None = Query(default=None, alias="to"),
-    limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, Any]:
+    page: Page = Depends(),
+) -> list[dict[str, Any]]:
     stmt = select(Deal).order_by(Deal.time_msc.desc())
     if account_id:
         stmt = stmt.where(Deal.account_id == account_id)
@@ -681,16 +681,9 @@ async def list_journal_deals(
             or any(ql in str(t).lower() for t in (d.tags or []))
         ]
 
-    total = len(rows)
-    page = rows[offset : offset + limit]
     acc_map = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}
     robot_map = {(r.account_id, r.magic_number): r.name for r in (await db.execute(select(Robot))).scalars().all()}
-    return {
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "items": [_serialize_deal(d, acc_map, robot_map) for d in page],
-    }
+    return page.apply([_serialize_deal(d, acc_map, robot_map) for d in rows])
 
 
 @router.get("/journal/deals/{deal_id}")
@@ -747,6 +740,7 @@ async def list_journal_positions(
     side: str | None = Query(default=None, pattern="^(BUY|SELL)$"),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(OpenPositionLive).order_by(OpenPositionLive.updated_at.desc())
     if account_id:
@@ -759,7 +753,7 @@ async def list_journal_positions(
         stmt = stmt.where(OpenPositionLive.side == side)
     rows = (await db.execute(stmt)).scalars().all()
     acc_map = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}
-    return [
+    return page.apply([
         {
             "id": p.id,
             "account_id": p.account_id,
@@ -784,7 +778,7 @@ async def list_journal_positions(
             "updated_at": p.updated_at.isoformat(),
         }
         for p in rows
-    ]
+    ])
 
 
 # ---------------------------------------------------------------------------
@@ -889,6 +883,7 @@ async def list_treasury_operations(
     limit: int = Query(default=200, ge=1, le=500),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(BalanceOperation).order_by(BalanceOperation.time_msc.desc()).limit(limit)
     if account_id:
@@ -897,7 +892,7 @@ async def list_treasury_operations(
         stmt = stmt.where(BalanceOperation.op_kind == op_kind.upper())
     ops = (await db.execute(stmt)).scalars().all()
     acc_map = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}
-    return [_serialize_treasury_op(o, acc_map) for o in ops]
+    return page.apply([_serialize_treasury_op(o, acc_map) for o in ops])
 
 
 @router.post("/treasury/operations", status_code=status.HTTP_201_CREATED)

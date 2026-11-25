@@ -21,7 +21,7 @@ def _resolve_default_config_dir() -> Path:
 
 
 def load_integrations_env(path: str | Path) -> dict[str, str]:
-    """Parse a dotenv-style /etc/huseynovlar-terminal/integrations.env file safely."""
+    """Parse a dotenv-style /opt/huseynovlar-terminal/.env file safely."""
     file_path = Path(path)
     if not file_path.is_file():
         return {}
@@ -81,9 +81,9 @@ class Settings(BaseSettings):
     managed_container_label: str = Field(default="exness-panel.managed=true", alias="MANAGED_CONTAINER_LABEL")
     allowed_mt5_containers: str = Field(default="", alias="ALLOWED_MT5_CONTAINERS")
 
-    # External integrations (loaded from env and overridden/populated by /etc/huseynovlar-terminal/integrations.env)
+    # External integrations (loaded from env and overridden/populated by /opt/huseynovlar-terminal/.env)
     integrations_env_path: str = Field(
-        default="/etc/huseynovlar-terminal/integrations.env",
+        default="/opt/huseynovlar-terminal/.env",
         alias="INTEGRATIONS_ENV_PATH",
     )
     google_ai_api_key: str = Field(default="", alias="GOOGLE_AI_API_KEY")
@@ -105,7 +105,7 @@ class Settings(BaseSettings):
         if not self.alerts_bot_webhook_secret:
             self.alerts_bot_webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
 
-        # Populate/override from /etc/huseynovlar-terminal/integrations.env if readable
+        # Populate/override from /opt/huseynovlar-terminal/.env if readable
         etc_values = load_integrations_env(self.integrations_env_path)
         if etc_values:
             gemini_key = etc_values.get("GEMINI_API_KEY") or etc_values.get("GOOGLE_AI_API_KEY")

@@ -15,6 +15,7 @@ SCHEMA_SYNC_LOCK_ID = 884210
 # (table_name, column_name, postgres_ddl, sqlite_ddl)
 COLUMN_MIGRATIONS: list[tuple[str, str, str, str]] = [
     ("users", "totp_backup_hashes", "JSON NOT NULL DEFAULT '[]'", "JSON NOT NULL DEFAULT '[]'"),
+    ("users", "last_login_at", "TIMESTAMPTZ NULL", "DATETIME NULL"),
     ("trading_accounts", "platform", "VARCHAR(32) NOT NULL DEFAULT 'MT5'", "VARCHAR(32) NOT NULL DEFAULT 'MT5'"),
     ("trading_accounts", "api_key_enc", "TEXT NULL", "TEXT NULL"),
     ("assets", "logo_url", "TEXT NULL", "TEXT NULL"),
