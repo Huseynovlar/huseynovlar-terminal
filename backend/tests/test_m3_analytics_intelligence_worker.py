@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import io
-
-import httpx
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import AsyncClient
