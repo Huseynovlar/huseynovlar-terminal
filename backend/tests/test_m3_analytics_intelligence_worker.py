@@ -281,36 +281,33 @@ async def test_intelligence_sources_ssrf_calendar_treemap_and_gemini(client: Asy
     ev_detail = await client.get(f"/api/v1/intelligence/calendar/{cal_high[0]['id']}", headers=h)
     assert ev_detail.status_code == 200 and "XAUUSD" in ev_detail.json()["affected_assets"]
 
-    # 3. Real Treemap (mocked Yahoo Finance quotes, ZERO hash() fake data)
-    mock_yahoo = MagicMock()
-    mock_yahoo.status_code = 200
-    mock_yahoo.text = "test-yahoo-crumb"
-    mock_yahoo.json.return_value = {
-        "quoteResponse": {
-            "result": [
-                {
-                    "symbol": "NVDA",
-                    "shortName": "NVIDIA Corp",
-                    "regularMarketPrice": 142.50,
-                    "regularMarketChangePercent": 3.25,
-                    "marketCap": 3500000000000,
-                    "regularMarketVolume": 52000000,
-                },
-                {
-                    "symbol": "AAPL",
-                    "shortName": "Apple Inc",
-                    "regularMarketPrice": 228.10,
-                    "regularMarketChangePercent": -0.45,
-                    "marketCap": 3400000000000,
-                    "regularMarketVolume": 41000000,
-                },
-            ]
-        }
+    # 3. Real Treemap route with deterministic live-provider quotes (ZERO fake fallback data).
+    # Mock the provider boundary: Yahoo chart/quote endpoints have different payload schemas,
+    # so a single generic HTTP response is not a valid mock for both requests.
+    live_quotes = {
+        "NVDA": {
+            "name": "NVIDIA Corp",
+            "price": 142.50,
+            "change_pct": 3.25,
+            "market_cap": 3500000000000,
+            "volume": 52000000,
+            "live": True,
+            "source": "yahoo",
+        },
+        "AAPL": {
+            "name": "Apple Inc",
+            "price": 228.10,
+            "change_pct": -0.45,
+            "market_cap": 3400000000000,
+            "volume": 41000000,
+            "live": True,
+            "source": "yahoo",
+        },
     }
-    mock_yahoo_http = AsyncMock()
-    mock_yahoo_http.__aenter__.return_value = mock_yahoo_http
-    mock_yahoo_http.get = AsyncMock(return_value=mock_yahoo)
-    with patch("app.modules.intelligence.router.httpx.AsyncClient", return_value=mock_yahoo_http):
+    with patch(
+        "app.modules.intelligence.router._fetch_yahoo_treemap_quotes",
+        new=AsyncMock(return_value=live_quotes),
+    ):
         tm = await client.get("/api/v1/intelligence/treemap?universe=nasdaq100&period=1D&q=NVDA", headers=h)
     assert tm.status_code == 200
     tm_body = tm.json()
