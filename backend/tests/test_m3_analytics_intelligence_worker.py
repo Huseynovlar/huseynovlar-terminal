@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+
+import httpx
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -339,6 +341,28 @@ async def test_intelligence_sources_ssrf_calendar_treemap_and_gemini(client: Asy
     assert ai_res.status_code == 200
     assert ai_res.json()["configured"] is True
     bid = ai_res.json()["id"]
+
+    # A timeout must report its class and a useful diagnostic, not a blank suffix.
+    timeout_http = AsyncMock()
+    timeout_http.__aenter__.return_value = timeout_http
+    timeout_http.post = AsyncMock(
+        side_effect=httpx.ReadTimeout(
+            "",
+            request=httpx.Request(
+                "POST",
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+            ),
+        )
+    )
+    with patch("app.modules.intelligence.router.httpx.AsyncClient", return_value=timeout_http):
+        timed_out = await client.post(
+            "/api/v1/intelligence/ai/analyze",
+            headers=h,
+            json={"prompt": "Check timeout reporting", "kind": "test"},
+        )
+    assert timed_out.status_code == 504
+    assert "ReadTimeout" in timed_out.json()["detail"]
+    assert "outbound HTTPS" in timed_out.json()["detail"]
 
     briefings = (await client.get("/api/v1/intelligence/ai/briefings", headers=h)).json()
     assert len(briefings) == 1 and briefings[0]["id"] == bid
