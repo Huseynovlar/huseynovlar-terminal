@@ -71,51 +71,18 @@ if [[ "$SKIP_DOCKER" != "1" ]] && command -v docker >/dev/null 2>&1; then
     run_cmd docker network create exness_mt5_ingest --internal
   fi
   if ! docker network inspect huseynovlar_webhooks >/dev/null 2>&1; then
-    run_cmd docker network create huseynovlar_webhooks --internal
+    # Match the canonical terminal Compose project's managed-network labels.
+    # This allows Compose to reuse the network instead of rejecting an unlabelled
+    # manually-created bridge as an ownership conflict.
+    run_cmd docker network create --driver bridge --internal \
+      --label com.docker.compose.project=huseynovlar-terminal \
+      --label com.docker.compose.network=huseynovlar_webhooks \
+      huseynovlar_webhooks
   fi
 fi
 
-if [[ -d "$TERMINAL_DIR" ]]; then
-  OVERRIDE_TERMINAL="${TERMINAL_DIR}/docker-compose.override.yml"
-  if [[ ! -f "$OVERRIDE_TERMINAL" ]]; then
-    log "Writing ${OVERRIDE_TERMINAL} to attach backend/worker to huseynovlar_webhooks..."
-    if [[ "$DRY_RUN" != "1" ]]; then
-      cat > "$OVERRIDE_TERMINAL" <<'EOF'
-services:
-  backend:
-    networks:
-      huseynovlar_webhooks: {}
-  worker:
-    networks:
-      huseynovlar_webhooks: {}
-
-networks:
-  huseynovlar_webhooks:
-    external: true
-EOF
-      chmod 644 "$OVERRIDE_TERMINAL"
-    fi
-  fi
-fi
-
-if [[ -d "$BOT_DIR" ]]; then
-  OVERRIDE_BOT="${BOT_DIR}/docker-compose.override.yml"
-  if [[ ! -f "$OVERRIDE_BOT" ]]; then
-    log "Writing ${OVERRIDE_BOT} to attach huseynovlar-core to huseynovlar_webhooks..."
-    if [[ "$DRY_RUN" != "1" ]]; then
-      cat > "$OVERRIDE_BOT" <<'EOF'
-services:
-  core:
-    networks:
-      - huseynovlar_webhooks
-
-networks:
-  huseynovlar_webhooks:
-    external: true
-EOF
-      chmod 644 "$OVERRIDE_BOT"
-    fi
-  fi
-fi
+# Webhook network membership is now declared in both canonical Compose files.
+# Do not create terminal/bot override files here: stale overrides can change an
+# internal Compose-managed network back into an external dependency and break deploys.
 
 log "Done. Remember to sync TRADING_WEBHOOK_SECRET in ${BOT_DIR}/.env with TELEGRAM_WEBHOOK_SECRET in ${INTEGRATIONS_FILE}."
