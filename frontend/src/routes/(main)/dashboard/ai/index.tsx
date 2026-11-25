@@ -130,8 +130,6 @@ function GeminiAiCopilotPage() {
                   className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs"
                 >
                   <option value="gemini-3.8-flash">gemini-3.8-flash</option>
-                  <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-                  <option value="gemini-2.0-flash">gemini-2.0-flash</option>
                 </select>
               </div>
             </CardHeader>
