@@ -560,7 +560,7 @@ async def test_e2e_full_platform_journey_f01_to_f36(client: AsyncClient, test_se
     assert len(cal_items) >= 1 and cal_items[0]["title"] == "US CPI YoY"
 
     # Market Treemap (mocked live Yahoo Finance)
-    mock_yf = MagicMock(status_code=200)
+    mock_yf = MagicMock(status_code=200, text="test-yahoo-crumb")
     mock_yf.json.return_value = {
         "quoteResponse": {
             "result": [
