@@ -1,7 +1,7 @@
 # Project Orchestrator Progress (`teamwork_preview_orchestrator_r2_1`)
 
 ## Current Status
-Last visited: 2026-11-25T06:01:30Z
+Last visited: 2026-11-25T06:07:30Z
 
 - [x] Read `ORIGINAL_REQUEST.md` (incl. `2026-11-25T05:57:20Z` GitHub teamwork persistence mandate), `PROJECT.md` (`F01`–`F37`), `r1_1` state files, `survey_1`/`survey_2`/`survey_3` handoffs, and prior `SCOPE.md` files
 - [x] Started 20-minute heartbeat cron (`2204160cc16357fec5819197f8ae7177/task-31`)
@@ -11,7 +11,7 @@ Last visited: 2026-11-25T06:01:30Z
   - [ ] `M2`: Backend Core, DB Schema Sync, Auth/Passkeys/Cookies/Logout/RBAC, Redis WS Hub & Ops/Wiki (`b323eec972b4d79a0e7f6fddb529251f`)
   - [ ] `M4`: Frontend Core Framework, `tangerine`+`floating` Shell, `RU/EN/AZ` i18n, shadcn Dialogs, Demo Purge & System/Ops Pages (`f3656dde55325b1406d06045aa8c52df`)
   - [ ] `E2E`: Opaque-box E2E Testing Track (`TEST_INFRA.md`, `e2e/` Tiers 1–4 across `F01`–`F36`, `TEST_READY.md`) (`ee44b731d7e26a070c89d0798fdec0f6`)
-- [ ] Execute Checkpoint 0 GitHub Sync (`PROJECT.md` + `.agents/teamwork/` pushed to `Huseynovlar/huseynovlar-terminal` `origin/main` with `[skip ci]`)
+- [x] Execute Checkpoint 0 GitHub Sync (`PROJECT.md` + `.agents/teamwork/` pushed to `Huseynovlar/huseynovlar-terminal` `origin/main` with `[skip ci]`, commit `e7c8c7c0f1ae4d2fe8041456530635f5f9e2b387`)
 - [ ] Execute Checkpoint 1 GitHub Sync after Wave 1 completes
 - [ ] Dispatch & complete Wave 2 Sub-Orchestrators (`M3` after `M2`; `M5` after `M3` + `M4`) + Checkpoint 2 GitHub Sync
 - [ ] Execute Final Milestone `M6` (Phase 1 E2E Tiers 1–4 Pass; Phase 2 Tier 5 Adversarial Hardening + Whole-Project Forensic Audit; Phase 3 Docs + `.agents/teamwork/` mirror + `git commit` & `git push origin main` + GitHub Actions auto-deploy verification)

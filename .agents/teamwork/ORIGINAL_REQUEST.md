@@ -234,3 +234,30 @@ Action required immediately and after each completed wave / milestone:
 USER IS ASKING: "когда он уже наконец-то начнет редактировать файлы и все добавлять ?"
 
 Stop writing extra planning/scope markdowns if Wave 1 hasn't started editing repo files yet — ensure the Wave 1 workers (`M1`, `M2`, `M4`) are actively modifying the actual codebase files (`deploy/`, `backend/`, `frontend/`, `mql5/`) RIGHT NOW, and sync `.agents/teamwork/` into `/home/antigravity/Huseynovlar/huseynovlar-terminal/.agents/teamwork/`. Report exact active subagents and which repo files are being edited!
+
+## Follow-up — 2026-11-25T10:52:03Z
+Первым делом залей на github, что уже сделано по агентам
+
+и уже наконец-то быстро дай мне результат всех исправлений
+
+---
+### Critical Resume & Quota-Safe Execution Context (Quoted from Earlier Conversation)
+
+> **STEP 0 (DO THIS FIRST BEFORE ANYTHING ELSE!):**
+> 1. Immediately inspect `git status` in `/home/antigravity/Huseynovlar/huseynovlar-terminal` and `/home/antigravity/Huseynovlar/server_telegram_bot`, plus `/home/antigravity/.agents/teamwork/`.
+> 2. Sync `/home/antigravity/.agents/teamwork/` into `/home/antigravity/Huseynovlar/huseynovlar-terminal/.agents/teamwork/` (ensure no secrets and not gitignored) alongside `PROJECT.md` (and any already-completed clean code changes from the previous interrupted Wave 1 run).
+> 3. **Commit and push** `PROJECT.md` + `.agents/teamwork/` (and any verified clean changes) to GitHub (`Huseynovlar/huseynovlar-terminal` `origin main`) **FIRST THING** so the user's teamwork state is safely backed up on GitHub right now! (Also push `server_telegram_bot` if it has clean changes.)
+>
+> **CRITICAL QUOTA / RATE-LIMIT GUARD (WHY PREVIOUS TWO RUNS STOPPED):**
+> - Both previous teamwork runs hit `generic::resource_exhausted: Individual quota reached` because spawning 4+ concurrent sub-orchestrators + parallel workers simultaneously spiked the user's quota/rate limit!
+> - **To guarantee you finish and deliver the actual result without hitting quota again:**
+>   - **DO NOT re-audit or rewrite `PROJECT.md` / `SCOPE.md`** — `PROJECT.md` (`F01`–`F36`) and `.agents/teamwork/` are already complete on disk!
+>   - **Keep parallelism VERY LOW (max 1–2 workers at a time, or direct sequential execution per module)** and skip verbose intermediate markdowns/cron bloat.
+>   - Focus straight on **modifying the actual codebase files** (`M1` -> `M2` -> `M3` -> `M4` -> `M5` -> `M6`), verifying with `ruff` + `pytest` + `npm run build`, syncing `.agents/teamwork/` after each milestone, and pushing working commits to `Huseynovlar/huseynovlar-terminal` `main` (which auto-deploys to `https://terminal.huseynovlar.org`).
+>
+> **Repositories & Live Environment:**
+> - Primary repo: `/home/antigravity/Huseynovlar/huseynovlar-terminal` (`Huseynovlar/huseynovlar-terminal`)
+> - Alerts bot repo: `/home/antigravity/Huseynovlar/server_telegram_bot` (`Huseynovlar/server_telegram_bot`)
+> - Live URL: `https://terminal.huseynovlar.org` (NetBird `100.104.116.58`, Caddy -> `127.0.0.1:18443`)
+> - Real MT5 Docker containers on VPS: `mt5-xau` and `mt5-ustec` (`mt5-exness:rdp`)
+> - Full 36-point specification is already in `/home/antigravity/Huseynovlar/huseynovlar-terminal/PROJECT.md` and `/home/antigravity/.agents/teamwork/ORIGINAL_REQUEST.md` (including `AlertDialog`/`Dialog` replacing native `confirm`/`prompt`/`alert`, proper session deletion on `/auth/logout`, extended token TTL + silent `401 -> /auth/refresh` + redirect to `/auth/v2/login`, WebAuthn Passkey `TypeError` fix, `ingest.terminal.local:8000` MT5 dotted alias fixing `err=4014`, `panel_egress` + `CONFIG_DIR=/app/config` for `backend`/`worker`, `tangerine` + `floating` + `bloomberg`, reactive `RU/EN/AZ`, right-side toasts, shimmer skeletons, button loaders, full CRUD+View pages, live Treemap/Calendar/News/Verified Sources/Logos, separate Gemini AI page, `/etc` integrations, and final Russian guide on keys + connecting 2 MT5 EAs).

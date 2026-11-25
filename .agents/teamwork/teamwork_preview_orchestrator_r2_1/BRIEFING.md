@@ -59,12 +59,12 @@ Resume and complete the full institutional-grade overhaul, verification, E2E + a
 | `teamwork_preview_sub_orch_m2_r2_1` | `teamwork_preview_orchestrator` | Milestone M2: Backend Core, DB Schema Sync, Auth/Passkeys/Cookies/Logout/RBAC, Redis WS Hub & Ops/Wiki | in-progress | `b323eec972b4d79a0e7f6fddb529251f` |
 | `teamwork_preview_sub_orch_m4_r2_1` | `teamwork_preview_orchestrator` | Milestone M4: Frontend Core, `tangerine`+`floating`, `RU/EN/AZ` i18n, shadcn Dialogs, Demo Purge & System/Ops | in-progress | `f3656dde55325b1406d06045aa8c52df` |
 | `teamwork_preview_sub_orch_e2e_r2_1` | `teamwork_preview_orchestrator` | E2E Testing Track: `TEST_INFRA.md`, `e2e/` Tiers 1–4 (`>=414` tests across `F01`–`F36`), `TEST_READY.md` | in-progress | `ee44b731d7e26a070c89d0798fdec0f6` |
-| `checkpoint_sync_w0_r2_1` | `teamwork_preview_worker` | Checkpoint 0: Mirror `.agents/teamwork/` & `PROJECT.md` into `huseynovlar-terminal` and push `[skip ci]` to GitHub | in-progress | `93e666ec2f94849f7ca46be1ecd8e55e` |
+| `checkpoint_sync_w0_r2_1` | `teamwork_preview_worker` | Checkpoint 0: Mirror `.agents/teamwork/` & `PROJECT.md` into `huseynovlar-terminal` and push `[skip ci]` to GitHub (`e7c8c7c`) | completed | `93e666ec2f94849f7ca46be1ecd8e55e` |
 
 ## Succession Status
 - Succession required: no
 - Spawn count: 5 / 20
-- Pending subagents: `44e6fe3d5c0288fb9653a8b58624e732`, `b323eec972b4d79a0e7f6fddb529251f`, `f3656dde55325b1406d06045aa8c52df`, `ee44b731d7e26a070c89d0798fdec0f6`, `93e666ec2f94849f7ca46be1ecd8e55e`
+- Pending subagents: `44e6fe3d5c0288fb9653a8b58624e732`, `b323eec972b4d79a0e7f6fddb529251f`, `f3656dde55325b1406d06045aa8c52df`, `ee44b731d7e26a070c89d0798fdec0f6`
 - Predecessor: `teamwork_preview_orchestrator_r1_1`
 - Successor spawned: not yet spawned
 - Successor generation: none

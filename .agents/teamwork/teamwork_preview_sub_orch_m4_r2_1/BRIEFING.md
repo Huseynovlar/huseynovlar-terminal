@@ -1,6 +1,6 @@
 # BRIEFING — Milestone 4 (`M4`) Frontend Core Framework, Shell, i18n, Demo Purge & System/Ops Pages
 
-- **Current Phase**: Step `2B.a` — Fast Targeted Exploration
+- **Current Phase**: Step `2B.b` — Implementation (`m4_worker_r2_1`)
 - **Milestone Status**: `IN_PROGRESS`
 - **Repository**: `/home/antigravity/Huseynovlar/huseynovlar-terminal`
 - **Owned Scope**: `frontend/**` ONLY
