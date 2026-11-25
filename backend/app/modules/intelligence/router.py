@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import logging
 import re
 import socket
 import xml.etree.ElementTree as ET
@@ -39,6 +40,7 @@ from app.db.models import (
 NEWS_STREAM_SCAN_CAP = 5000
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
+logger = logging.getLogger(__name__)
 
 _YAHOO_HEADERS = {
     "User-Agent": (
