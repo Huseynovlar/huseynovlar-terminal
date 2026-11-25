@@ -1,35 +1,48 @@
 import { type FormEvent, useEffect, useState } from "react";
 
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Fingerprint, Globe, KeyRound, ShieldAlert } from "lucide-react";
+import { Clock, Fingerprint, KeyRound, Languages, ShieldAlert } from "lucide-react";
 
+import { AsyncButton } from "@/components/ui/async-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { notify } from "@/components/ui/toast";
 import { APP_CONFIG } from "@/config/app-config";
 import { authApi, setAccessToken } from "@/framework/api-client";
+import { useI18n } from "@/framework/i18n";
+import { useTerminalStore } from "@/framework/terminal-store";
+import { formatTerminalClock, useUtcClock } from "@/framework/use-utc-clock";
+import { prepareRequestOptions, serializeCredential } from "@/framework/webauthn";
 
 export const Route = createFileRoute("/(main)/auth/v2/login")({
   component: LoginV2,
 });
 
 function LoginV2() {
+  const { t, language } = useI18n();
+  const cycleLanguage = useTerminalStore((s) => s.cycleLanguage);
+  const timezone = useTerminalStore((s) => s.timezone);
+  const now = useUtcClock(1000);
+  const clock = formatTerminalClock(now, timezone);
+
   const navigate = useNavigate();
   const [initialized, setInitialized] = useState<boolean>(true);
   const [username, setUsername] = useState("owner");
   const [email, setEmail] = useState("owner@huseynovlar.org");
+  const [displayName, setDisplayName] = useState("Owner");
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [needTotp, setNeedTotp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
 
   useEffect(() => {
     authApi
       .status()
       .then((res) => setInitialized(res.initialized))
       .catch(() => {
-        // Offline/static preview fallback
         setInitialized(true);
       });
   }, []);
@@ -41,15 +54,17 @@ function LoginV2() {
     try {
       const res = initialized
         ? await authApi.login({ username, password, totp_code: totpCode || undefined })
-        : await authApi.bootstrap({ username, email, password, display_name: "Owner" });
+        : await authApi.bootstrap({ username, email, password, display_name: displayName || username });
       setAccessToken(res.access_token);
-      navigate({ to: "/dashboard/crypto" });
+      notify.success(t.auth.loginSuccess);
+      await navigate({ to: "/dashboard/crypto" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Ошибка входа";
+      const msg = err instanceof Error ? err.message : t.common.errorTitle;
       if (msg.toLowerCase().includes("totp")) {
         setNeedTotp(true);
       }
       setError(msg);
+      notify.error(t.common.errorTitle, msg);
     } finally {
       setLoading(false);
     }
@@ -58,60 +73,79 @@ function LoginV2() {
   async function handlePasskeyLogin() {
     setError(null);
     if (!window.PublicKeyCredential) {
-      setError("Браузер не поддерживает FIDO2 / WebAuthn Passkeys");
+      const msg = "WebAuthn / FIDO2 is not supported in this browser";
+      setError(msg);
+      notify.error(t.common.errorTitle, msg);
       return;
     }
-    setLoading(true);
+    setPasskeyLoading(true);
     try {
       const { challenge_key, options } = await authApi.webauthnLoginOptions(username || undefined);
-      const cred = await navigator.credentials.get({ publicKey: options });
-      if (!cred) throw new Error("Вход по Passkey отменён");
-      const res = await authApi.webauthnLoginVerify(challenge_key, cred);
+      const publicKey = prepareRequestOptions(options);
+      const cred = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential | null;
+      if (!cred) throw new Error("Passkey authentication cancelled");
+      const res = await authApi.webauthnLoginVerify(challenge_key, serializeCredential(cred));
       setAccessToken(res.access_token);
-      navigate({ to: "/dashboard/crypto" });
+      notify.success(t.auth.loginSuccess);
+      await navigate({ to: "/dashboard/crypto" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Ошибка Passkey авторизации");
+      const msg = err instanceof Error ? err.message : t.common.errorTitle;
+      setError(msg);
+      notify.error(t.common.errorTitle, msg);
     } finally {
-      setLoading(false);
+      setPasskeyLoading(false);
     }
   }
 
   return (
     <>
-      <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[360px]">
+      <div className="absolute top-4 right-4 flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1.5 text-xs uppercase"
+          onClick={cycleLanguage}
+        >
+          <Languages className="size-3.5" />
+          {language}
+        </Button>
+      </div>
+
+      <div className="mx-auto flex w-full flex-col justify-center space-y-6 px-4 sm:w-[370px]">
         <div className="space-y-1.5 text-center">
           <h1 className="text-2xl font-semibold tracking-tight">
-            {initialized ? "Вход в терминал" : "Первичная настройка владельца"}
+            {initialized ? t.auth.loginTitle : t.auth.bootstrapTitle}
           </h1>
           <p className="text-muted-foreground text-sm">
-            {initialized
-              ? "Используйте Passkey (Face ID / Touch ID) или пароль + 2FA."
-              : "Создайте учётную запись владельца Huseynovlar Terminal."}
+            {initialized ? t.auth.loginSubtitle : t.auth.bootstrapSubtitle}
           </p>
         </div>
 
         <div className="space-y-4">
           {initialized ? (
             <>
-              <Button
+              <AsyncButton
                 type="button"
                 variant="outline"
                 className="w-full gap-2"
-                onClick={handlePasskeyLogin}
+                onClick={() => void handlePasskeyLogin()}
+                loading={passkeyLoading}
+                loadingText={t.auth.passkeyLoading}
                 disabled={loading}
               >
                 <Fingerprint className="size-4 text-emerald-500" />
-                Войти по Passkey (FIDO2 / WebAuthn)
-              </Button>
+                {t.auth.signInPasskey}
+              </AsyncButton>
               <div className="after:border-border relative text-center text-xs after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
-                <span className="bg-background text-muted-foreground relative z-10 px-2">или по паролю</span>
+                <span className="bg-background text-muted-foreground relative z-10 px-2">•</span>
               </div>
             </>
           ) : null}
 
-          <form onSubmit={handleSubmit} className="space-y-3.5">
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3.5">
             <div className="space-y-1.5">
-              <Label htmlFor="username">Логин</Label>
+              <Label htmlFor="username">{t.auth.username}</Label>
               <Input
                 id="username"
                 value={username}
@@ -122,20 +156,31 @@ function LoginV2() {
             </div>
 
             {!initialized ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="displayName">{t.auth.displayName}</Label>
+                  <Input
+                    id="displayName"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="email">{t.auth.email}</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+              </>
             ) : null}
 
             <div className="space-y-1.5">
-              <Label htmlFor="password">Пароль</Label>
+              <Label htmlFor="password">{t.auth.password}</Label>
               <Input
                 id="password"
                 type="password"
@@ -148,7 +193,7 @@ function LoginV2() {
 
             {initialized && needTotp ? (
               <div className="space-y-1.5">
-                <Label htmlFor="totp">Код 2FA (TOTP 6 цифр)</Label>
+                <Label htmlFor="totp">{t.auth.totpCode}</Label>
                 <Input
                   id="totp"
                   inputMode="numeric"
@@ -168,19 +213,26 @@ function LoginV2() {
               </div>
             ) : null}
 
-            <Button type="submit" className="w-full gap-2" disabled={loading}>
+            <AsyncButton
+              type="submit"
+              className="w-full gap-2"
+              loading={loading}
+              loadingText={t.common.authenticating}
+              disabled={passkeyLoading}
+            >
               <KeyRound className="size-4" />
-              {loading ? "Проверка..." : initialized ? "Войти" : "Создать владельца и войти"}
-            </Button>
+              {initialized ? t.auth.signIn : t.auth.createAdmin}
+            </AsyncButton>
           </form>
         </div>
       </div>
 
-      <div className="absolute bottom-5 flex w-full justify-between px-10">
+      <div className="absolute bottom-5 flex w-full items-center justify-between px-8">
         <div className="text-muted-foreground text-xs">{APP_CONFIG.copyright}</div>
-        <div className="text-muted-foreground flex items-center gap-1 text-xs">
-          <Globe className="size-3.5" />
-          Asia/Baku • NetBird
+        <div className="text-muted-foreground flex items-center gap-1.5 font-mono text-xs tabular-nums">
+          <Clock className="size-3.5" />
+          <span>{clock.time}</span>
+          <span>{clock.label}</span>
         </div>
       </div>
     </>

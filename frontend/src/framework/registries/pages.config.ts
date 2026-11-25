@@ -4,177 +4,66 @@ import {
   Banknote,
   BookOpen,
   Bot,
-  Coins,
-  Cpu,
+  Calendar,
+  FileSearch,
   Gauge,
   Grid2x2,
-  LayoutDashboard,
+  History,
+  Home,
+  Keyboard,
+  MonitorSmartphone,
   Newspaper,
   Server,
   Settings,
+  ShieldCheck,
+  Sparkles,
   UserRound,
+  Users,
+  Wrench,
 } from "lucide-react";
 
-export type TerminalNavGroupId = "desk" | "assets" | "intelligence" | "operations" | "system";
+export type TerminalNavGroupId = "desk" | "markets" | "intelligence" | "operations" | "system";
 
 export interface TerminalPageConfig {
   id: string;
   group: TerminalNavGroupId;
   titleRu: string;
   titleEn: string;
-  descriptionRu: string;
-  descriptionEn: string;
+  titleAz: string;
   route: string;
   icon: LucideIcon;
   hotkeyActionId?: string;
-  badge?: "live" | "ai" | "new";
 }
 
-export const TERMINAL_NAV_GROUPS: Record<TerminalNavGroupId, { labelRu: string; labelEn: string }> = {
-  desk: { labelRu: "Терминал", labelEn: "Trading Desk" },
-  assets: { labelRu: "Хабы активов", labelEn: "Asset Hubs" },
-  intelligence: { labelRu: "Рынок и ИИ", labelEn: "Market & AI" },
-  operations: { labelRu: "Инфраструктура", labelEn: "Operations" },
-  system: { labelRu: "Система", labelEn: "System" },
+export const TERMINAL_NAV_GROUPS: Record<TerminalNavGroupId, { labelRu: string; labelEn: string; labelAz: string }> = {
+  desk: { labelRu: "Терминал", labelEn: "Desk", labelAz: "Terminal" },
+  markets: { labelRu: "Активы и Рынок", labelEn: "Markets & Analytics", labelAz: "Bazarlar və Analitika" },
+  intelligence: { labelRu: "Новости и ИИ", labelEn: "Intelligence & AI", labelAz: "Xəbərlər və Sİ" },
+  operations: { labelRu: "Инфраструктура", labelEn: "Operations", labelAz: "İnfrastruktur" },
+  system: { labelRu: "Система и Доступ", labelEn: "System & Security", labelAz: "Sistem və Təhlükəsizlik" },
 };
 
-/**
- * Single declarative registry for Huseynovlar Terminal pages.
- * Adding a new page here automatically wires it into the Sidebar, Sidebar Customizer,
- * Cmd+K Command Palette, and Hotkey Editor.
- */
 export const TERMINAL_PAGES: TerminalPageConfig[] = [
-  {
-    id: "overview",
-    group: "desk",
-    titleRu: "Общая сводка",
-    titleEn: "Global Overview",
-    descriptionRu: "Портфель Exness, баланс USD/USC, live-эквити и статус роботов",
-    descriptionEn: "Exness portfolio, USD/USC balances, live equity & robot status",
-    route: "/dashboard/crypto",
-    icon: LayoutDashboard,
-    hotkeyActionId: "nav.overview",
-    badge: "live",
-  },
-  {
-    id: "accounts_robots",
-    group: "desk",
-    titleRu: "Счета и роботы",
-    titleEn: "Accounts & Robots",
-    descriptionRu: "Профили Exness, мульти-счета USD/USC, MagicNumber и API-ключи",
-    descriptionEn: "Exness profiles, USD/USC multi-accounts, MagicNumbers & API keys",
-    route: "/dashboard/default",
-    icon: Bot,
-  },
-  {
-    id: "treasury",
-    group: "desk",
-    titleRu: "Казначейство и Хранилище",
-    titleEn: "Treasury & Vault",
-    descriptionRu: "Депозиты, выводы, переводы в Хранилище Exness и полные отчёты",
-    descriptionEn: "Deposits, withdrawals, Exness Vault ledger & full statements",
-    route: "/dashboard/finance",
-    icon: Banknote,
-  },
-  {
-    id: "asset_xauusd",
-    group: "assets",
-    titleRu: "XAUUSD (Золото)",
-    titleEn: "XAUUSD (Gold)",
-    descriptionRu: "Живой график M1–W1, ордера на свечах, USD+USC счета и новости золота",
-    descriptionEn: "Live M1–W1 chart, on-chart orders, USD+USC accounts & gold news",
-    route: "/dashboard/crypto",
-    icon: Coins,
-    hotkeyActionId: "nav.assets",
-    badge: "live",
-  },
-  {
-    id: "asset_ustec",
-    group: "assets",
-    titleRu: "USTEC (NASDAQ-100)",
-    titleEn: "USTEC (NASDAQ-100)",
-    descriptionRu: "Живой график M1–W1, ордера роботов, тех-сектор и новости США",
-    descriptionEn: "Live M1–W1 chart, robot orders, US tech drivers & news",
-    route: "/dashboard/crypto",
-    icon: Cpu,
-    badge: "live",
-  },
-  {
-    id: "market_heatmap",
-    group: "intelligence",
-    titleRu: "Карта рынка (Treemap)",
-    titleEn: "Market Heatmap",
-    descriptionRu: "StockCharts/Finviz тремап: NASDAQ-100, S&P 500, мировые лидеры и золото",
-    descriptionEn: "NASDAQ-100, S&P 500, global leaders & gold commodities treemap",
-    route: "/dashboard/analytics",
-    icon: Grid2x2,
-    hotkeyActionId: "nav.heatmap",
-    badge: "new",
-  },
-  {
-    id: "analytics_risk",
-    group: "intelligence",
-    titleRu: "Аналитика и Risk Lab",
-    titleEn: "Analytics & Risk Lab",
-    descriptionRu: "TWR ROI, Drawdown, MAE/MFE, Execution TCA, корреляции и календарь PnL",
-    descriptionEn: "TWR ROI, Drawdown, MAE/MFE, TCA, correlations & PnL calendar",
-    route: "/dashboard/analytics",
-    icon: Gauge,
-  },
-  {
-    id: "news_ai",
-    group: "intelligence",
-    titleRu: "Мировые новости и Gemini AI",
-    titleEn: "World News & Gemini AI",
-    descriptionRu: "Лента новостей, эконом-календарь и Google AI Co-Pilot по портфелю",
-    descriptionEn: "Global news feed, economic calendar & Google Gemini AI Co-Pilot",
-    route: "/dashboard/chat",
-    icon: Newspaper,
-    hotkeyActionId: "nav.news",
-    badge: "ai",
-  },
-  {
-    id: "containers_ops",
-    group: "operations",
-    titleRu: "Контейнеры MT5 / ОС",
-    titleEn: "MT5 / OS Containers",
-    descriptionRu: "Мониторинг Docker-контейнеров, CPU/RAM, логи и безопасный Restart",
-    descriptionEn: "Docker container status, CPU/RAM, live logs & safe Restart",
-    route: "/dashboard/infrastructure",
-    icon: Server,
-    hotkeyActionId: "nav.containers",
-  },
-  {
-    id: "instructions_wiki",
-    group: "operations",
-    titleRu: "Инструкции и Setup Wizard",
-    titleEn: "Instructions & Setup Wizard",
-    descriptionRu: "Мастер подключения MT5 (.set генератор), база знаний и регламенты",
-    descriptionEn: "MT5 Setup Wizard (.set generator), knowledge base & playbooks",
-    route: "/dashboard/academy",
-    icon: BookOpen,
-    hotkeyActionId: "nav.instructions",
-  },
-  {
-    id: "profile",
-    group: "system",
-    titleRu: "Профиль и Безопасность",
-    titleEn: "Profile & Security",
-    descriptionRu: "Аватар, соцсети, FIDO2 Passkeys, 2FA TOTP и зашифрованные ключи",
-    descriptionEn: "Avatar, social links, FIDO2 Passkeys, 2FA TOTP & Secret Vault",
-    route: "/dashboard/profile",
-    icon: UserRound,
-  },
-  {
-    id: "settings",
-    group: "system",
-    titleRu: "Настройки и Горячие клавиши",
-    titleEn: "Settings & Hotkeys",
-    descriptionRu: "Левое меню, бегущая строка, Telegram-алерты и редактор макропада F13–F24",
-    descriptionEn: "Sidebar customizer, ticker tape, Telegram alerts & F13–F24 keymap",
-    route: "/dashboard/roles",
-    icon: Settings,
-  },
+  { id: "home", group: "desk", titleRu: "Главная панель", titleEn: "Home Command", titleAz: "Əsas panel", route: "/dashboard/crypto", icon: Home, hotkeyActionId: "nav.home" },
+  { id: "charts", group: "desk", titleRu: "Живые графики", titleEn: "Live Charts", titleAz: "Canlı qrafiklər", route: "/dashboard/crypto", icon: Activity, hotkeyActionId: "nav.overview" },
+  { id: "accounts", group: "desk", titleRu: "Счета и роботы", titleEn: "Accounts & Robots", titleAz: "Hesablar və robotlar", route: "/dashboard/default", icon: Bot },
+  { id: "treasury", group: "desk", titleRu: "Казна и переводы", titleEn: "Treasury & Transfers", titleAz: "Xəzinə və köçürmələr", route: "/dashboard/finance", icon: Banknote },
+  { id: "treemap", group: "markets", titleRu: "Карта рынка", titleEn: "Market Treemap", titleAz: "Bazar xəritəsi", route: "/dashboard/treemap", icon: Grid2x2, hotkeyActionId: "nav.heatmap" },
+  { id: "analytics", group: "markets", titleRu: "Аналитика и риски", titleEn: "Analytics & Risk Lab", titleAz: "Analitika və risklər", route: "/dashboard/analytics", icon: Gauge },
+  { id: "calendar", group: "markets", titleRu: "Экономический календарь", titleEn: "Economic Calendar", titleAz: "İqtisadi təqvim", route: "/dashboard/calendar", icon: Calendar },
+  { id: "news", group: "intelligence", titleRu: "Лента новостей", titleEn: "News Wire", titleAz: "Xəbər lenti", route: "/dashboard/chat", icon: Newspaper, hotkeyActionId: "nav.news" },
+  { id: "ai", group: "intelligence", titleRu: "Google AI Co-Pilot", titleEn: "Google AI Co-Pilot", titleAz: "Google AI Co-Pilot", route: "/dashboard/chat", icon: Sparkles },
+  { id: "containers", group: "operations", titleRu: "Docker контейнеры MT5", titleEn: "MT5 Docker Containers", titleAz: "MT5 Docker konteynerləri", route: "/dashboard/containers", icon: Server, hotkeyActionId: "nav.containers" },
+  { id: "setup", group: "operations", titleRu: "Мастер настройки и /etc", titleEn: "Setup Wizard & /etc", titleAz: "Quraşdırma və /etc", route: "/dashboard/setup", icon: Wrench, hotkeyActionId: "nav.instructions" },
+  { id: "wiki", group: "operations", titleRu: "База знаний (Wiki)", titleEn: "Knowledge Base (Wiki)", titleAz: "Bilik bazası (Wiki)", route: "/dashboard/wiki", icon: BookOpen, hotkeyActionId: "nav.wiki" },
+  { id: "users", group: "system", titleRu: "Пользователи (RBAC)", titleEn: "Users (RBAC)", titleAz: "İstifadəçilər (RBAC)", route: "/dashboard/users", icon: Users },
+  { id: "profile", group: "system", titleRu: "Мой профиль", titleEn: "My Profile", titleAz: "Mənim profilim", route: "/dashboard/profile", icon: UserRound },
+  { id: "security", group: "system", titleRu: "Безопасность и 2FA", titleEn: "Security & 2FA", titleAz: "Təhlükəsizlik və 2FA", route: "/dashboard/security", icon: ShieldCheck },
+  { id: "sessions", group: "system", titleRu: "Активные сессии", titleEn: "Active Sessions", titleAz: "Aktiv sessiyalar", route: "/dashboard/sessions", icon: MonitorSmartphone },
+  { id: "login-history", group: "system", titleRu: "История входов", titleEn: "Login History", titleAz: "Giriş tarixçəsi", route: "/dashboard/login-history", icon: History },
+  { id: "audit", group: "system", titleRu: "Журнал аудита", titleEn: "Audit Log", titleAz: "Audit jurnalı", route: "/dashboard/audit", icon: FileSearch },
+  { id: "preferences", group: "system", titleRu: "Настройки терминала", titleEn: "Terminal Preferences", titleAz: "Terminal ayarları", route: "/dashboard/preferences", icon: Settings, hotkeyActionId: "nav.preferences" },
+  { id: "hotkeys", group: "system", titleRu: "Горячие клавиши", titleEn: "Hotkeys", titleAz: "Qısa yollar", route: "/dashboard/hotkeys", icon: Keyboard },
 ];
 
 export const FALLBACK_ICON = Activity;

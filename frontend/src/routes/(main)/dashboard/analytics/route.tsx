@@ -116,7 +116,11 @@ function DeepAnalyticsPage() {
             size="sm"
             variant="outline"
             className="gap-1.5 text-xs"
-            onClick={() => window.open("/api/v1/analytics/statement.csv", "_blank")}
+            onClick={() => {
+              void import("@/framework/api-client").then(({ apiDownload }) =>
+                apiDownload("/analytics/statement.csv", "statement.csv"),
+              );
+            }}
           >
             <Download className="size-3.5" />
             Exness Statement (CSV / Excel)

@@ -6,11 +6,17 @@ import { cn } from "cn";
 
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { apiRequest, type AuthTokenResponse, getAccessToken, setAccessToken } from "@/framework/api-client";
+import { PageSkeleton } from "@/components/ui/skeleton";
+import { apiRequest, authApi, clearAccessToken, getAccessToken } from "@/framework/api-client";
 import { BloombergTickerTape } from "@/framework/components/BloombergTickerTape";
 import { HotkeyEngine } from "@/framework/components/HotkeyEngine";
-import { TerminalHeaderControls } from "@/framework/components/TerminalHeaderControls";
+import { LockScreenOverlay } from "@/framework/components/LockScreenOverlay";
+import { HeaderUtcClock, TerminalHeaderControls } from "@/framework/components/TerminalHeaderControls";
+import { queueServerPreferenceSync, useTerminalStore } from "@/framework/terminal-store";
+import { LiveSocketProvider } from "@/framework/use-live-socket";
 import { getDashboardLayout } from "@/server/server-actions";
+import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
+import { registerPreferencesServerSync } from "@/stores/preferences/preferences-store";
 
 import { AccountSwitcher } from "./-components/header/account-switcher";
 import { SearchDialog } from "./-components/header/search-dialog";
@@ -25,16 +31,24 @@ export const Route = createFileRoute("/(main)/dashboard")({
 function DashboardLayout() {
   const { defaultOpen, variant, collapsible } = Route.useLoaderData();
   const [currentUser, setCurrentUser] = useState<CurrentTerminalUser | null>(null);
+  const hydrateTerminal = useTerminalStore((s) => s.hydrateFromServer);
+  const hydratePreferences = usePreferencesStore((s) => s.hydrateFromServer);
+
+  useEffect(() => {
+    registerPreferencesServerSync((patch) => {
+      queueServerPreferenceSync(patch as Record<string, unknown>);
+    });
+    return () => {
+      registerPreferencesServerSync(null);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     async function verifySession() {
       try {
         if (!getAccessToken()) {
-          const refreshed = await apiRequest<AuthTokenResponse>("/auth/refresh", { method: "POST" });
-          if (refreshed?.access_token) {
-            setAccessToken(refreshed.access_token);
-          }
+          await authApi.refresh();
         }
         const profile = await apiRequest<{
           id: string;
@@ -43,89 +57,109 @@ function DashboardLayout() {
           display_name: string;
           avatar_url: string;
           role: string;
+          preferences?: Record<string, unknown>;
         }>("/profile/me");
+
+        let serverPrefs = profile.preferences;
+        if (!serverPrefs) {
+          try {
+            serverPrefs = await apiRequest<Record<string, unknown>>("/profile/preferences");
+          } catch {
+            // optional fallback
+          }
+        }
+
         if (!cancelled) {
+          if (serverPrefs && typeof serverPrefs === "object") {
+            hydrateTerminal(serverPrefs);
+            hydratePreferences(serverPrefs as Record<string, string | null | undefined>);
+          }
           setCurrentUser({
             id: profile.id,
+            username: profile.username,
             name: profile.display_name || profile.username,
-            email: profile.email,
+            email: profile.email || "",
             avatar: profile.avatar_url || "",
-            role: profile.role || "owner",
+            role: profile.role || "ADMIN",
           });
         }
       } catch {
-        setAccessToken(null);
+        clearAccessToken();
         if (!cancelled) {
           window.location.replace("/auth/v2/login");
         }
       }
     }
-    verifySession();
+    void verifySession();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hydrateTerminal, hydratePreferences]);
 
   if (!currentUser) {
     return (
-      <div className="bg-background text-muted-foreground flex h-dvh w-full items-center justify-center font-mono text-xs">
-        Проверка доступа (Zero-Trust Session Guard)...
+      <div className="bg-background min-h-dvh w-full p-6">
+        <PageSkeleton />
       </div>
     );
   }
 
   return (
-    <SidebarProvider
-      defaultOpen={defaultOpen}
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 68)",
-        } as CSSProperties
-      }
-    >
-      <HotkeyEngine />
-      <AppSidebar variant={variant} collapsible={collapsible} currentUser={currentUser} />
-      <SidebarInset
-        className={cn(
-          "[html[data-content-layout=centered]_&>*]:mx-auto",
-          "[html[data-content-layout=centered]_&>*]:w-full",
-          "[html[data-content-layout=centered]_&>*]:max-w-screen-2xl",
-          "peer-data-[variant=inset]:border",
-          "[--dashboard-header-height:--spacing(12)]",
-          "min-w-0 overflow-x-clip",
-        )}
+    <LiveSocketProvider>
+      <SidebarProvider
+        defaultOpen={defaultOpen}
+        style={
+          {
+            "--sidebar-width": "calc(var(--spacing) * 68)",
+          } as CSSProperties
+        }
       >
-        <BloombergTickerTape />
-        <header
+        <HotkeyEngine />
+        <LockScreenOverlay user={currentUser} />
+        <AppSidebar variant={variant ?? "floating"} collapsible={collapsible ?? "icon"} currentUser={currentUser} />
+        <SidebarInset
           className={cn(
-            "flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12",
-            "[html[data-navbar-style=sticky]_&]:bg-background/50 [html[data-navbar-style=sticky]_&]:sticky [html[data-navbar-style=sticky]_&]:top-0 [html[data-navbar-style=sticky]_&]:z-50 [html[data-navbar-style=sticky]_&]:overflow-hidden [html[data-navbar-style=sticky]_&]:rounded-t-[inherit] [html[data-navbar-style=sticky]_&]:backdrop-blur-md",
+            "[html[data-content-layout=centered]_&>*]:mx-auto",
+            "[html[data-content-layout=centered]_&>*]:w-full",
+            "[html[data-content-layout=centered]_&>*]:max-w-screen-2xl",
+            "peer-data-[variant=inset]:border",
+            "[--dashboard-header-height:--spacing(12)]",
+            "min-w-0 overflow-x-clip",
           )}
         >
-          <div className="flex w-full items-center justify-between px-4 lg:px-6">
-            <div className="flex items-center gap-1 lg:gap-2">
-              <SidebarTrigger className="-ml-1" />
-              <Separator
-                orientation="vertical"
-                className="mx-2 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center"
-              />
-              <SearchDialog />
+          <BloombergTickerTape />
+          <header
+            className={cn(
+              "flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12",
+              "[html[data-navbar-style=sticky]_&]:bg-background/60 [html[data-navbar-style=sticky]_&]:sticky [html[data-navbar-style=sticky]_&]:top-0 [html[data-navbar-style=sticky]_&]:z-50 [html[data-navbar-style=sticky]_&]:overflow-hidden [html[data-navbar-style=sticky]_&]:rounded-t-[inherit] [html[data-navbar-style=sticky]_&]:backdrop-blur-md",
+            )}
+          >
+            <div className="flex w-full items-center justify-between px-4 lg:px-6">
+              <div className="flex items-center gap-1 lg:gap-2">
+                <SidebarTrigger className="-ml-1" />
+                <Separator
+                  orientation="vertical"
+                  className="mx-2 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center"
+                />
+                <SearchDialog />
+              </div>
+              <div className="flex items-center gap-2">
+                <TerminalHeaderControls />
+                <Separator
+                  orientation="vertical"
+                  className="mx-1 hidden data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center md:block"
+                />
+                <ThemeSwitcher />
+                <HeaderUtcClock />
+                <AccountSwitcher user={currentUser} />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <TerminalHeaderControls />
-              <Separator
-                orientation="vertical"
-                className="mx-1 hidden data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center md:block"
-              />
-              <ThemeSwitcher />
-              <AccountSwitcher user={currentUser} />
-            </div>
+          </header>
+          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-3 has-data-[content-padding=false]:p-0 md:p-5 md:has-data-[content-padding=false]:p-0">
+            <Outlet />
           </div>
-        </header>
-        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 has-data-[content-padding=false]:p-0 md:p-6 md:has-data-[content-padding=false]:p-0">
-          <Outlet />
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+        </SidebarInset>
+      </SidebarProvider>
+    </LiveSocketProvider>
   );
 }

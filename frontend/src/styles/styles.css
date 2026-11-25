@@ -6,6 +6,7 @@
 @import "./presets/brutalist.css";
 @import "./presets/soft-pop.css";
 @import "./presets/tangerine.css";
+@import "./flag-icons/flags.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -180,3 +181,32 @@ html {
 .disable-transitions * {
   transition: none !important;
 }
+
+@keyframes ht-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.ht-shimmer-bar {
+  position: relative;
+  overflow: hidden;
+}
+
+.ht-shimmer-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(1 0 0 / 12%) 50%,
+    transparent 100%
+  );
+  animation: ht-shimmer 1.4s ease-in-out infinite;
+}
+

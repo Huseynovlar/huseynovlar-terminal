@@ -91,7 +91,7 @@ function AccountsAndRobotsPage() {
   }
 
   useEffect(() => {
-    const id = setInterval(() => setNowUtc(new Date()), 5000);
+    const id = setInterval(() => setNowUtc(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
 

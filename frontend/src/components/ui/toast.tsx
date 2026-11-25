@@ -137,19 +137,19 @@ function ToastIcon({ type }: { type: string | undefined }) {
 
   if (type === "success") {
     icon = (
-      <CircleCheckIcon aria-hidden="true" />
+      <CircleCheckIcon className="text-emerald-500" aria-hidden="true" />
     )
   }
 
   if (type === "info") {
     icon = (
-      <InfoIcon aria-hidden="true" />
+      <InfoIcon className="text-sky-500" aria-hidden="true" />
     )
   }
 
   if (type === "warning") {
     icon = (
-      <TriangleAlertIcon aria-hidden="true" />
+      <TriangleAlertIcon className="text-amber-500" aria-hidden="true" />
     )
   }
 
@@ -161,7 +161,7 @@ function ToastIcon({ type }: { type: string | undefined }) {
 
   if (type === "loading") {
     icon = (
-      <Loader2Icon className="animate-spin" aria-hidden="true" />
+      <Loader2Icon className="animate-spin text-primary" aria-hidden="true" />
     )
   }
 
@@ -217,6 +217,17 @@ function Toaster({
 const createToastManager = ToastPrimitive.createToastManager
 const useToastManager = ToastPrimitive.useToastManager
 
+const notify = {
+  success: (title: string, description?: string) =>
+    toast.add({ title, description, type: "success" }),
+  error: (title: string, description?: string) =>
+    toast.add({ title, description, type: "error" }),
+  info: (title: string, description?: string) =>
+    toast.add({ title, description, type: "info" }),
+  warning: (title: string, description?: string) =>
+    toast.add({ title, description, type: "warning" }),
+}
+
 export {
   Toaster,
   Toast,
@@ -229,6 +240,7 @@ export {
   ToastTitle,
   ToastViewport,
   createToastManager,
+  notify,
   toast,
   useToastManager,
 }

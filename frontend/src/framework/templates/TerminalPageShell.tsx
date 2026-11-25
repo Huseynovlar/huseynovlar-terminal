@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { useTerminalStore } from "@/framework/terminal-store";
 
 interface TerminalPageShellProps {
   title: string;
@@ -12,30 +11,27 @@ interface TerminalPageShellProps {
 }
 
 /**
- * Unified Apple-clean × Bloomberg page template.
- * Guarantees consistent header alignment, density mode, and layout across every Terminal page.
+ * Unified Bloomberg-compact institutional page template.
+ * Guarantees consistent header alignment, tabular numbers, and compact spacing across every Terminal page.
  */
 export function TerminalPageShell({ title, subtitle, badge, actions, children }: TerminalPageShellProps) {
-  const density = useTerminalStore((s) => s.density);
-  const gapClass = density === "compact" ? "space-y-3" : "space-y-5";
-
   return (
-    <div className={gapClass}>
-      <div className="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+    <div className="space-y-3 tabular-nums">
+      <div className="flex flex-col gap-2.5 border-b border-border/60 pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold tracking-tight sm:text-xl">{title}</h1>
             {badge ? (
-              <Badge variant="secondary" className="text-[11px] font-medium uppercase tracking-wider">
+              <Badge variant="secondary" className="text-[10px] font-mono font-medium uppercase tracking-wider">
                 {badge}
               </Badge>
             ) : null}
           </div>
-          {subtitle ? <p className="text-muted-foreground text-sm">{subtitle}</p> : null}
+          {subtitle ? <p className="text-muted-foreground text-xs sm:text-sm">{subtitle}</p> : null}
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
-      <div className={gapClass}>{children}</div>
+      <div className="space-y-3">{children}</div>
     </div>
   );
 }

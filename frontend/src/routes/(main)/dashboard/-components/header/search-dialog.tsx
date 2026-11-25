@@ -15,57 +15,19 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import type { AppPath, NavMainItem } from "@/navigation/sidebar/sidebar-items";
-import { sidebarItems } from "@/navigation/sidebar/sidebar-items";
+import { useI18n } from "@/framework/i18n";
+import { useTerminalStore } from "@/framework/terminal-store";
+import { buildSidebarItems, type NavMainItem } from "@/navigation/sidebar/sidebar-items";
 
 type SearchItem = {
   id: string;
   group: string;
   label: string;
-  url: AppPath;
+  url: string;
   icon?: NavMainItem["icon"];
   disabled?: boolean;
   newTab?: boolean;
 };
-
-const sidebarGroupLabels = new Set(sidebarItems.flatMap((group) => (group.label ? [group.label] : [])));
-
-function getSubItemGroup(groupLabel: string | undefined, itemTitle: string) {
-  return sidebarGroupLabels.has(itemTitle) ? (groupLabel ?? "Other") : itemTitle;
-}
-
-const searchItems: SearchItem[] = sidebarItems.flatMap((group) =>
-  group.items.flatMap((item) => {
-    if (item.subItems) {
-      return item.subItems.map((sub) => ({
-        id: sub.id,
-        group: getSubItemGroup(group.label, item.title),
-        label: sub.title,
-        url: sub.url,
-        icon: item.icon,
-        disabled: sub.disabled,
-        newTab: sub.newTab,
-      }));
-    }
-    return [
-      {
-        id: item.id,
-        group: group.label ?? "Other",
-        label: item.title,
-        url: item.url,
-        icon: item.icon,
-        disabled: item.disabled,
-        newTab: item.newTab,
-      },
-    ];
-  }),
-);
-
-function getAvailableItems(items: SearchItem[]) {
-  return items.filter((item) => !item.disabled && !item.url.includes("coming-soon"));
-}
-
-const recommendations = getAvailableItems(searchItems);
 
 function groupBy(items: SearchItem[]) {
   const groups = [...new Set(items.map((item) => item.group))];
@@ -76,13 +38,45 @@ function groupBy(items: SearchItem[]) {
 }
 
 export function SearchDialog() {
+  const { t } = useI18n();
+  const hiddenPageIds = useTerminalStore((s) => s.hiddenPageIds);
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const navigate = useNavigate();
 
+  const searchItems = React.useMemo<SearchItem[]>(() => {
+    const navGroups = buildSidebarItems(t, hiddenPageIds);
+    return navGroups.flatMap((group) =>
+      group.items.flatMap((item) => {
+        if (item.subItems) {
+          return item.subItems.map((sub) => ({
+            id: sub.id,
+            group: group.label ?? "Terminal",
+            label: sub.title,
+            url: sub.url,
+            icon: item.icon,
+            disabled: sub.disabled,
+            newTab: sub.newTab,
+          }));
+        }
+        return [
+          {
+            id: item.id,
+            group: group.label ?? "Terminal",
+            label: item.title,
+            url: item.url,
+            icon: item.icon,
+            disabled: item.disabled,
+            newTab: item.newTab,
+          },
+        ];
+      }),
+    );
+  }, [t, hiddenPageIds]);
+
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.key === "j" && (e.metaKey || e.ctrlKey)) {
+      if ((e.key === "k" || e.key === "j") && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         setOpen((prev) => !prev);
       }
@@ -102,31 +96,9 @@ export function SearchDialog() {
     if (item.newTab) {
       window.open(item.url, "_blank", "noopener,noreferrer");
     } else {
-      void navigate({ to: item.url });
+      void navigate({ to: item.url as never });
     }
   };
-
-  const renderGroups = (items: SearchItem[]) =>
-    groupBy(items).map(({ group, items: groupItems }, index) => (
-      <React.Fragment key={group}>
-        {index > 0 && <CommandSeparator />}
-        <CommandGroup heading={group}>
-          {groupItems.map((item) => (
-            <CommandItem
-              disabled={item.disabled}
-              key={`${group}-${item.id}`}
-              value={`${item.group} ${item.label}`}
-              onSelect={() => handleSelect(item)}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                {item.icon && <item.icon />}
-                <span className="truncate">{item.label}</span>
-              </span>
-            </CommandItem>
-          ))}
-        </CommandGroup>
-      </React.Fragment>
-    ));
 
   return (
     <>
@@ -136,17 +108,36 @@ export function SearchDialog() {
         className="text-muted-foreground px-0! font-normal hover:no-underline"
       >
         <Search data-icon="inline-start" />
-        Search
+        {t.header.searchTrigger}
         <kbd className="bg-muted inline-flex h-5 items-center gap-1 rounded border px-1.5 text-[10px] font-medium select-none">
-          <span className="text-xs">⌘</span>J
+          <span className="text-xs">⌘</span>K
         </kbd>
       </Button>
       <CommandDialog open={open} onOpenChange={handleOpenChange}>
         <Command>
-          <CommandInput placeholder="Search dashboards, users, and more…" value={query} onValueChange={setQuery} />
+          <CommandInput placeholder={t.header.searchPlaceholder} value={query} onValueChange={setQuery} />
           <CommandList>
-            <CommandEmpty>No results found.</CommandEmpty>
-            {query ? renderGroups(searchItems) : renderGroups(recommendations)}
+            <CommandEmpty>{t.common.noData}</CommandEmpty>
+            {groupBy(searchItems).map(({ group, items: groupItems }, index) => (
+              <React.Fragment key={group}>
+                {index > 0 && <CommandSeparator />}
+                <CommandGroup heading={group}>
+                  {groupItems.map((item) => (
+                    <CommandItem
+                      disabled={item.disabled}
+                      key={`${group}-${item.id}`}
+                      value={`${item.group} ${item.label}`}
+                      onSelect={() => handleSelect(item)}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        {item.icon && <item.icon />}
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </React.Fragment>
+            ))}
           </CommandList>
         </Command>
       </CommandDialog>

@@ -1,22 +1,34 @@
 import {
+  Activity,
   Banknote,
   BookOpen,
   Bot,
   Calendar,
+  Compass,
+  FileSearch,
   Gauge,
   Grid2x2,
-  LayoutDashboard,
+  History,
+  Home,
+  Keyboard,
+  Layers,
   type LucideIcon,
+  MonitorSmartphone,
   Newspaper,
   Server,
   Settings,
+  ShieldCheck,
+  Sparkles,
   UserRound,
+  Users,
+  Wrench,
 } from "lucide-react";
 
-import type { FileRoutesByTo } from "@/routeTree.gen";
+import { getDictionary, type TranslationDict } from "@/framework/i18n";
+import type { LanguageMode } from "@/framework/terminal-store";
 
 export type NavBadge = "new" | "updated" | "soon";
-export type AppPath = keyof FileRoutesByTo;
+export type AppPath = string;
 
 export interface NavSubItem {
   id: string;
@@ -54,95 +66,75 @@ export interface NavGroup {
   items: NavMainItem[];
 }
 
-export const sidebarItems: NavGroup[] = [
-  {
-    id: 1,
-    label: "Терминал",
-    items: [
-      {
-        id: "overview",
-        title: "Терминал и Графики",
-        url: "/dashboard/crypto",
-        icon: LayoutDashboard,
-      },
-      {
-        id: "accounts-robots",
-        title: "Счета и роботы",
-        url: "/dashboard/default",
-        icon: Bot,
-      },
-      {
-        id: "treasury",
-        title: "Казначейство и Хранилище",
-        url: "/dashboard/finance",
-        icon: Banknote,
-      },
-    ],
-  },
-  {
-    id: 2,
-    label: "Рынок и ИИ",
-    items: [
-      {
-        id: "market-heatmap",
-        title: "Карта рынка (Treemap)",
-        url: "/dashboard/treemap",
-        icon: Grid2x2,
-      },
-      {
-        id: "analytics-risk",
-        title: "Аналитика и Risk Lab",
-        url: "/dashboard/analytics",
-        icon: Gauge,
-      },
-      {
-        id: "econ-calendar",
-        title: "Календарь и PnL",
-        url: "/dashboard/calendar",
-        icon: Calendar,
-      },
-      {
-        id: "news-ai",
-        title: "Новости и Gemini AI",
-        url: "/dashboard/chat",
-        icon: Newspaper,
-      },
-    ],
-  },
-  {
-    id: 3,
-    label: "Инфраструктура",
-    items: [
-      {
-        id: "containers-ops",
-        title: "Контейнеры MT5 / ОС",
-        url: "/dashboard/infrastructure",
-        icon: Server,
-      },
-      {
-        id: "instructions-wiki",
-        title: "Инструкции и Setup Wizard",
-        url: "/dashboard/academy",
-        icon: BookOpen,
-      },
-    ],
-  },
-  {
-    id: 4,
-    label: "Система",
-    items: [
-      {
-        id: "profile",
-        title: "Профиль и Безопасность",
-        url: "/dashboard/profile",
-        icon: UserRound,
-      },
-      {
-        id: "settings-hotkeys",
-        title: "Настройки и Хоткеи",
-        url: "/dashboard/roles",
-        icon: Settings,
-      },
-    ],
-  },
-];
+export function buildSidebarItems(dict: TranslationDict, hiddenPageIds: string[] = []): NavGroup[] {
+  const hidden = new Set(hiddenPageIds);
+  const groups: NavGroup[] = [
+    {
+      id: 1,
+      label: dict.nav.groupDesk,
+      items: [
+        { id: "home", title: dict.nav.home, url: "/dashboard/crypto", icon: Home },
+        { id: "charts", title: dict.nav.charts, url: "/dashboard/crypto", icon: Activity },
+        { id: "accounts", title: dict.nav.accounts, url: "/dashboard/default", icon: Bot },
+        { id: "treasury", title: dict.nav.treasury, url: "/dashboard/finance", icon: Banknote },
+      ],
+    },
+    {
+      id: 2,
+      label: dict.nav.groupMarkets,
+      items: [
+        { id: "treemap", title: dict.nav.treemap, url: "/dashboard/treemap", icon: Grid2x2 },
+        { id: "analytics", title: dict.nav.analytics, url: "/dashboard/analytics", icon: Gauge },
+        { id: "calendar", title: dict.nav.calendar, url: "/dashboard/calendar", icon: Calendar },
+      ],
+    },
+    {
+      id: 3,
+      label: dict.nav.groupIntelligence,
+      items: [
+        { id: "news", title: dict.nav.news, url: "/dashboard/chat", icon: Newspaper },
+        { id: "ai", title: dict.nav.ai, url: "/dashboard/chat", icon: Sparkles },
+      ],
+    },
+    {
+      id: 4,
+      label: dict.nav.groupOperations,
+      items: [
+        { id: "containers", title: dict.nav.containers, url: "/dashboard/containers", icon: Server },
+        { id: "setup", title: dict.nav.setup, url: "/dashboard/setup", icon: Wrench },
+        { id: "wiki", title: dict.nav.wiki, url: "/dashboard/wiki", icon: BookOpen },
+      ],
+    },
+    {
+      id: 5,
+      label: dict.nav.groupSystem,
+      items: [
+        { id: "users", title: dict.nav.users, url: "/dashboard/users", icon: Users },
+        { id: "profile", title: dict.nav.profile, url: "/dashboard/profile", icon: UserRound },
+        { id: "security", title: dict.nav.security, url: "/dashboard/security", icon: ShieldCheck },
+        { id: "sessions", title: dict.nav.sessions, url: "/dashboard/sessions", icon: MonitorSmartphone },
+        { id: "login-history", title: dict.nav.loginHistory, url: "/dashboard/login-history", icon: History },
+        { id: "audit", title: dict.nav.audit, url: "/dashboard/audit", icon: FileSearch },
+        { id: "preferences", title: dict.nav.preferences, url: "/dashboard/preferences", icon: Settings },
+        { id: "hotkeys", title: dict.nav.hotkeys, url: "/dashboard/hotkeys", icon: Keyboard },
+      ],
+    },
+  ];
+
+  // Keep icons imported for M5 expansion
+  void Compass;
+  void Layers;
+
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !hidden.has(item.id)),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+export function getSidebarItemsForLang(lang: LanguageMode, hiddenPageIds: string[] = []): NavGroup[] {
+  return buildSidebarItems(getDictionary(lang), hiddenPageIds);
+}
+
+export const sidebarItems: NavGroup[] = buildSidebarItems(getDictionary("ru"));
