@@ -38,7 +38,7 @@ jobs:
         working-directory: backend
         run: |
           pip install -r requirements-dev.txt
-          ruff check app tests
+          ruff check app tests ../worker
           pytest -q
 
       - name: Set up Node 22
@@ -61,13 +61,14 @@ jobs:
           docker build -f backend/Dockerfile -t "huseynovlar-terminal-backend:$TAG" .
           docker build -f frontend/Dockerfile -t "huseynovlar-terminal-frontend:$TAG" .
 
-      - name: Create release bundle (images + compose + configs)
+      - name: Create release bundle (images + compose + configs + mql5)
         run: |
           mkdir -p bundle
           docker save "huseynovlar-terminal-backend:$TAG" -o bundle/backend.tar
           docker save "huseynovlar-terminal-frontend:$TAG" -o bundle/frontend.tar
           cp deploy/docker-compose.yml bundle/docker-compose.yml
           cp -r config bundle/config
+          cp -r mql5 bundle/mql5
           tar -czf release.tgz -C bundle .
 
       - name: Install NetBird

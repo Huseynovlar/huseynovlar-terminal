@@ -24,6 +24,10 @@ if [ -d "$TMP/config" ]; then
   rm -rf "$BASE/config"
   cp -r "$TMP/config" "$BASE/config"
 fi
+if [ -d "$TMP/mql5" ]; then
+  rm -rf "$BASE/mql5"
+  cp -r "$TMP/mql5" "$BASE/mql5"
+fi
 
 docker load -i "$TMP/backend.tar"
 docker load -i "$TMP/frontend.tar"
@@ -33,8 +37,12 @@ docker network inspect exness_mt5_ingest >/dev/null 2>&1 || docker network creat
 PREV="$(cat "$BASE/current_tag" 2>/dev/null || true)"
 dc() {
   local tag="$1"; shift
+  local -a compose_files=(-f "$BASE/docker-compose.yml")
+  if [ -f "$BASE/docker-compose.override.yml" ]; then
+    compose_files+=(-f "$BASE/docker-compose.override.yml")
+  fi
   IMAGE_TAG="$tag" docker compose -p huseynovlar-terminal --env-file "$BASE/.env" \
-    -f "$BASE/docker-compose.yml" "$@"
+    "${compose_files[@]}" "$@"
 }
 
 if dc "$TAG" up -d --remove-orphans --wait --wait-timeout 150; then

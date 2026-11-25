@@ -1,10 +1,21 @@
-# Market Treemap Heatmap (StockCharts / Finviz style)
-# Refreshed by terminal-worker via Yahoo Finance batch + Redis cache
+# Market Treemap Heatmap (Bloomberg / Finviz Institutional Style)
+# Refreshed by terminal-worker via Yahoo Finance batch + Redis / PostgreSQL cache
 
 refresh_interval_sec: 180
-periods: [1D, 1W, 1M, YTD]
+periods: [1D, 1W, 1M, 3M, YTD]
 
 universes:
+  sp500_top:
+    name: S&P 500 Leaders
+    linked_asset: SPX
+    sectors:
+      Technology: [AAPL, MSFT, NVDA, AVGO, ORCL, CRM, AMD, ADBE, CSCO, QCOM]
+      Communication: [GOOGL, META, NFLX, DIS, TMUS, VZ, CMCSA]
+      Financials: [BRK-B, JPM, V, MA, BAC, WFC, GS, MS, BLK, AXP]
+      Healthcare: [LLY, UNH, JNJ, ABBV, MRK, TMO, ABT, PFE, AMGN]
+      Energy & Industrials: [XOM, CVX, GE, CAT, RTX, UNP, HON, LMT, BA]
+      Consumer: [AMZN, TSLA, WMT, COST, HD, PG, KO, MCD, PEP]
+
   nasdaq100:
     name: NASDAQ-100 (USTEC Drivers)
     linked_asset: USTEC
@@ -14,16 +25,14 @@ universes:
       Consumer & Auto: [TSLA, COST, PEP, SBUX, BKNG, MELI, MAR, ABNB]
       Biotech & Healthcare: [AMGN, ISRG, GILD, VRTX, REGN, AZN]
 
-  sp500_top:
-    name: S&P 500 & Global Leaders
-    linked_asset: USTEC
+  global_leaders:
+    name: Global Multi-Region Leaders
+    linked_asset: SPX
     sectors:
-      Technology: [AAPL, MSFT, NVDA, AVGO, ORCL, CRM, AMD, ADBE, CSCO]
-      Communication: [GOOGL, META, NFLX, DIS, TMUS, VZ]
-      Financials: [BRK-B, JPM, V, MA, BAC, WFC, GS, MS, BLK]
-      Healthcare: [LLY, UNH, JNJ, ABBV, MRK, TMO, ABT, PFE]
-      Energy & Industrials: [XOM, CVX, GE, CAT, RTX, UNP, HON, LMT]
-      Consumer: [AMZN, TSLA, WMT, COST, HD, PG, KO, MCD]
+      US Mega-Caps: [AAPL, MSFT, NVDA, AMZN, GOOGL, META, BRK-B, LLY]
+      Europe Leaders: [ASML, NVO, SAP, LVMUY, SHEL, AZN, NVS, UL]
+      Asia & Pacific: [TSM, BABA, TM, SONY, HDB, INFY, PDD, BHP]
+      Global Indices ETFs: [SPY, QQQ, EFA, EEM, VGK, EWJ, FXI]
 
   gold_commodities:
     name: Gold & Commodities Ecosystem (XAUUSD Drivers)
@@ -32,4 +41,20 @@ universes:
       Precious Metals: ["GC=F", "SI=F", "PL=F", "PA=F"]
       Gold Miners: [NEM, GOLD, AEM, WPM, FNV, GDX, GDXJ, KGC]
       Energy & Industrial Metals: ["CL=F", "BZ=F", "NG=F", "HG=F"]
-      Macro Rates & USD: ["DX-Y.NYB", "^TNX", "TLT"]
+      Macro Rates & USD: ["DX-Y.NYB", "^TNX", "TLT", "TIP"]
+
+  crypto_majors:
+    name: Crypto Majors & Proxies
+    linked_asset: BTCUSD
+    sectors:
+      Layer 1 Majors: [BTC-USD, ETH-USD, SOL-USD, BNB-USD, ADA-USD, AVAX-USD, XRP-USD]
+      DeFi & Infra: [LINK-USD, UNI7083-USD, AAVE-USD, DOT-USD, LTC-USD]
+      Crypto Equities & ETFs: [IBIT, FBTC, COIN, MSTR, MARA, RIOT]
+
+  forex_majors:
+    name: Forex Majors & Macro Crosses
+    linked_asset: EURUSD
+    sectors:
+      G7 Majors: ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X", "AUDUSD=X", "USDCAD=X", "NZDUSD=X"]
+      Euro & Yen Crosses: ["EURGBP=X", "EURJPY=X", "GBPJPY=X", "EURCHF=X", "AUDJPY=X"]
+      USD & Rates Benchmark: ["DX-Y.NYB", "^TNX", "^IRX", "UUP"]

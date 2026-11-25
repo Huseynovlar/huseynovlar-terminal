@@ -3,35 +3,49 @@
 //|           Huseynovlar Terminal — Separate-Thread Telemetry EA    |
 //|                                    https://terminal.huseynovlar.org
 //+------------------------------------------------------------------+
-//| Attach to a dedicated helper chart (1 instance per MT5 account). |
+//| Attach to a dedicated 2nd chart tab (1 instance per MT5 account).|
 //| Runs on its own MT5 chart thread — 0% latency impact on trading  |
-//| robots. Add your API base URL to MT5 Tools -> Options -> Experts |
-//| -> Allow WebRequest for listed URL.                              |
+//| robots (e.g. NasdaqPulse, XAU EA on Chart 1).                    |
+//|                                                                  |
+//| IMPORTANT (MT5 WebRequest Allowlist):                            |
+//|   Tools -> Options -> Expert Advisors ->                         |
+//|   Allow WebRequest for listed URL:                               |
+//|     http://ingest.terminal.local:8000                            |
+//|     (or https://terminal.huseynovlar.org)                        |
 //+------------------------------------------------------------------+
 #property copyright "Huseynovlar Terminal"
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 
 #include <Trade\Trade.mqh>
 
-input string ApiBaseUrl            = "http://terminal-backend:8000/api/v1/ingest"; // Internal Docker network URL (<1ms)
-input string AccountApiKey         = "";                                           // Generated in Huseynovlar Terminal UI
-input string ChartSymbolOverride   = "";                                           // Empty = current chart symbol
-input int    SnapshotIntervalSec   = 5;                                            // Heartbeat & equity snapshot interval
-input int    BarsSyncIntervalSec   = 15;                                           // OHLCV bars sync interval
-input int    InitialHistoryDays    = 90;                                           // Initial deal history lookback
-input int    HttpTimeoutMs         = 2500;                                         // Non-blocking short timeout
-input bool   AllowRemoteClose      = false;                                        // Safety fuse for emergency Kill-Switch
+#define EP_IPC_FOLDER "ep_ipc"
 
-ulong  g_lastSyncedDealTicket = 0;
-datetime g_lastSnapshotTime   = 0;
-datetime g_lastBarsSyncTime   = 0;
-string g_symbol               = "";
+input string ApiBaseUrl            = "http://ingest.terminal.local:8000/api/v1/ingest"; // Dotted internal Docker URL (<1ms)
+input string AccountApiKey         = "";                                                // Generated in Huseynovlar Terminal UI
+input string ChartSymbolOverride   = "";                                                // Empty = current chart symbol
+input int    SnapshotIntervalSec   = 5;                                                 // Heartbeat & equity snapshot interval
+input int    BarsSyncIntervalSec   = 15;                                                // OHLCV bars sync interval
+input int    InitialHistoryDays    = 90;                                                // Initial deal history lookback
+input int    HttpTimeoutMs         = 2500;                                              // Non-blocking short timeout
+input bool   AllowRemoteClose      = false;                                             // Safety fuse for emergency Kill-Switch
+
+ulong    g_lastSyncedDealTicket = 0;
+datetime g_lastSnapshotTime     = 0;
+datetime g_lastBarsSyncTime     = 0;
+datetime g_last4014HintTime     = 0;
+string   g_symbol               = "";
 
 // Per-position MAE / MFE trackers (by position ticket)
 ulong  g_posTickets[];
 double g_posMae[];
 double g_posMfe[];
+
+// Persistent per-magic IPC telemetry states (from ExnessPanelHook.mqh)
+long   g_ipcMagics[];
+string g_ipcStatus[];
+int    g_ipcExecMs[];
+string g_ipcStateJson[];
 
 CTrade g_trade;
 
@@ -43,7 +57,58 @@ string EscapeJson(const string src)
    StringReplace(out, "\"", "\\\"");
    StringReplace(out, "\n", " ");
    StringReplace(out, "\r", " ");
+   StringReplace(out, "\t", " ");
    return out;
+  }
+
+//+------------------------------------------------------------------+
+string ExtractOrigin(const string url)
+  {
+   int scheme_pos = StringFind(url, "://");
+   if(scheme_pos < 0)
+      return url;
+   int path_pos = StringFind(url, "/", scheme_pos + 3);
+   if(path_pos < 0)
+      return url;
+   return StringSubstr(url, 0, path_pos);
+  }
+
+//+------------------------------------------------------------------+
+string BuildEndpointUrl(const string endpoint)
+  {
+   string base = ApiBaseUrl;
+   StringTrimLeft(base);
+   StringTrimRight(base);
+   while(StringLen(base) > 0 && StringGetCharacter(base, StringLen(base) - 1) == '/')
+      base = StringSubstr(base, 0, StringLen(base) - 1);
+   return base + endpoint;
+  }
+
+//+------------------------------------------------------------------+
+long DeterministicHash(const string text)
+  {
+   long h = 5381;
+   int n = StringLen(text);
+   for(int i = 0; i < n; i++)
+      h = ((h * 33) + (long)StringGetCharacter(text, i)) & 0x7FFFFFFF;
+   return h;
+  }
+
+//+------------------------------------------------------------------+
+string TimeframeName(const ENUM_TIMEFRAMES tf)
+  {
+   switch(tf)
+     {
+      case PERIOD_M1:  return "M1";
+      case PERIOD_M5:  return "M5";
+      case PERIOD_M15: return "M15";
+      case PERIOD_M30: return "M30";
+      case PERIOD_H1:  return "H1";
+      case PERIOD_H4:  return "H4";
+      case PERIOD_D1:  return "D1";
+      case PERIOD_W1:  return "W1";
+      default:         return EnumToString(tf);
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -77,12 +142,299 @@ void UpdatePositionMaeMfe(const ulong ticket, const double floating_pnl)
   }
 
 //+------------------------------------------------------------------+
+int FindIpcMagicIndex(const long magic)
+  {
+   int n = ArraySize(g_ipcMagics);
+   for(int i = 0; i < n; i++)
+      if(g_ipcMagics[i] == magic)
+         return i;
+   return -1;
+  }
+
+void UpsertIpcState(const long magic, const string status, const int exec_ms, const string state_json)
+  {
+   int idx = FindIpcMagicIndex(magic);
+   if(idx < 0)
+     {
+      idx = ArraySize(g_ipcMagics);
+      ArrayResize(g_ipcMagics, idx + 1);
+      ArrayResize(g_ipcStatus, idx + 1);
+      ArrayResize(g_ipcExecMs, idx + 1);
+      ArrayResize(g_ipcStateJson, idx + 1);
+      g_ipcMagics[idx] = magic;
+     }
+   g_ipcStatus[idx]    = (status != "") ? status : "RUNNING";
+   g_ipcExecMs[idx]    = exec_ms;
+   g_ipcStateJson[idx] = (state_json != "") ? state_json : "{}";
+  }
+
+//+------------------------------------------------------------------+
+string ExtractJsonStringField(const string json, const string key)
+  {
+   string needle = "\"" + key + "\":\"";
+   int p = StringFind(json, needle);
+   if(p < 0)
+      return "";
+   int start = p + StringLen(needle);
+   int end = StringFind(json, "\"", start);
+   if(end < 0)
+      return "";
+   return StringSubstr(json, start, end - start);
+  }
+
+long ExtractJsonLongField(const string json, const string key, const long fallback = 0)
+  {
+   string needle = "\"" + key + "\":";
+   int p = StringFind(json, needle);
+   if(p < 0)
+      return fallback;
+   string sub = StringSubstr(json, p + StringLen(needle), 24);
+   StringTrimLeft(sub);
+   return StringToInteger(sub);
+  }
+
+string ExtractJsonPayloadObject(const string json)
+  {
+   string needle = "\"payload\":";
+   int p = StringFind(json, needle);
+   if(p < 0)
+      return "{}";
+   int start = p + StringLen(needle);
+   int len = StringLen(json);
+   if(start >= len || StringGetCharacter(json, start) != '{')
+      return "{}";
+   // Strip trailing closing brace of outer JSONL envelope
+   int end = len - 1;
+   while(end > start && StringGetCharacter(json, end) != '}')
+      end--;
+   if(end > start && StringGetCharacter(json, end) == '}')
+     {
+      int inner_end = end - 1;
+      while(inner_end >= start && StringGetCharacter(json, inner_end) != '}')
+         inner_end--;
+      if(inner_end >= start)
+         return StringSubstr(json, start, inner_end - start + 1);
+     }
+   return "{}";
+  }
+
+//+------------------------------------------------------------------+
+void ConsumeIpcEvents()
+  {
+   string filename = EP_IPC_FOLDER + "\\events_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + ".jsonl";
+   if(!FileIsExist(filename))
+      return;
+
+   int handle = FileOpen(
+      filename,
+      FILE_READ | FILE_TXT | FILE_ANSI | FILE_SHARE_READ | FILE_SHARE_WRITE
+   );
+   if(handle == INVALID_HANDLE)
+      return;
+
+   ulong fsize = FileSize(handle);
+   if(fsize == 0)
+     {
+      FileClose(handle);
+      return;
+     }
+
+   string lines[];
+   int count = 0;
+   while(!FileIsEnding(handle))
+     {
+      string ln = FileReadString(handle);
+      StringTrimLeft(ln);
+      StringTrimRight(ln);
+      if(StringLen(ln) > 2)
+        {
+         ArrayResize(lines, count + 1);
+         lines[count] = ln;
+         count++;
+        }
+     }
+   FileClose(handle);
+
+   // Truncate consumed IPC file safely
+   int trunc_h = FileOpen(
+      filename,
+      FILE_WRITE | FILE_TXT | FILE_ANSI | FILE_SHARE_READ | FILE_SHARE_WRITE
+   );
+   if(trunc_h != INVALID_HANDLE)
+      FileClose(trunc_h);
+
+   for(int i = 0; i < count; i++)
+     {
+      string ln = lines[i];
+      long magic = ExtractJsonLongField(ln, "magic", 0);
+      if(magic == 0)
+         continue;
+      string ev_type = ExtractJsonStringField(ln, "type");
+      string sym     = ExtractJsonStringField(ln, "symbol");
+      string payload = ExtractJsonPayloadObject(ln);
+      int exec_ms    = (int)ExtractJsonLongField(payload, "execution_ms", 0);
+      string status  = "RUNNING";
+      if(ev_type == "error")
+         status = "ERROR";
+      else
+        {
+         string st = ExtractJsonStringField(payload, "status");
+         if(st != "")
+            status = st;
+        }
+      string wrapped = StringFormat(
+         "{\"source\":\"ep_ipc\",\"event_type\":\"%s\",\"symbol\":\"%s\",\"telemetry\":%s}",
+         EscapeJson(ev_type),
+         EscapeJson(sym),
+         payload
+      );
+      UpsertIpcState(magic, status, exec_ms, wrapped);
+     }
+  }
+
+//+------------------------------------------------------------------+
+long ResolveMagicForSymbol(const string sym, const string expert_name, const string tf_name)
+  {
+   long found_magic = 0;
+   int distinct = 0;
+
+   for(int i = 0; i < PositionsTotal(); i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(!PositionSelectByTicket(ticket))
+         continue;
+      if(PositionGetString(POSITION_SYMBOL) != sym)
+         continue;
+      long m = PositionGetInteger(POSITION_MAGIC);
+      if(m > 0 && m != found_magic)
+        {
+         found_magic = m;
+         distinct++;
+        }
+     }
+   if(distinct == 1 && found_magic > 0)
+      return found_magic;
+
+   return 100000 + (MathAbs(DeterministicHash(expert_name + ":" + sym + ":" + tf_name)) % 899999);
+  }
+
+//+------------------------------------------------------------------+
+string BuildRobotStatesJson()
+  {
+   ConsumeIpcEvents();
+
+   string items = "[";
+   int emitted = 0;
+   long seen_magics[];
+
+   // 1. Emit IPC robot states first (highest fidelity)
+   int ipc_n = ArraySize(g_ipcMagics);
+   for(int i = 0; i < ipc_n; i++)
+     {
+      if(emitted > 0) items += ",";
+      items += StringFormat(
+         "{\"magic_number\":%I64d,\"status\":\"%s\",\"execution_ms\":%d,\"state_json\":%s}",
+         g_ipcMagics[i],
+         EscapeJson(g_ipcStatus[i]),
+         g_ipcExecMs[i],
+         g_ipcStateJson[i]
+      );
+      ArrayResize(seen_magics, emitted + 1);
+      seen_magics[emitted] = g_ipcMagics[i];
+      emitted++;
+     }
+
+   // 2. Auto-discover sibling-chart EAs (e.g. NasdaqPulse, XAU EA on Chart 1)
+   long my_cid = ChartID();
+   for(long cid = ChartFirst(); cid >= 0; cid = ChartNext(cid))
+     {
+      if(cid == my_cid)
+         continue;
+
+      string exp_name = ChartGetString(cid, CHART_EXPERT_NAME);
+      StringTrimLeft(exp_name);
+      StringTrimRight(exp_name);
+      if(exp_name == "" || StringFind(exp_name, "ExnessPanelBridge") >= 0)
+         continue;
+
+      string c_sym = ChartSymbol(cid);
+      string c_tf  = TimeframeName(ChartPeriod(cid));
+      long magic   = ResolveMagicForSymbol(c_sym, exp_name, c_tf);
+
+      // Skip if already reported via IPC with same magic
+      bool dup = false;
+      for(int s = 0; s < ArraySize(seen_magics); s++)
+         if(seen_magics[s] == magic) { dup = true; break; }
+      if(dup)
+         continue;
+
+      // Scrape HUD chart labels (NasdaqPulse / institutional EA panels)
+      string status = "RUNNING";
+      string hud_lines = "";
+      int obj_total = ObjectsTotal(cid, 0, -1);
+      int captured = 0;
+      for(int k = 0; k < obj_total && captured < 16; k++)
+        {
+         string oname = ObjectName(cid, k, 0, -1);
+         long otype = ObjectGetInteger(cid, oname, OBJPROP_TYPE);
+         if(otype != OBJ_LABEL && otype != OBJ_BUTTON && otype != OBJ_EDIT)
+            continue;
+         string txt = ObjectGetString(cid, oname, OBJPROP_TEXT);
+         StringTrimLeft(txt);
+         StringTrimRight(txt);
+         if(txt == "")
+            continue;
+
+         if(StringFind(txt, "ALGO: OFF") >= 0 || StringFind(txt, "ALGO:OFF") >= 0)
+            status = "PAUSED";
+         else if(StringFind(txt, "OFF_SESSION") >= 0)
+            status = "OFF_SESSION";
+
+         if(StringFind(txt, "STATE:") >= 0 || StringFind(txt, "Trend:") >= 0 ||
+            StringFind(txt, "RSI:") >= 0   || StringFind(txt, "ER:") >= 0 ||
+            StringFind(txt, "Risk:") >= 0  || StringFind(txt, "Seq:") >= 0 ||
+            StringFind(txt, "Day:") >= 0   || StringFind(txt, "DD:") >= 0 ||
+            StringFind(txt, "Bal:") >= 0   || StringFind(txt, "Work:") >= 0 ||
+            StringFind(txt, "Bank:") >= 0  || StringFind(txt, "ALGO:") >= 0 ||
+            StringFind(txt, "MKT:") >= 0)
+           {
+            if(hud_lines != "") hud_lines += " | ";
+            hud_lines += txt;
+            captured++;
+           }
+        }
+
+      string state_obj = StringFormat(
+         "{\"name\":\"%s\",\"symbol\":\"%s\",\"timeframe\":\"%s\",\"source\":\"chart_discovery\",\"telemetry\":{\"hud\":\"%s\"}}",
+         EscapeJson(exp_name),
+         EscapeJson(c_sym),
+         EscapeJson(c_tf),
+         EscapeJson(hud_lines)
+      );
+
+      if(emitted > 0) items += ",";
+      items += StringFormat(
+         "{\"magic_number\":%I64d,\"status\":\"%s\",\"execution_ms\":0,\"state_json\":%s}",
+         magic,
+         EscapeJson(status),
+         state_obj
+      );
+      ArrayResize(seen_magics, emitted + 1);
+      seen_magics[emitted] = magic;
+      emitted++;
+     }
+
+   items += "]";
+   return items;
+  }
+
+//+------------------------------------------------------------------+
 bool PostJson(const string endpoint, const string json_body, string &response_out)
   {
    if(AccountApiKey == "")
       return false;
 
-   string url = ApiBaseUrl + endpoint;
+   string url = BuildEndpointUrl(endpoint);
    string headers = "Content-Type: application/json\r\nX-Account-Api-Key: " + AccountApiKey + "\r\n";
    uchar post_data[];
    uchar result[];
@@ -94,9 +446,23 @@ bool PostJson(const string endpoint, const string json_body, string &response_ou
 
    ResetLastError();
    int status = WebRequest("POST", url, headers, HttpTimeoutMs, post_data, result, result_headers);
+   int err = GetLastError();
    if(status < 200 || status >= 300)
      {
-      PrintFormat("[ExnessPanelBridge] POST %s failed: HTTP %d (err=%d)", endpoint, status, GetLastError());
+      PrintFormat("[ExnessPanelBridge] POST %s failed: HTTP %d (err=%d) url=%s", endpoint, status, err, url);
+      if(status == -1 && err == 4014)
+        {
+         datetime now = TimeLocal();
+         if(now - g_last4014HintTime >= 30)
+           {
+            g_last4014HintTime = now;
+            string origin = ExtractOrigin(url);
+            PrintFormat(
+               "[ExnessPanelBridge] ERR 4014 (URL not whitelisted in MT5)! Add '%s' (or 'https://terminal.huseynovlar.org') in MT5: Tools -> Options -> Expert Advisors -> Allow WebRequest for listed URL | Сервис -> Настройки -> Советники -> Разрешить WebRequest для следующих URL",
+               origin
+            );
+           }
+        }
       return false;
      }
    response_out = CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
@@ -188,6 +554,7 @@ void SendSnapshotAndProcessCommands()
   {
    int total_pos = PositionsTotal();
    string pos_json = "[";
+   int emitted_pos = 0;
    for(int i = 0; i < total_pos; i++)
      {
       ulong ticket = PositionGetTicket(i);
@@ -199,7 +566,7 @@ void SendSnapshotAndProcessCommands()
       double mae = idx >= 0 ? g_posMae[idx] : 0.0;
       double mfe = idx >= 0 ? g_posMfe[idx] : 0.0;
 
-      if(i > 0) pos_json += ",";
+      if(emitted_pos > 0) pos_json += ",";
       pos_json += StringFormat(
          "{\"position_ticket\":%I64u,\"magic_number\":%I64d,\"symbol\":\"%s\",\"side\":\"%s\",\"volume\":%.4f,\"open_price\":%.5f,\"current_price\":%.5f,\"sl\":%.5f,\"tp\":%.5f,\"swap\":%.4f,\"profit\":%.4f,\"mae\":%.4f,\"mfe\":%.4f,\"open_time\":%I64d,\"comment\":\"%s\"}",
          ticket,
@@ -217,8 +584,11 @@ void SendSnapshotAndProcessCommands()
          PositionGetInteger(POSITION_TIME),
          EscapeJson(PositionGetString(POSITION_COMMENT))
       );
+      emitted_pos++;
      }
    pos_json += "]";
+
+   string robot_states_json = BuildRobotStatesJson();
 
    MqlTick tick;
    double bid = 0.0, ask = 0.0;
@@ -232,7 +602,7 @@ void SendSnapshotAndProcessCommands()
 
    long ping_ms = TerminalInfoInteger(TERMINAL_PING_LAST) / 1000;
    string body = StringFormat(
-      "{\"balance\":%.4f,\"equity\":%.4f,\"floating_pnl\":%.4f,\"margin\":%.4f,\"free_margin\":%.4f,\"margin_level\":%.2f,\"algo_trading_enabled\":%s,\"terminal_connected\":%s,\"ping_ms\":%I64d,\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread_pts\":%d,\"open_positions\":%s}",
+      "{\"balance\":%.4f,\"equity\":%.4f,\"floating_pnl\":%.4f,\"margin\":%.4f,\"free_margin\":%.4f,\"margin_level\":%.2f,\"algo_trading_enabled\":%s,\"terminal_connected\":%s,\"ping_ms\":%I64d,\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread_pts\":%d,\"open_positions\":%s,\"robot_states\":%s}",
       AccountInfoDouble(ACCOUNT_BALANCE),
       AccountInfoDouble(ACCOUNT_EQUITY),
       AccountInfoDouble(ACCOUNT_PROFIT),
@@ -244,7 +614,8 @@ void SendSnapshotAndProcessCommands()
       ping_ms,
       EscapeJson(g_symbol),
       bid, ask, spread_pts,
-      pos_json
+      pos_json,
+      robot_states_json
    );
 
    string resp = "";

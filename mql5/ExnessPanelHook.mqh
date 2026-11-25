@@ -4,9 +4,9 @@
 //|                                    https://terminal.huseynovlar.org
 //+------------------------------------------------------------------+
 //| ZERO NETWORK CALLS. Execution time < 0.05 ms.                    |
-//| Writes compact JSON telemetry lines to MQL5/Files/ep_ipc/ which  |
-//| ExnessPanelBridge.mq5 (running on its own chart/thread) reads    |
-//| and sends to Huseynovlar Terminal over internal Docker network.  |
+//| Writes lock-safe JSONL telemetry to MQL5/Files/ep_ipc/ which     |
+//| ExnessPanelBridge.mq5 (running on its own 2nd chart tab/thread)  |
+//| reads and streams to Huseynovlar Terminal over Docker ingest net.|
 //+------------------------------------------------------------------+
 #property strict
 
@@ -19,25 +19,41 @@ string EP_EscapeJson(const string src)
    StringReplace(out, "\"", "\\\"");
    StringReplace(out, "\n", " ");
    StringReplace(out, "\r", " ");
+   StringReplace(out, "\t", " ");
    return out;
+  }
+
+string EP_SafeJsonObject(const string raw)
+  {
+   string trimmed = raw;
+   StringTrimLeft(trimmed);
+   StringTrimRight(trimmed);
+   if(StringLen(trimmed) < 2 || StringGetCharacter(trimmed, 0) != '{')
+      return "{}";
+   return trimmed;
   }
 
 void EP_WriteIpcEvent(const string event_type, const long magic, const string payload_json)
   {
+   FolderCreate(EP_IPC_FOLDER);
    string filename = EP_IPC_FOLDER + "\\events_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + ".jsonl";
-   int handle = FileOpen(filename, FILE_WRITE | FILE_READ | FILE_TXT | FILE_ANSI | FILE_SHARE_READ | FILE_SHARE_WRITE);
+   int handle = FileOpen(
+      filename,
+      FILE_WRITE | FILE_READ | FILE_TXT | FILE_ANSI | FILE_SHARE_READ | FILE_SHARE_WRITE
+   );
    if(handle == INVALID_HANDLE)
       return;
    FileSeek(handle, 0, SEEK_END);
    string line = StringFormat(
       "{\"ts_msc\":%I64d,\"type\":\"%s\",\"magic\":%I64d,\"symbol\":\"%s\",\"payload\":%s}",
-      TimeCurrent() * 1000,
+      (long)TimeCurrent() * 1000,
       EP_EscapeJson(event_type),
       magic,
       EP_EscapeJson(_Symbol),
-      payload_json
+      EP_SafeJsonObject(payload_json)
    );
    FileWriteString(handle, line + "\n");
+   FileFlush(handle);
    FileClose(handle);
   }
 
@@ -48,7 +64,7 @@ void EP_RegisterRobot(const long magic, const string name, const string version,
       "{\"name\":\"%s\",\"version\":\"%s\",\"params\":%s}",
       EP_EscapeJson(name),
       EP_EscapeJson(version),
-      params_json == "" ? "{}" : params_json
+      EP_SafeJsonObject(params_json)
    );
    EP_WriteIpcEvent("robot_register", magic, payload);
   }
@@ -56,7 +72,7 @@ void EP_RegisterRobot(const long magic, const string name, const string version,
 // Call whenever your EA changes internal strategy mode / grid level / filter state
 void EP_ReportState(const long magic, const string state_json)
   {
-   EP_WriteIpcEvent("robot_state", magic, state_json == "" ? "{}" : state_json);
+   EP_WriteIpcEvent("robot_state", magic, EP_SafeJsonObject(state_json));
   }
 
 // Call right after OrderSend() to record real execution latency (ms) and slippage

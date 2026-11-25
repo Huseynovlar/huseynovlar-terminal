@@ -5,9 +5,11 @@ assets:
   - code: XAUUSD
     name: Gold / US Dollar
     group: metals
+    category: commodities
     status: active
     color: "#F59E0B"
     icon: coins
+    logo_url: /api/v1/assets/logo/XAUUSD
     broker_symbols:
       - XAUUSD
       - XAUUSDm
@@ -35,9 +37,11 @@ assets:
   - code: USTEC
     name: US Tech 100 (NASDAQ-100)
     group: indices
+    category: indices
     status: active
     color: "#3B82F6"
     icon: cpu
+    logo_url: /api/v1/assets/logo/USTEC
     broker_symbols:
       - USTEC
       - USTECm
@@ -65,12 +69,43 @@ assets:
       - SPX
       - DXY
 
+  - code: SPX
+    name: S&P 500 Index
+    group: indices
+    category: indices
+    status: active
+    color: "#6366F1"
+    icon: trending-up
+    logo_url: /api/v1/assets/logo/SPX
+    broker_symbols:
+      - US500
+      - US500m
+      - US500c
+      - SPX
+      - SPX500
+    news_tags:
+      - S&P 500
+      - SPX
+      - US500
+      - Wall Street
+      - Fed
+      - CPI
+      - Earnings
+      - Treasury Yields
+    macro_drivers:
+      - VIX
+      - US10Y
+      - DXY
+      - USTEC
+
   - code: EURUSD
     name: Euro / US Dollar
     group: forex
+    category: forex
     status: watchlist
     color: "#10B981"
     icon: globe
+    logo_url: /api/v1/assets/logo/EURUSD
     broker_symbols:
       - EURUSD
       - EURUSDm
@@ -88,12 +123,15 @@ assets:
   - code: BTCUSD
     name: Bitcoin / US Dollar
     group: crypto
+    category: crypto
     status: watchlist
     color: "#F97316"
     icon: bitcoin
+    logo_url: /api/v1/assets/logo/BTCUSD
     broker_symbols:
       - BTCUSD
       - BTCUSDm
+      - BTCUSDc
     news_tags:
       - Bitcoin
       - BTC
@@ -104,3 +142,70 @@ assets:
       - DXY
       - VIX
       - USTEC
+
+  - code: GBPUSD
+    name: British Pound / US Dollar
+    group: forex
+    category: forex
+    status: watchlist
+    color: "#8B5CF6"
+    icon: globe
+    logo_url: /api/v1/assets/logo/GBPUSD
+    broker_symbols:
+      - GBPUSD
+      - GBPUSDm
+      - GBPUSDc
+    news_tags:
+      - GBPUSD
+      - Bank of England
+      - BoE
+      - UK CPI
+      - DXY
+    macro_drivers:
+      - DXY
+      - EURUSD
+
+  - code: USDJPY
+    name: US Dollar / Japanese Yen
+    group: forex
+    category: forex
+    status: watchlist
+    color: "#EC4899"
+    icon: globe
+    logo_url: /api/v1/assets/logo/USDJPY
+    broker_symbols:
+      - USDJPY
+      - USDJPYm
+      - USDJPYc
+    news_tags:
+      - USDJPY
+      - Bank of Japan
+      - BoJ
+      - US10Y
+      - Yen
+    macro_drivers:
+      - US10Y
+      - DXY
+
+  - code: USOIL
+    name: WTI Crude Oil
+    group: commodities
+    category: commodities
+    status: watchlist
+    color: "#64748B"
+    icon: flame
+    logo_url: /api/v1/assets/logo/USOIL
+    broker_symbols:
+      - USOIL
+      - USOILm
+      - WTI
+      - XTIUSD
+    news_tags:
+      - Crude Oil
+      - WTI
+      - OPEC
+      - Energy
+      - Geopolitics
+    macro_drivers:
+      - DXY
+      - XAUUSD

@@ -1,8 +1,9 @@
 # Redundant Multi-Source Free World News, Economic Calendar & Macro Sources (0 $/month)
-# `verified: true` marks trusted institutional / official sources displayed with a green checkmark badge.
+# `verified: true` / `is_verified: true` marks trusted institutional / official sources
+# displayed with a green checkmark badge in the Verified Sources Registry.
 
 rss_feeds:
-  # --- Central Banks (Official Primary Releases) ---
+  # --- Central Banks (Official Primary Releases — tier_1) ---
   - id: fed_press
     name: Federal Reserve Press Releases
     domain: federalreserve.gov
@@ -10,8 +11,11 @@ rss_feeds:
     category: central_banks
     priority: critical
     verified: true
-    trust_tier: official
-    default_assets: [XAUUSD, USTEC, EURUSD]
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_1
+    default_assets: [XAUUSD, USTEC, SPX, EURUSD]
+    asset_tags: [XAUUSD, USTEC, SPX, EURUSD]
     poll_interval_sec: 120
 
   - id: ecb_press
@@ -21,8 +25,25 @@ rss_feeds:
     category: central_banks
     priority: high
     verified: true
-    trust_tier: official
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_1
     default_assets: [EURUSD, XAUUSD]
+    asset_tags: [EURUSD, XAUUSD]
+    poll_interval_sec: 300
+
+  - id: boe_press
+    name: Bank of England News
+    domain: bankofengland.co.uk
+    url: https://www.bankofengland.co.uk/rss/news
+    category: central_banks
+    priority: high
+    verified: true
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_1
+    default_assets: [GBPUSD, EURUSD, XAUUSD]
+    asset_tags: [GBPUSD, EURUSD, XAUUSD]
     poll_interval_sec: 300
 
   # --- Gold & Commodities (XAUUSD primary + fallbacks) ---
@@ -33,8 +54,11 @@ rss_feeds:
     category: commodities
     priority: high
     verified: true
-    trust_tier: tier1
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_1
     default_assets: [XAUUSD]
+    asset_tags: [XAUUSD]
     poll_interval_sec: 120
 
   - id: investing_commodities
@@ -44,8 +68,11 @@ rss_feeds:
     category: commodities
     priority: medium
     verified: true
-    trust_tier: tier2
-    default_assets: [XAUUSD]
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_2
+    default_assets: [XAUUSD, USOIL]
+    asset_tags: [XAUUSD, USOIL]
     poll_interval_sec: 180
 
   # --- Forex & Global Macro (Multi-region) ---
@@ -56,8 +83,11 @@ rss_feeds:
     category: forex_macro
     priority: high
     verified: true
-    trust_tier: tier1
-    default_assets: [XAUUSD, USTEC, EURUSD]
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_1
+    default_assets: [XAUUSD, USTEC, EURUSD, GBPUSD, USDJPY]
+    asset_tags: [XAUUSD, USTEC, EURUSD, GBPUSD, USDJPY]
     poll_interval_sec: 90
 
   - id: investing_forex
@@ -67,11 +97,14 @@ rss_feeds:
     category: forex_macro
     priority: medium
     verified: true
-    trust_tier: tier2
-    default_assets: [XAUUSD, EURUSD]
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_2
+    default_assets: [XAUUSD, EURUSD, USDJPY]
+    asset_tags: [XAUUSD, EURUSD, USDJPY]
     poll_interval_sec: 180
 
-  # --- US Equities & Tech (USTEC / NASDAQ-100 primary + fallbacks) ---
+  # --- US Equities & Tech (USTEC / SPX primary + fallbacks) ---
   - id: cnbc_finance
     name: CNBC Finance & Markets
     domain: cnbc.com
@@ -79,8 +112,11 @@ rss_feeds:
     category: equities_macro
     priority: high
     verified: true
-    trust_tier: tier1
-    default_assets: [USTEC]
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_1
+    default_assets: [USTEC, SPX]
+    asset_tags: [USTEC, SPX]
     poll_interval_sec: 120
 
   - id: cnbc_tech
@@ -90,8 +126,11 @@ rss_feeds:
     category: tech
     priority: medium
     verified: true
-    trust_tier: tier1
-    default_assets: [USTEC]
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_1
+    default_assets: [USTEC, SPX]
+    asset_tags: [USTEC, SPX]
     poll_interval_sec: 180
 
   - id: marketwatch_top
@@ -101,8 +140,11 @@ rss_feeds:
     category: global_markets
     priority: high
     verified: true
-    trust_tier: tier1
-    default_assets: [XAUUSD, USTEC]
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_1
+    default_assets: [XAUUSD, USTEC, SPX]
+    asset_tags: [XAUUSD, USTEC, SPX]
     poll_interval_sec: 120
 
   - id: yahoo_finance_top
@@ -112,11 +154,29 @@ rss_feeds:
     category: global_markets
     priority: medium
     verified: true
-    trust_tier: tier2
-    default_assets: [USTEC, XAUUSD]
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_2
+    default_assets: [USTEC, SPX, XAUUSD]
+    asset_tags: [USTEC, SPX, XAUUSD]
     poll_interval_sec: 180
 
-  # --- Global Wire & Geopolitics (Aggregators — marked unverified unless corroborated by Tier-1/Official) ---
+  # --- Digital Assets / Crypto ---
+  - id: coindesk_crypto
+    name: CoinDesk Markets
+    domain: coindesk.com
+    url: https://www.coindesk.com/arc/outboundfeeds/rss/
+    category: crypto
+    priority: medium
+    verified: true
+    is_verified: true
+    is_enabled: true
+    trust_tier: tier_2
+    default_assets: [BTCUSD]
+    asset_tags: [BTCUSD]
+    poll_interval_sec: 180
+
+  # --- Global Wire & Geopolitics (Aggregators — marked unverified unless corroborated) ---
   - id: google_news_markets
     name: Google News World Markets
     domain: news.google.com
@@ -124,27 +184,34 @@ rss_feeds:
     category: global_wire
     priority: medium
     verified: false
-    trust_tier: aggregator
-    default_assets: [XAUUSD, USTEC]
+    is_verified: false
+    is_enabled: true
+    trust_tier: tier_2
+    default_assets: [XAUUSD, USTEC, SPX]
+    asset_tags: [XAUUSD, USTEC, SPX]
     poll_interval_sec: 240
 
   - id: gdelt_geopolitics
     name: GDELT 2.0 Geopolitics & Macro
     domain: gdeltproject.org
+    url: https://api.gdeltproject.org/api/v2/doc/doc
     type: gdelt_api
     query: "(gold OR federal reserve OR inflation OR geopolitical crisis OR nasdaq)"
     category: geopolitics
     priority: medium
     verified: false
-    trust_tier: aggregator
-    default_assets: [XAUUSD, USTEC]
+    is_verified: false
+    is_enabled: true
+    trust_tier: tier_2
+    default_assets: [XAUUSD, USTEC, SPX]
+    asset_tags: [XAUUSD, USTEC, SPX]
     poll_interval_sec: 300
 
 economic_calendar:
   primary_url: https://nfs.faireconomy.media/ff_calendar_thisweek.json
   fallback_url: https://nfs.faireconomy.media/ff_calendar_nextweek.json
   poll_interval_sec: 900
-  high_impact_currencies: [USD, EUR, GBP, JPY, CHF]
+  high_impact_currencies: [USD, EUR, GBP, JPY, CHF, CAD, AUD]
 
 macro_quotes:
   poll_interval_sec: 60
@@ -161,6 +228,15 @@ macro_quotes:
     - code: SPX
       yahoo: "^GSPC"
       label: S&P 500
+    - code: NDX
+      yahoo: "^NDX"
+      label: NASDAQ-100
+    - code: XAUUSD
+      yahoo: "GC=F"
+      label: Gold Futures
     - code: XAGUSD
       yahoo: "SI=F"
       label: Silver Futures
+    - code: BTCUSD
+      yahoo: "BTC-USD"
+      label: Bitcoin USD

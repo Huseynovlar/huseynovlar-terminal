@@ -1,0 +1,41 @@
+# External Market Data, Economic Calendar, GeoIP, Logo & AI Provider Endpoints
+# Used by terminal-backend and terminal-worker (zero paid API keys required except optional Gemini).
+
+market_data:
+  yahoo_finance:
+    chart_url: https://query1.finance.yahoo.com/v8/finance/chart/{symbol}
+    quote_url: https://query1.finance.yahoo.com/v7/finance/quote
+    search_url: https://query1.finance.yahoo.com/v1/finance/search
+    timeout_sec: 12
+    user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+economic_calendar:
+  forexfactory:
+    this_week_url: https://nfs.faireconomy.media/ff_calendar_thisweek.json
+    next_week_url: https://nfs.faireconomy.media/ff_calendar_nextweek.json
+    timeout_sec: 15
+    poll_interval_sec: 900
+
+geoip:
+  primary_url: http://ip-api.com/json/{ip}?fields=status,country,countryCode,regionName,city,lat,lon,isp,org,as,query
+  timeout_sec: 5
+  cache_ttl_sec: 86400
+
+logos:
+  cache_ttl_sec: 604800
+  timeout_sec: 6
+  stock_logo_templates:
+    - https://financialmodelingprep.com/image-stock/{symbol}.png
+    - https://logo.clearbit.com/{domain}
+  crypto_logo_templates:
+    - https://assets.coincap.io/assets/icons/{symbol_lower}@2x.png
+
+ai:
+  gemini:
+    base_url: https://generativelanguage.googleapis.com/v1beta/models
+    default_model: gemini-2.5-flash
+    available_models:
+      - gemini-2.5-flash
+      - gemini-2.5-pro
+      - gemini-2.0-flash
+    timeout_sec: 45

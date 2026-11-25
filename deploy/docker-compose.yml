@@ -46,23 +46,40 @@ services:
     <<: *hardening
     image: huseynovlar-terminal-backend:${IMAGE_TAG:-latest}
     container_name: terminal-backend
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+    env_file:
+      - path: /etc/huseynovlar-terminal/integrations.env
+        required: false
     environment:
+      CONFIG_DIR: /app/config
+      INTEGRATIONS_ENV_FILE: /etc/huseynovlar-terminal/integrations.env
       TERMINAL_DOMAIN: ${TERMINAL_DOMAIN:-terminal.huseynovlar.org}
       TERMINAL_ORIGIN: ${TERMINAL_ORIGIN:-https://terminal.huseynovlar.org}
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-terminal.huseynovlar.org}
       WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Huseynovlar Terminal}
-      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Asia/Baku}
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
       VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:?VAULT_MASTER_KEY is required}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-terminal_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-huseynovlar_terminal}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
       DOCKER_HOST: http://docker-proxy:2375
       MANAGED_CONTAINER_LABEL: ${MANAGED_CONTAINER_LABEL:-exness-panel.managed=true}
-      ALLOWED_MT5_CONTAINERS: ${ALLOWED_MT5_CONTAINERS:-}
+      ALLOWED_MT5_CONTAINERS: ${ALLOWED_MT5_CONTAINERS:-mt5-xau,mt5-ustec}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      GOOGLE_AI_DEFAULT_MODEL: ${GOOGLE_AI_DEFAULT_MODEL:-gemini-2.5-flash}
+      ALERTS_BOT_WEBHOOK_URL: ${ALERTS_BOT_WEBHOOK_URL:-}
+      ALERTS_BOT_WEBHOOK_SECRET: ${ALERTS_BOT_WEBHOOK_SECRET:-}
+      IP_GEO_API_URL: ${IP_GEO_API_URL:-}
     volumes:
       - ${CONFIG_HOST_DIR:-./config}:/app/config:ro
-    networks: [panel_internal, exness_mt5_ingest, panel_docker_proxy]
+    networks:
+      panel_internal: {}
+      panel_egress: {}
+      panel_docker_proxy: {}
+      exness_mt5_ingest:
+        aliases:
+          - ingest.terminal.local
+    dns: [1.1.1.1, 9.9.9.9]
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,15 +101,18 @@ services:
     image: huseynovlar-terminal-backend:${IMAGE_TAG:-latest}
     container_name: terminal-worker
     command: ["python", "-m", "worker.main"]
+    env_file:
+      - path: /etc/huseynovlar-terminal/integrations.env
+        required: false
     environment:
-      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-Asia/Baku}
+      CONFIG_DIR: /app/config
+      INTEGRATIONS_ENV_FILE: /etc/huseynovlar-terminal/integrations.env
+      DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
       VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:?VAULT_MASTER_KEY is required}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-terminal_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-huseynovlar_terminal}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
       GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
       GOOGLE_AI_DEFAULT_MODEL: ${GOOGLE_AI_DEFAULT_MODEL:-gemini-2.5-flash}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       ALERTS_BOT_WEBHOOK_URL: ${ALERTS_BOT_WEBHOOK_URL:-}
       ALERTS_BOT_WEBHOOK_SECRET: ${ALERTS_BOT_WEBHOOK_SECRET:-}
     volumes:
@@ -159,6 +179,8 @@ services:
     environment:
       CONTAINERS: 1
       POST: 1
+      INFO: 1
+      NETWORKS: 1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [panel_docker_proxy]
