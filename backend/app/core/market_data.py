@@ -19,6 +19,8 @@ from typing import Any
 
 import httpx
 
+_HTTPX_ASYNC_CLIENT_TYPE = httpx.AsyncClient
+
 logger = logging.getLogger(__name__)
 
 YAHOO_HEADERS = {
@@ -185,7 +187,8 @@ def change_from_series(series: list[tuple[int, float]], period: str, live_price:
 
 async def _yahoo_crumb(http: httpx.AsyncClient) -> str | None:
     if _state["crumb"]:
-        if _state["cookies"]:
+        # Tests and adapters may pass AsyncMock instead of a real httpx client.
+        if _state["cookies"] and isinstance(http, _HTTPX_ASYNC_CLIENT_TYPE):
             http.cookies.update(_state["cookies"])
         return str(_state["crumb"])
     try:
@@ -197,11 +200,9 @@ async def _yahoo_crumb(http: httpx.AsyncClient) -> str | None:
         text = resp.text.strip()
         if resp.status_code == 200 and text and "<" not in text and len(text) < 64:
             _state["crumb"] = text
-            try:
-                _state["cookies"] = dict(http.cookies)
-            except (TypeError, AttributeError):
-                # Test doubles may not expose an iterable cookie jar.
-                _state["cookies"] = {}
+            # Only inspect cookies on a real httpx client. AsyncMock exposes
+            # coroutine-like attributes that can emit un-awaited coroutine warnings.
+            _state["cookies"] = dict(http.cookies) if isinstance(http, _HTTPX_ASYNC_CLIENT_TYPE) else {}
             return text
     except httpx.HTTPError:
         return None
