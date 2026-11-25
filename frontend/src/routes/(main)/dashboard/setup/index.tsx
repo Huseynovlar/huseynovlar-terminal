@@ -26,12 +26,30 @@ interface AccountRow {
 }
 
 interface IntegrationsStatus {
-  env_file_path?: string;
-  env_file_exists?: boolean;
-  gemini_configured?: boolean;
-  gemini_model?: string;
-  telegram_webhook_configured?: boolean;
-  telegram_webhook_url?: string;
+  integrations_env?: {
+    path?: string;
+    exists?: boolean;
+  };
+  gemini?: {
+    configured?: boolean;
+    model?: string;
+    source?: string;
+  };
+  telegram_webhook?: {
+    configured?: boolean;
+    url_configured?: boolean;
+    secret_configured?: boolean;
+    url_host?: string;
+  };
+}
+
+interface IntegrationTestResult {
+  ok?: boolean;
+  detail?: string;
+  message?: string;
+  errors?: string[];
+  model?: string;
+  reply?: string;
 }
 
 const INTERNAL_INGEST_URL = "http://ingest.terminal.local:8000/api/v1/ingest";
@@ -100,8 +118,14 @@ function SetupWizardPage() {
     setBusy(kind);
     try {
       const endpoint = kind === "gemini" ? "/ops/integrations/gemini-test" : "/ops/alerts/test";
-      const res = await apiRequest<{ ok?: boolean; detail?: string; message?: string }>(endpoint, { method: "POST" });
-      notify.success(t.common.test, res.message || res.detail || "OK");
+      const res = await apiRequest<IntegrationTestResult>(endpoint, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      if (res.ok === false) {
+        throw new Error(res.errors?.join("; ") || res.detail || res.message || t.common.errorTitle);
+      }
+      notify.success(t.common.test, res.message || res.detail || res.reply || "OK");
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
@@ -270,7 +294,7 @@ function SetupWizardPage() {
                     {t.setup.geminiStatus}
                   </div>
                   <div className="flex items-center gap-1.5 text-xs">
-                    {status?.gemini_configured ? (
+                    {status?.gemini?.configured ? (
                       <Badge className="gap-1 bg-emerald-600">
                         <CheckCircle2 className="size-3" />
                         {t.setup.configured}
@@ -281,7 +305,7 @@ function SetupWizardPage() {
                         {t.setup.notConfigured}
                       </Badge>
                     )}
-                    {status?.gemini_model ? (
+                    {status?.gemini?.model ? (
                       <span className="text-muted-foreground font-mono">{status.gemini_model}</span>
                     ) : null}
                   </div>
@@ -303,7 +327,7 @@ function SetupWizardPage() {
                     {t.setup.telegramStatus}
                   </div>
                   <div className="flex items-center gap-1.5 text-xs">
-                    {status?.telegram_webhook_configured ? (
+                    {status?.telegram_webhook?.configured ? (
                       <Badge className="gap-1 bg-emerald-600">
                         <CheckCircle2 className="size-3" />
                         {t.setup.configured}
