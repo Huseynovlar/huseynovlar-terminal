@@ -1200,7 +1200,11 @@ async def gemini_ai_copilot(
         ]
     }
     try:
-        async with httpx.AsyncClient(timeout=30.0) as http:
+        # Gemini 3.x may take longer on analytical prompts. Keep a bounded
+        # response timeout and retry connection establishment once.
+        timeout = httpx.Timeout(90.0, connect=10.0)
+        transport = httpx.AsyncHTTPTransport(retries=1)
+        async with httpx.AsyncClient(timeout=timeout, transport=transport) as http:
             resp = await http.post(url, params={"key": api_key}, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -1209,10 +1213,21 @@ async def gemini_ai_copilot(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Gemini API error ({exc.response.status_code}): {exc.response.text[:250]}",
         ) from exc
-    except Exception as exc:
+    except httpx.TimeoutException as exc:
+        logger.warning("Gemini API timed out (model=%s)", model_name, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=(
+                f"Gemini API timed out ({type(exc).__name__}) while waiting for model "
+                f"{model_name}. Check outbound HTTPS access from the backend and retry."
+            ),
+        ) from exc
+    except httpx.RequestError as exc:
+        logger.warning("Gemini API connection failed (model=%s)", model_name, exc_info=True)
+        reason = str(exc).strip() or repr(exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Gemini API unreachable: {exc}",
+            detail=f"Gemini API connection failed ({type(exc).__name__}): {reason}",
         ) from exc
 
     text_out = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
