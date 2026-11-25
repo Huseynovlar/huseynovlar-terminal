@@ -284,6 +284,7 @@ async def test_intelligence_sources_ssrf_calendar_treemap_and_gemini(client: Asy
     # 3. Real Treemap (mocked Yahoo Finance quotes, ZERO hash() fake data)
     mock_yahoo = MagicMock()
     mock_yahoo.status_code = 200
+    mock_yahoo.text = "test-yahoo-crumb"
     mock_yahoo.json.return_value = {
         "quoteResponse": {
             "result": [
