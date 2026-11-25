@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +12,9 @@ from app.core.config import Settings, get_settings
 from app.core.crypto import encrypt_secret
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
+from app.core.ip_utils import extract_client_ip
 from app.db.models import SecretVaultEntry, User
+from app.modules.auth.router import DEFAULT_USER_PREFERENCES
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -25,8 +28,23 @@ ALLOWED_VAULT_KEYS = {
 }
 
 
+def _deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    merged = deepcopy(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = deepcopy(value)
+    return merged
+
+
+def _effective_preferences(stored: dict[str, Any] | None) -> dict[str, Any]:
+    return _deep_merge(DEFAULT_USER_PREFERENCES, stored or {})
+
+
 class ProfileUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=120)
+    email: EmailStr | None = None
     bio: str | None = Field(default=None, max_length=1000)
     avatar_url: str | None = Field(default=None, max_length=2000)
     social_links: dict[str, str] | None = None
@@ -52,7 +70,7 @@ async def get_my_profile(user: User = Depends(get_current_user)) -> dict[str, An
         "avatar_url": user.avatar_url,
         "social_links": user.social_links,
         "totp_enabled": user.totp_enabled,
-        "preferences": user.preferences,
+        "preferences": _effective_preferences(user.preferences),
         "created_at": user.created_at.isoformat(),
     }
 
@@ -66,6 +84,12 @@ async def update_my_profile(
 ) -> dict[str, Any]:
     if body.display_name is not None:
         user.display_name = body.display_name.strip()
+    if body.email is not None:
+        new_email = str(body.email).strip().lower()
+        dup = (await db.execute(select(User).where(User.email == new_email, User.id != user.id))).scalar_one_or_none()
+        if dup:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
+        user.email = new_email
     if body.bio is not None:
         user.bio = body.bio.strip()
     if body.avatar_url is not None:
@@ -79,10 +103,15 @@ async def update_my_profile(
         user_id=user.id,
         resource_type="user",
         resource_id=user.id,
-        ip_address=request.client.host if request.client else "",
+        ip_address=extract_client_ip(request),
     )
     await db.commit()
     return await get_my_profile(user)
+
+
+@router.get("/preferences")
+async def get_preferences(user: User = Depends(get_current_user)) -> dict[str, Any]:
+    return {"preferences": _effective_preferences(user.preferences)}
 
 
 @router.patch("/preferences")
@@ -91,7 +120,7 @@ async def update_preferences(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    merged = {**(user.preferences or {}), **body.preferences}
+    merged = _deep_merge(_effective_preferences(user.preferences), body.preferences)
     user.preferences = merged
     await db.commit()
     return {"preferences": user.preferences}
@@ -135,7 +164,31 @@ async def upsert_vault_secret(
         user_id=user.id,
         resource_type="secret_vault",
         resource_id=secret_key,
-        ip_address=request.client.host if request.client else "",
+        ip_address=extract_client_ip(request),
     )
     await db.commit()
     return {"key": secret_key, "configured": True}
+
+
+@router.delete("/vault/{secret_key}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_vault_secret(
+    secret_key: str,
+    request: Request,
+    user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    if secret_key not in ALLOWED_VAULT_KEYS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported vault secret key")
+    entry = await db.get(SecretVaultEntry, secret_key)
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vault entry not found")
+    await db.delete(entry)
+    await record_audit(
+        db,
+        action="vault.secret_deleted",
+        user_id=user.id,
+        resource_type="secret_vault",
+        resource_id=secret_key,
+        ip_address=extract_client_ip(request),
+    )
+    await db.commit()

@@ -46,9 +46,10 @@ class User(Base):
     avatar_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
     social_links: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
 
-    # 2FA TOTP (encrypted secret)
+    # 2FA TOTP (encrypted secret + hashed single-use backup codes)
     totp_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    totp_backup_hashes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
 
     # UI & Terminal preferences (sidebar, widgets, ticker, hotkeys, timezone, currency, language, density)
     preferences: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
@@ -151,6 +152,8 @@ class AssetHub(Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")  # active | watchlist | archived
     color: Mapped[str] = mapped_column(String(16), nullable=False, default="#3B82F6")
     icon: Mapped[str] = mapped_column(String(32), nullable=False, default="activity")
+    logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(32), nullable=False, default="macro")
     broker_symbols: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     news_tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     macro_drivers: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
@@ -176,6 +179,7 @@ class TradingAccount(Base):
     )
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    platform: Mapped[str] = mapped_column(String(32), nullable=False, default="MT5")
     mt5_login: Mapped[str] = mapped_column(String(64), nullable=False)
     mt5_server: Mapped[str] = mapped_column(String(128), nullable=False)
     account_type: Mapped[str] = mapped_column(
@@ -187,9 +191,10 @@ class TradingAccount(Base):
     is_demo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    # Ingestion auth: SHA-256 hash only; plaintext shown once at create/rotate
+    # Ingestion auth: SHA-256 hash + optional Fernet-encrypted copy for Setup Wizard .set pre-fill
     api_key_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
     api_key_hash: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    api_key_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Live terminal status
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -276,6 +281,8 @@ class Deal(Base):
     net_profit: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     net_profit_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     comment: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     time_msc: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
 
 
@@ -296,6 +303,8 @@ class BalanceOperation(Base):
     amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     amount_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     comment: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     time_msc: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
 
 
@@ -425,5 +434,74 @@ class AiBriefing(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
 
 
+class NewsSource(Base):
+    """Database-backed registry of verified RSS / macro news sources."""
+
+    __tablename__ = "news_sources"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    url: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    category: Mapped[str] = mapped_column(String(48), nullable=False, default="global")
+    trust_tier: Mapped[str] = mapped_column(String(24), nullable=False, default="custom")  # tier_1|tier_2|custom
+    is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    asset_tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    poll_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    article_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ChartState(Base):
+    """Server-persisted chart layout, drawings, indicators, and filters per user & symbol."""
+
+    __tablename__ = "chart_states"
+    __table_args__ = (UniqueConstraint("user_id", "symbol", name="uq_chart_state_user_symbol"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    timeframe: Mapped[str] = mapped_column(String(16), nullable=False, default="H1")
+    indicators_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    drawings_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    filters_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+
+class WikiPage(Base):
+    """Operational playbooks, runbooks, and trading desk documentation stored in Markdown."""
+
+    __tablename__ = "wiki_pages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    slug: Mapped[str] = mapped_column(String(120), unique=True, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default="runbook")
+    content_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_by: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+
+class MarketCache(Base):
+    """Shared DB-backed cache between worker and backend for treemap, macro quotes, and market feeds."""
+
+    __tablename__ = "market_cache"
+
+    cache_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+
 Index("ix_audit_logs_action_created", AuditLog.action, AuditLog.created_at)
 Index("ix_market_bars_lookup", MarketBar.symbol, MarketBar.timeframe, MarketBar.bar_time)
+

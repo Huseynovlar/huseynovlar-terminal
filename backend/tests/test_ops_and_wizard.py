@@ -60,5 +60,5 @@ async def test_container_allowlist_kill_switch_and_mt5_set_generator(client: Asy
     # 3. MT5 .set preset file generator
     preset = await client.get(f"/api/v1/ops/setup-wizard/{acc['id']}/bridge.set", headers=h)
     assert preset.status_code == 200
-    assert "ApiBaseUrl=http://terminal-backend:8000/api/v1/ingest" in preset.text
+    assert "ApiBaseUrl=http://ingest.terminal.local:8000/api/v1/ingest" in preset.text
     assert "AllowRemoteClose=false" in preset.text
