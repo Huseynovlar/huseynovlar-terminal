@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.database import build_engine
+from app.core.equity_ws_bridge import equity_ws_bridge
 from app.core.module_registry import ModuleSpec, register_modules
 from app.core.ws_hub import ws_hub
 from app.db import models as _models  # noqa: F401
@@ -37,10 +38,12 @@ async def _lifespan(_app: FastAPI):
         finally:
             await engine.dispose()
         await ws_hub.start_redis_bridge(settings.redis_url)
+        await equity_ws_bridge.start(settings)
     try:
         yield
     finally:
         if settings.environment != "test":
+            await equity_ws_bridge.stop()
             await ws_hub.stop_redis_bridge()
 
 

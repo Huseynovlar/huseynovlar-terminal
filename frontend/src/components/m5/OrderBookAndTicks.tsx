@@ -62,10 +62,21 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
 
     if (evt.type === "tick" || evt.type === "bar_update") {
       const bid = Number(d.bid ?? d.price ?? d.close ?? 0);
-      const ask = Number(d.ask ?? (bid > 0 ? bid * 1.0001 : 0));
+      const ask = Number(d.ask ?? (bid > 0 ? bid : 0));
+      const bidSz = Number(d.bid_size ?? d.qty ?? 1);
+      const askSz = Number(d.ask_size ?? d.qty ?? 1);
+      const src = String(d.source ?? "");
       if (bid > 0) {
         pushDualTick(bid, ask > 0 ? ask : bid, Date.now());
-        setFeedLabel("Terminal Live WS");
+        setBids([{ price: bid, qty: bidSz > 0 ? bidSz : 1 }]);
+        setAsks([{ price: ask > 0 ? ask : bid, qty: askSz > 0 ? askSz : 1 }]);
+        setFeedLabel(
+          src === "alpaca_iex"
+            ? "Alpaca IEX Live WS"
+            : src === "finnhub"
+              ? "Finnhub Live WS"
+              : "Terminal Live WS",
+        );
         setFeedLive(true);
       }
     }
