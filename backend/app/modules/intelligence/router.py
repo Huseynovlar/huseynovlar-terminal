@@ -1575,7 +1575,8 @@ async def gemini_ai_copilot(
     if not api_key and not is_asset_brief:
         reply = (
             "Google AI (Gemini) ключ не настроен.\n\n"
-            "• Добавьте GEMINI_API_KEY / google_ai_api_key (или LLM_API_KEY + LLM_BASE_URL) в .env и перезапустите backend.\n"
+            "• Добавьте GEMINI_API_KEY / google_ai_api_key "
+            "(или LLM_API_KEY + LLM_BASE_URL) в .env и перезапустите backend.\n"
             f"• Текущий контекст портфеля: {context_text}"
         )
         return {
@@ -1588,7 +1589,8 @@ async def gemini_ai_copilot(
 
     sys_instruction = (
         "Ты — институциональный мульти-активный аналитик уровня Bloomberg. "
-        "Отвечай на русском языке кратко и строго по делу — ТОЛЬКО чистый структурированный текст и короткие буллеты (• или -). "
+        "Отвечай на русском языке кратко и строго по делу — ТОЛЬКО чистый структурированный текст "
+        "и короткие буллеты (• или -). "
         "ЖЁСТКИЙ ЗАПРЕТ: НИКАКИХ Markdown-таблиц (символов |), никаких эмодзи и воды. "
         "Структура ответа:\n"
         "1) Рыночный режим и ключевые уровни графика (SELL ZONE / FAIR VWAP / BUY ZONE / RSI)\n"
