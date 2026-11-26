@@ -71,19 +71,28 @@ export interface ChartBundleData {
   deals?: Array<Record<string, unknown>>;
 }
 
+export interface RobotZoneLevels {
+  sellZone?: number | null;
+  fair?: number | null;
+  mean?: number | null;
+  buyZone?: number | null;
+  label?: string;
+}
+
 interface InteractiveChartCanvasProps {
   symbol: string;
   mode?: "hub" | "explore";
   height?: number;
+  robotZones?: RobotZoneLevels | null;
   onDataLoaded?: (bundle: ChartBundleData) => void;
 }
 
 const DEFAULT_INDICATORS: IndicatorConfig = {
-  ema20: true,
-  ema50: true,
+  ema20: false,
+  ema50: false,
   ema200: false,
-  bb: false,
-  vwap: false,
+  bb: true,
+  vwap: true,
   rsi: false,
 };
 
@@ -91,6 +100,7 @@ export function InteractiveChartCanvas({
   symbol,
   mode = "hub",
   height = 420,
+  robotZones,
   onDataLoaded,
 }: InteractiveChartCanvasProps) {
   const { t } = useI18n();
@@ -329,14 +339,60 @@ export function InteractiveChartCanvas({
     }
     if (indicators.bb) {
       const bb = calcBollinger(bars, 20, 2);
-      const u = chart.addSeries(LineSeries, { color: "rgba(56, 189, 248, 0.5)", lineWidth: 1, title: "BB+" });
-      const l = chart.addSeries(LineSeries, { color: "rgba(56, 189, 248, 0.5)", lineWidth: 1, title: "BB-" });
+      const u = chart.addSeries(LineSeries, { color: "#f43f5e", lineWidth: 2, title: "SELL ZONE" });
+      const m = chart.addSeries(LineSeries, { color: "rgba(148, 163, 184, 0.7)", lineWidth: 1, lineStyle: 3, title: "MEAN" });
+      const l = chart.addSeries(LineSeries, { color: "#10b981", lineWidth: 2, title: "BUY ZONE" });
       u.setData(bb.upper.map((p) => ({ time: p.time as Time, value: p.value })));
+      m.setData(bb.middle.map((p) => ({ time: p.time as Time, value: p.value })));
       l.setData(bb.lower.map((p) => ({ time: p.time as Time, value: p.value })));
     }
     if (indicators.vwap) {
-      const s = chart.addSeries(LineSeries, { color: "#ec4899", lineWidth: 1, title: "VWAP" });
+      const s = chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 1, lineStyle: 2, title: "FAIR" });
       s.setData(calcVWAP(bars).map((p) => ({ time: p.time as Time, value: p.value })));
+    }
+
+    // Live Robot Strategy Zone Price Lines from MT5 EA Telemetry (SELL ZONE / FAIR / MEAN / BUY ZONE)
+    if (robotZones) {
+      if (robotZones.sellZone && robotZones.sellZone > 0) {
+        candleSeries.createPriceLine({
+          price: robotZones.sellZone,
+          color: "#f43f5e",
+          lineWidth: 1,
+          lineStyle: 0,
+          axisLabelVisible: true,
+          title: "SELL ZONE",
+        });
+      }
+      if (robotZones.fair && robotZones.fair > 0) {
+        candleSeries.createPriceLine({
+          price: robotZones.fair,
+          color: "#f59e0b",
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: "FAIR",
+        });
+      }
+      if (robotZones.mean && robotZones.mean > 0) {
+        candleSeries.createPriceLine({
+          price: robotZones.mean,
+          color: "#94a3b8",
+          lineWidth: 1,
+          lineStyle: 3,
+          axisLabelVisible: true,
+          title: "MEAN",
+        });
+      }
+      if (robotZones.buyZone && robotZones.buyZone > 0) {
+        candleSeries.createPriceLine({
+          price: robotZones.buyZone,
+          color: "#10b981",
+          lineWidth: 1,
+          lineStyle: 0,
+          axisLabelVisible: true,
+          title: "BUY ZONE",
+        });
+      }
     }
 
     // Apply saved drawings (hlines, trendlines, fib retracements)

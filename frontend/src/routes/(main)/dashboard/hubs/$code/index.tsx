@@ -3,8 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Bot, Brain, Calendar, ListOrdered, Newspaper, Pencil, Trash2 } from "lucide-react";
 
-import { InteractiveChartCanvas } from "@/components/m5/InteractiveChartCanvas";
+import { InteractiveChartCanvas, type RobotZoneLevels } from "@/components/m5/InteractiveChartCanvas";
 import { OrderBookAndTicks } from "@/components/m5/OrderBookAndTicks";
+import { RobotTelemetryPanel } from "@/components/m5/RobotTelemetryPanel";
 import { formatSignedUsd, formatUsd } from "@/components/m5/chart-indicators";
 import { AsyncButton } from "@/components/ui/async-button";
 import { Badge } from "@/components/ui/badge";
@@ -77,6 +78,8 @@ interface RobotRow {
   magic_number: number;
   is_active: boolean;
   status?: string;
+  live_status?: string;
+  live_state_json?: Record<string, unknown>;
 }
 
 interface CalRow {
@@ -313,8 +316,40 @@ function HubDetailPage() {
         </Card>
       ) : null}
 
-      {/* Full-width Live Chart */}
-      <InteractiveChartCanvas symbol={hub.code} mode="hub" height={420} />
+      {/* Full-width Live Chart with MT5 Strategy Bands (SELL ZONE / FAIR / MEAN / BUY ZONE) */}
+      {(() => {
+        const activeRobot = robots.find((r) => r.live_state_json && Object.keys(r.live_state_json).length > 0) ?? robots[0];
+        const outer = activeRobot?.live_state_json ?? {};
+        const nested =
+          outer.telemetry && typeof outer.telemetry === "object"
+            ? (outer.telemetry as Record<string, unknown>)
+            : {};
+        const merged: Record<string, unknown> = { ...outer, ...nested };
+        const n = (k: string) => {
+          const v = Number(merged[k]);
+          return Number.isFinite(v) && v > 0 ? v : null;
+        };
+        const robotZones: RobotZoneLevels | null = activeRobot
+          ? {
+              sellZone: n("bb_upper"),
+              fair: n("vwap"),
+              mean: n("bb_mid"),
+              buyZone: n("bb_lower"),
+              label: activeRobot.name,
+            }
+          : null;
+        return (
+          <>
+            <InteractiveChartCanvas symbol={hub.code} mode="hub" height={420} robotZones={robotZones} />
+            {activeRobot ? (
+              <RobotTelemetryPanel
+                state={activeRobot.live_state_json}
+                title={`${activeRobot.name} (#${activeRobot.magic_number}) — Live HUD`}
+              />
+            ) : null}
+          </>
+        );
+      })()}
 
       {/* Live WebSocket Order Book (DOM) & Tick Chart */}
       <OrderBookAndTicks symbol={hub.code} />
