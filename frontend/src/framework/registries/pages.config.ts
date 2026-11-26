@@ -51,7 +51,6 @@ export const TERMINAL_PAGES: TerminalPageConfig[] = [
   { id: "journal", group: "desk", titleRu: "Журнал сделок", titleEn: "Deals Journal", titleAz: "Əməliyyat jurnalı", route: "/dashboard/journal", icon: BookOpen },
   { id: "treasury", group: "desk", titleRu: "Казна и переводы", titleEn: "Treasury & Transfers", titleAz: "Xəzinə və köçürmələr", route: "/dashboard/treasury", icon: Banknote },
   { id: "hubs", group: "markets", titleRu: "Хабы активов", titleEn: "Asset Hubs", titleAz: "Aktiv habları", route: "/dashboard/hubs", icon: Layers, hotkeyActionId: "nav.assets" },
-  { id: "catalog", group: "markets", titleRu: "Каталог активов", titleEn: "Asset Catalog", titleAz: "Aktiv kataloqu", route: "/dashboard/catalog", icon: BookOpen },
   { id: "explorer", group: "markets", titleRu: "Поиск активов", titleEn: "Asset Explorer", titleAz: "Aktiv axtarışı", route: "/dashboard/explorer", icon: Compass },
   { id: "treemap", group: "markets", titleRu: "Карта рынка", titleEn: "Market Treemap", titleAz: "Bazar xəritəsi", route: "/dashboard/treemap", icon: Grid2x2, hotkeyActionId: "nav.heatmap" },
   { id: "analytics", group: "markets", titleRu: "Аналитика и риски", titleEn: "Analytics & Risk Lab", titleAz: "Analitika və risklər", route: "/dashboard/analytics", icon: Gauge },

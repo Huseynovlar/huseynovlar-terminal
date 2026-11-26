@@ -100,7 +100,6 @@ export function buildSidebarItems(
       label: dict.nav.groupMarkets,
       items: [
         { id: "hubs", title: dict.nav.hubs, url: "/dashboard/hubs", icon: Layers },
-        { id: "catalog", title: "Каталог активов", url: "/dashboard/catalog", icon: BookOpen },
         { id: "explorer", title: dict.nav.explorer, url: "/dashboard/explorer", icon: Compass },
         { id: "treemap", title: dict.nav.treemap, url: "/dashboard/treemap", icon: Grid2x2 },
         { id: "analytics", title: dict.nav.analytics, url: "/dashboard/analytics", icon: Gauge },

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import html
 import re
@@ -7,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -237,6 +239,33 @@ _EXT_BY_LOGO_MIME: dict[str, str] = {
     "image/jpeg": ".jpg",
 }
 
+_KNOWN_CRYPTO_BASES = {
+    "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "TON", "LTC",
+    "AVAX", "DOT", "LINK", "MATIC", "POL", "TRX", "SHIB", "UNI", "ATOM",
+    "NEAR", "APT", "ARB", "OP", "SUI", "BCH", "XLM", "ETC", "FIL", "HBAR",
+}
+
+_INDEX_ETF_LOGO_MAP: dict[str, str] = {
+    "USTEC": "QQQ",
+    "NAS100": "QQQ",
+    "NDX": "QQQ",
+    "US500": "SPY",
+    "SPX": "SPY",
+    "US30": "DIA",
+    "DJI": "DIA",
+    "XAUUSD": "PAXG",
+    "XAU": "PAXG",
+    "GOLD": "PAXG",
+    "XAGUSD": "SLV",
+    "XAG": "SLV",
+    "SILVER": "SLV",
+    "USOIL": "USO",
+    "WTI": "USO",
+}
+
+# Negative cache so missing upstream symbols aren't re-fetched on every request
+_LOGO_MISS_CACHE: dict[str, float] = {}
+
 
 def _logo_storage_dir(settings: Settings) -> Path:
     for candidate in (
@@ -251,33 +280,107 @@ def _logo_storage_dir(settings: Settings) -> Path:
     return Path("/tmp")
 
 
+def _candidate_official_logo_urls(clean_sym: str) -> list[str]:
+    """Build ordered list of real official logo URLs (nvstly/icons, CoinCap, FMP) for any symbol."""
+    mapped = _INDEX_ETF_LOGO_MAP.get(clean_sym, clean_sym)
+    urls: list[str] = []
+
+    # Check if crypto (e.g. BTCUSD, BTCUSDT, BTC, PAXG)
+    crypto_base = mapped
+    for suffix in ("USDT", "USDC", "USD"):
+        if crypto_base.endswith(suffix) and len(crypto_base) > len(suffix):
+            candidate_base = crypto_base[: -len(suffix)]
+            if candidate_base in _KNOWN_CRYPTO_BASES or candidate_base == "PAXG":
+                crypto_base = candidate_base
+                break
+
+    if crypto_base in _KNOWN_CRYPTO_BASES or crypto_base == "PAXG":
+        urls.append(f"https://raw.githubusercontent.com/nvstly/icons/main/crypto_icons/{crypto_base}.png")
+        urls.append(f"https://assets.coincap.io/assets/icons/{crypto_base.lower()}@2x.png")
+    else:
+        # US Equities / ETFs / Indices (NVDA, AAPL, TSLA, MSFT, SPY, QQQ, etc.)
+        urls.append(f"https://raw.githubusercontent.com/nvstly/icons/main/ticker_icons/{mapped}.png")
+        urls.append(f"https://financialmodelingprep.com/image-stock/{mapped}.png")
+        # Fallback to crypto pack in case it's a smaller coin
+        urls.append(f"https://raw.githubusercontent.com/nvstly/icons/main/crypto_icons/{mapped}.png")
+    return urls
+
+
+async def _fetch_and_cache_official_logo(clean_sym: str, logo_dir: Path) -> tuple[bytes, str] | None:
+    now = time.time()
+    miss_ts = _LOGO_MISS_CACHE.get(clean_sym)
+    if miss_ts and (now - miss_ts) < 3600:
+        return None
+
+    urls = _candidate_official_logo_urls(clean_sym)
+    async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as http:
+        for url in urls:
+            try:
+                resp = await http.get(url, headers={"User-Agent": "HuseynovlarTerminal/2.2"})
+                if resp.status_code != 200 or not resp.content or len(resp.content) < 120:
+                    continue
+                ct = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+                ext = _EXT_BY_LOGO_MIME.get(ct)
+                if not ext and url.endswith(".png"):
+                    ext = ".png"
+                    ct = "image/png"
+                if not ext:
+                    continue
+                with contextlib.suppress(OSError):
+                    (logo_dir / f"{clean_sym}{ext}").write_bytes(resp.content)
+                return resp.content, ct
+            except Exception:
+                continue
+
+    _LOGO_MISS_CACHE[clean_sym] = now
+    return None
+
+
 @router.get("/logo/{symbol}")
 async def get_asset_logo(
     symbol: str,
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    """Same-origin CSP-safe logo endpoint: serves custom uploaded logo if present, else crisp SVG."""
+    """Same-origin CSP-safe logo proxy: serves cached/official brand PNG/SVG logos, else crisp SVG fallback."""
     clean = re.sub(r"[^A-Z0-9]", "", symbol.strip().upper())[:24]
-    if clean:
+    clean_stripped = re.sub(r"(C|M|RAW|PRO)$", "", clean) if len(clean) > 4 else clean
+    lookup_key = clean_stripped or clean
+
+    if lookup_key:
         logo_dir = _logo_storage_dir(settings)
+        # 1. Serve from local disk cache (custom uploads or previously cached official logos)
         for ext, mime in _LOGO_MIME_BY_EXT.items():
-            candidate = logo_dir / f"{clean}{ext}"
+            candidate = logo_dir / f"{lookup_key}{ext}"
             if candidate.is_file():
                 return Response(
                     content=candidate.read_bytes(),
                     media_type=mime,
                     headers={
-                        "Cache-Control": "public, max-age=3600",
+                        "Cache-Control": "public, max-age=86400",
                         "X-Content-Type-Options": "nosniff",
                     },
                 )
 
+        # 2. Fetch real official brand logo from nvstly/icons, CoinCap, or FMP and cache locally
+        fetched = await _fetch_and_cache_official_logo(lookup_key, logo_dir)
+        if fetched is not None:
+            raw_bytes, mime = fetched
+            return Response(
+                content=raw_bytes,
+                media_type=mime,
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
+
+    # 3. Last-resort deterministic SVG badge
     svg = _render_symbol_logo_svg(symbol)
     return Response(
         content=svg,
         media_type="image/svg+xml; charset=utf-8",
         headers={
-            "Cache-Control": "public, max-age=86400",
+            "Cache-Control": "public, max-age=3600",
             "X-Content-Type-Options": "nosniff",
         },
     )

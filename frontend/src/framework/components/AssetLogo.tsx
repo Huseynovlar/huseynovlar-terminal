@@ -1,61 +1,5 @@
 import { useState } from "react";
 
-const OFFLINE_SVG_MAP: Record<string, string> = {
-  XAUUSD: "/logos/xau.svg",
-  XAU: "/logos/xau.svg",
-  GOLD: "/logos/xau.svg",
-  XAGUSD: "/logos/xag.svg",
-  XAG: "/logos/xag.svg",
-  SILVER: "/logos/xag.svg",
-  USTEC: "/logos/ustec.svg",
-  NAS100: "/logos/ustec.svg",
-  NDX: "/logos/ustec.svg",
-  QQQ: "/logos/ustec.svg",
-  SPX: "/logos/spx.svg",
-  US500: "/logos/spx.svg",
-  SPY: "/logos/spx.svg",
-  US30: "/logos/us30.svg",
-  DJI: "/logos/us30.svg",
-  DXY: "/logos/dxy.svg",
-  VIX: "/logos/vix.svg",
-  USOIL: "/logos/oil.svg",
-  WTI: "/logos/oil.svg",
-  UKOIL: "/logos/oil.svg",
-  BTCUSD: "/logos/btc.svg",
-  BTCUSDT: "/logos/btc.svg",
-  BTC: "/logos/btc.svg",
-  ETHUSD: "/logos/eth.svg",
-  ETHUSDT: "/logos/eth.svg",
-  ETH: "/logos/eth.svg",
-  SOLUSD: "/logos/sol.svg",
-  SOLUSDT: "/logos/sol.svg",
-  SOL: "/logos/sol.svg",
-  BNBUSD: "/logos/bnb.svg",
-  BNBUSDT: "/logos/bnb.svg",
-  BNB: "/logos/bnb.svg",
-  XRPUSD: "/logos/xrp.svg",
-  XRPUSDT: "/logos/xrp.svg",
-  XRP: "/logos/xrp.svg",
-  ADAUSD: "/logos/ada.svg",
-  ADA: "/logos/ada.svg",
-  DOGEUSD: "/logos/doge.svg",
-  DOGE: "/logos/doge.svg",
-  TONUSD: "/logos/ton.svg",
-  TON: "/logos/ton.svg",
-  LTCUSD: "/logos/ltc.svg",
-  LTC: "/logos/ltc.svg",
-  NGAS: "/logos/ngas.svg",
-  US10Y: "/logos/us10y.svg",
-  AAPL: "/logos/aapl.svg",
-  NVDA: "/logos/nvda.svg",
-  TSLA: "/logos/tsla.svg",
-  MSFT: "/logos/msft.svg",
-  AMZN: "/logos/amzn.svg",
-  META: "/logos/meta.svg",
-  GOOGL: "/logos/googl.svg",
-  GOOG: "/logos/googl.svg",
-};
-
 const FX_COUNTRY_MAP: Record<string, string> = {
   USD: "us",
   EUR: "eu",
@@ -95,48 +39,17 @@ export interface AssetLogoProps {
 
 /**
  * Same-origin CSP-safe AssetLogo:
- * 0. Custom uploaded/configured logoUrl if provided (e.g. from Asset Catalog CRUD)
- * 1. Crisp offline SVG badges in /public/logos/ (26+ symbols)
- * 2. Dual FX flags via bundled flags.css for 6-char FX pairs (EURUSD, GBPUSD, etc.)
- * 3. Same-origin /api/v1/assets/logo/{symbol} proxy for other symbols
- * 4. Clean deterministic monogram fallback if image fails to load
+ * 1. Dual FX flags via bundled flags.css for 6-char FX pairs (EURUSD, GBPUSD, USDJPY, etc.)
+ * 2. Backend official logo proxy (`/api/v1/assets/logo/{symbol}`) which fetches & caches
+ *    real brand PNG/SVG logos (NVDA, AAPL, TSLA, BTC, ETH, XAU, SPY, QQQ, etc.) from
+ *    nvstly/icons, CoinCap & FMP without any browser CSP issues.
+ * 3. Clean deterministic monogram fallback if image fails to load.
  */
 export function AssetLogo({ symbol, size = 24, logoUrl, className = "" }: AssetLogoProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const norm = cleanSymbol(symbol || "ASSET");
 
-  // 0. Explicit custom logoUrl (uploaded file or selected local icon)
-  if (logoUrl && !imgFailed && (logoUrl.startsWith("/logos/") || logoUrl.includes("?v="))) {
-    return (
-      <img
-        src={logoUrl}
-        alt={norm}
-        width={size}
-        height={size}
-        onError={() => setImgFailed(true)}
-        className={`inline-block shrink-0 rounded-md object-contain ${className}`}
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-
-  // 1. Offline SVG badge
-  const offlineUrl = OFFLINE_SVG_MAP[norm];
-  if (offlineUrl && !imgFailed) {
-    return (
-      <img
-        src={offlineUrl}
-        alt={norm}
-        width={size}
-        height={size}
-        onError={() => setImgFailed(true)}
-        className={`inline-block shrink-0 rounded-md object-contain ${className}`}
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-
-  // 2. FX dual flag via local flags.css
+  // 1. FX dual country flags via local flags.css
   if (norm.length === 6) {
     const base = norm.slice(0, 3);
     const quote = norm.slice(3, 6);
@@ -174,37 +87,42 @@ export function AssetLogo({ symbol, size = 24, logoUrl, className = "" }: AssetL
     }
   }
 
-  // 3. Same-origin backend logo proxy
+  // 2. Same-origin backend official logo proxy (fetches & caches real PNG/SVG logos on server)
+  const resolvedSrc =
+    logoUrl && (logoUrl.startsWith("/api/v1/assets/logo/") || logoUrl.startsWith("/logos/"))
+      ? logoUrl
+      : `/api/v1/assets/logo/${encodeURIComponent(norm)}`;
+
   if (!imgFailed && norm.length > 0) {
     return (
       <img
-        src={`/api/v1/assets/logo/${encodeURIComponent(norm)}`}
+        src={resolvedSrc}
         alt={norm}
         width={size}
         height={size}
         loading="lazy"
         onError={() => setImgFailed(true)}
-        className={`inline-block shrink-0 rounded-md object-contain bg-muted/40 ${className}`}
+        className={`inline-block shrink-0 rounded-md object-contain ${className}`}
         style={{ width: size, height: size }}
       />
     );
   }
 
-  // 4. Deterministic monogram fallback
+  // 3. Deterministic monogram fallback
   const hue = hashHue(norm);
-  const initials = norm.slice(0, 3);
+  const label = norm.slice(0, 3);
   return (
     <span
       className={`inline-flex shrink-0 items-center justify-center rounded-md font-mono font-bold text-white select-none ${className}`}
       style={{
         width: size,
         height: size,
-        fontSize: Math.max(8, Math.round(size * 0.36)),
-        backgroundColor: `hsl(${hue} 55% 32%)`,
+        fontSize: Math.max(9, Math.round(size * 0.36)),
+        background: `linear-gradient(135deg, hsl(${hue} 65% 42%), hsl(${(hue + 28) % 360} 65% 30%))`,
       }}
       title={norm}
     >
-      {initials}
+      {label}
     </span>
   );
 }
