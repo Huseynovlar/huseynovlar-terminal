@@ -88,15 +88,17 @@ class ServerMarketWsHub:
         ask_size: float = 1.0,
         source: str = "live",
         min_interval: float = 0.22,
+        ts_ms: int | None = None,
     ) -> dict[str, Any] | None:
         canon = canonical_asset_code(symbol) or symbol.strip().upper()
         if not canon or bid <= 0:
             return None
         eff_ask = ask if ask >= bid else bid
-        now_mono = time.monotonic()
-        if now_mono - self._last_ring.get(canon, 0.0) < min_interval:
-            return None
-        self._last_ring[canon] = now_mono
+        if min_interval > 0:
+            now_mono = time.monotonic()
+            if now_mono - self._last_ring.get(canon, 0.0) < min_interval:
+                return None
+            self._last_ring[canon] = now_mono
 
         mid = (bid + eff_ask) / 2.0
         prev = self._prev_mid.get(canon, mid)
@@ -104,7 +106,7 @@ class ServerMarketWsHub:
         self._prev_mid[canon] = mid
 
         entry = {
-            "ts_ms": int(time.time() * 1000),
+            "ts_ms": int(ts_ms) if ts_ms and ts_ms > 0 else int(time.time() * 1000),
             "symbol": canon,
             "bid": bid,
             "ask": eff_ask,

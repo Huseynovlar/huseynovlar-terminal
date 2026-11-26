@@ -1209,7 +1209,7 @@ async def get_asset_detail(
                 "title": ev.title,
                 "currency": ev.currency,
                 "impact": ev.impact,
-                "actual": ev.actual,
+                "actual": getattr(ev, "actual", ""),
                 "forecast": ev.forecast,
                 "previous": ev.previous,
                 "event_time": ev.event_time.isoformat(),

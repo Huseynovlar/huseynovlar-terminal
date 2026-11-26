@@ -1,47 +1,54 @@
 //+------------------------------------------------------------------+
 //|                                            ExnessPanelBridge.mq5 |
-//|           Huseynovlar Terminal — Separate-Thread Telemetry EA    |
+//|     Huseynovlar Terminal — Real-Time WebSocket & 1s Telemetry EA |
 //|                                    https://terminal.huseynovlar.org
 //+------------------------------------------------------------------+
 //| Attach to a dedicated 2nd chart tab (1 instance per MT5 account).|
 //| Runs on its own MT5 chart thread — 0% latency impact on trading  |
-//| robots (e.g. NasdaqPulse, XAU EA on Chart 1).                    |
+//| robots (e.g. GoldPulseReversion, NasdaqPulse on Chart 1).        |
 //|                                                                  |
-//| IMPORTANT (MT5 WebRequest Allowlist):                            |
+//| IMPORTANT (MT5 Allowlist):                                       |
 //|   Tools -> Options -> Expert Advisors ->                         |
 //|   Allow WebRequest for listed URL:                               |
 //|     http://ingest.terminal.local:8000                            |
-//|     (or https://terminal.huseynovlar.org)                        |
+//|     https://terminal.huseynovlar.org                             |
 //+------------------------------------------------------------------+
 #property copyright "Huseynovlar Terminal"
-#property version   "2.00"
+#property version   "2.20"
 #property strict
 
 #include <Trade\Trade.mqh>
 
 #define EP_IPC_FOLDER "ep_ipc"
 
-input string ApiBaseUrl            = "http://ingest.terminal.local:8000/api/v1/ingest"; // Dotted internal Docker URL (<1ms)
+input string ApiBaseUrl            = "http://ingest.terminal.local:8000/api/v1/ingest"; // Internal Docker URL (<1ms) or https://...
 input string AccountApiKey         = "";                                                // Generated in Huseynovlar Terminal UI
 input string ChartSymbolOverride   = "";                                                // Empty = current chart symbol
-input int    SnapshotIntervalSec   = 5;                                                 // Heartbeat & equity snapshot interval
-input int    BarsSyncIntervalSec   = 15;                                                // OHLCV bars sync interval
+input bool   UseWebSocketStream    = true;                                              // Native MQL5 WebSocket stream (auto HTTP fallback)
+input int    SnapshotIntervalSec   = 1;                                                 // Real-time 1-second equity & HUD snapshot
+input int    BarsSyncIntervalSec   = 2;                                                 // Live M1/M5 candle sync interval (seconds)
 input int    InitialHistoryDays    = 90;                                                // Initial deal history lookback
 input int    HttpTimeoutMs         = 2500;                                              // Non-blocking short timeout
 input bool   AllowRemoteClose      = false;                                             // Safety fuse for emergency Kill-Switch
 
 ulong    g_lastSyncedDealTicket = 0;
-datetime g_lastSnapshotTime     = 0;
-datetime g_lastBarsSyncTime     = 0;
+ulong    g_lastSnapshotTickMs   = 0;
+ulong    g_lastFastBarsTickMs   = 0;
+ulong    g_lastSlowBarsTickMs   = 0;
+ulong    g_lastWsRetryTickMs    = 0;
+long     g_lastTickMsc          = 0;
 datetime g_last4014HintTime     = 0;
 string   g_symbol               = "";
+
+int      g_wsSocket             = INVALID_HANDLE;
+bool     g_wsConnected          = false;
 
 // Per-position MAE / MFE trackers (by position ticket)
 ulong  g_posTickets[];
 double g_posMae[];
 double g_posMfe[];
 
-// Persistent per-magic IPC telemetry states (from ExnessPanelHook.mqh)
+// Persistent per-magic IPC telemetry states (from ExnessPanelHook.mqh / patched EAs)
 long   g_ipcMagics[];
 string g_ipcStatus[];
 int    g_ipcExecMs[];
@@ -82,6 +89,194 @@ string BuildEndpointUrl(const string endpoint)
    while(StringLen(base) > 0 && StringGetCharacter(base, StringLen(base) - 1) == '/')
       base = StringSubstr(base, 0, StringLen(base) - 1);
    return base + endpoint;
+  }
+
+//+------------------------------------------------------------------+
+bool ParseWsTarget(string &host_out, uint &port_out, string &path_out, bool &use_tls_out)
+  {
+   string base = ApiBaseUrl;
+   StringTrimLeft(base);
+   StringTrimRight(base);
+   while(StringLen(base) > 0 && StringGetCharacter(base, StringLen(base) - 1) == '/')
+      base = StringSubstr(base, 0, StringLen(base) - 1);
+
+   use_tls_out = (StringFind(base, "https://") == 0 || StringFind(base, "wss://") == 0);
+   int scheme_pos = StringFind(base, "://");
+   string rest = (scheme_pos >= 0) ? StringSubstr(base, scheme_pos + 3) : base;
+
+   int slash_pos = StringFind(rest, "/");
+   string host_port = (slash_pos >= 0) ? StringSubstr(rest, 0, slash_pos) : rest;
+   string base_path = (slash_pos >= 0) ? StringSubstr(rest, slash_pos) : "/api/v1/ingest";
+
+   int colon_pos = StringFind(host_port, ":");
+   if(colon_pos >= 0)
+     {
+      host_out = StringSubstr(host_port, 0, colon_pos);
+      port_out = (uint)StringToInteger(StringSubstr(host_port, colon_pos + 1));
+     }
+   else
+     {
+      host_out = host_port;
+      port_out = use_tls_out ? 443 : 80;
+     }
+
+   path_out = base_path + "/ws?api_key=" + AccountApiKey;
+   return (host_out != "" && port_out > 0);
+  }
+
+//+------------------------------------------------------------------+
+void CloseWsStream()
+  {
+   if(g_wsSocket != INVALID_HANDLE)
+     {
+      SocketClose(g_wsSocket);
+      g_wsSocket = INVALID_HANDLE;
+     }
+   g_wsConnected = false;
+  }
+
+//+------------------------------------------------------------------+
+bool EnsureWsConnected()
+  {
+   if(!UseWebSocketStream || AccountApiKey == "")
+      return false;
+   if(g_wsConnected && g_wsSocket != INVALID_HANDLE && SocketIsConnected(g_wsSocket))
+      return true;
+
+   CloseWsStream();
+
+   ulong now_ms = GetTickCount64();
+   if(now_ms - g_lastWsRetryTickMs < 10000 && g_lastWsRetryTickMs > 0)
+      return false;
+   g_lastWsRetryTickMs = now_ms;
+
+   string host = "";
+   uint   port = 8000;
+   string path = "";
+   bool   use_tls = false;
+   if(!ParseWsTarget(host, port, path, use_tls))
+      return false;
+
+   int sock = SocketCreate();
+   if(sock == INVALID_HANDLE)
+      return false;
+
+   if(!SocketConnect(sock, host, port, 1500))
+     {
+      SocketClose(sock);
+      return false;
+     }
+
+   if(use_tls && !SocketTlsHandshake(sock, host))
+     {
+      SocketClose(sock);
+      return false;
+     }
+
+   string req =
+      "GET " + path + " HTTP/1.1\r\n" +
+      "Host: " + host + ":" + IntegerToString((int)port) + "\r\n" +
+      "Upgrade: websocket\r\n" +
+      "Connection: Upgrade\r\n" +
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+      "Sec-WebSocket-Version: 13\r\n" +
+      "X-Account-Api-Key: " + AccountApiKey + "\r\n\r\n";
+
+   uchar req_bytes[];
+   int req_len = StringToCharArray(req, req_bytes, 0, WHOLE_ARRAY, CP_UTF8) - 1;
+   if(req_len <= 0 || SocketSend(sock, req_bytes, (uint)req_len) != req_len)
+     {
+      SocketClose(sock);
+      return false;
+     }
+
+   uchar resp_buf[];
+   int rd = SocketRead(sock, resp_buf, 1024, 1500);
+   if(rd <= 0)
+     {
+      SocketClose(sock);
+      return false;
+     }
+
+   string resp_str = CharArrayToString(resp_buf, 0, rd, CP_UTF8);
+   if(StringFind(resp_str, " 101 ") < 0)
+     {
+      SocketClose(sock);
+      return false;
+     }
+
+   g_wsSocket = sock;
+   g_wsConnected = true;
+   PrintFormat("[ExnessPanelBridge] Real-time WebSocket stream connected (%s:%d)", host, port);
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+bool WsSendJsonFrame(const string json_text)
+  {
+   if(!EnsureWsConnected())
+      return false;
+
+   uchar payload[];
+   int plen = StringToCharArray(json_text, payload, 0, WHOLE_ARRAY, CP_UTF8) - 1;
+   if(plen <= 0 || plen > 65500)
+      return false;
+
+   uchar mask[4] = {0x37, 0xFA, 0x21, 0x3D};
+   uchar frame[];
+   int header_len = (plen < 126) ? 6 : 8;
+   ArrayResize(frame, header_len + plen);
+
+   frame[0] = 0x81; // FIN + Text opcode
+   int mask_offset = 2;
+   if(plen < 126)
+     {
+      frame[1] = (uchar)(0x80 | plen);
+      mask_offset = 2;
+     }
+   else
+     {
+      frame[1] = (uchar)(0x80 | 126);
+      frame[2] = (uchar)((plen >> 8) & 0xFF);
+      frame[3] = (uchar)(plen & 0xFF);
+      mask_offset = 4;
+     }
+
+   for(int m = 0; m < 4; m++)
+      frame[mask_offset + m] = mask[m];
+
+   int data_offset = mask_offset + 4;
+   for(int i = 0; i < plen; i++)
+      frame[data_offset + i] = (uchar)(payload[i] ^ mask[i & 3]);
+
+   uint total_len = (uint)ArraySize(frame);
+   if(SocketSend(g_wsSocket, frame, total_len) != (int)total_len)
+     {
+      CloseWsStream();
+      return false;
+     }
+
+   // Drain incoming server acks / Kill-Switch commands non-blockingly
+   uint avail = SocketIsReadable(g_wsSocket);
+   if(avail > 0)
+     {
+      uchar in_buf[];
+      int got = SocketRead(g_wsSocket, in_buf, MathMin(avail, 4096), 10);
+      if(got > 2)
+        {
+         string msg = CharArrayToString(in_buf, 2, got - 2, CP_UTF8);
+         if(AllowRemoteClose && StringFind(msg, "CLOSE_ALL") >= 0)
+           {
+            Print("[ExnessPanelBridge] Executing authorized WS Kill-Switch CLOSE_ALL");
+            for(int p = PositionsTotal() - 1; p >= 0; p--)
+              {
+               ulong tk = PositionGetTicket(p);
+               if(tk > 0) g_trade.PositionClose(tk);
+              }
+           }
+        }
+     }
+   return true;
   }
 
 //+------------------------------------------------------------------+
@@ -203,7 +398,6 @@ string ExtractJsonPayloadObject(const string json)
    int len = StringLen(json);
    if(start >= len || StringGetCharacter(json, start) != '{')
       return "{}";
-   // Strip trailing closing brace of outer JSONL envelope
    int end = len - 1;
    while(end > start && StringGetCharacter(json, end) != '}')
       end--;
@@ -255,7 +449,6 @@ void ConsumeIpcEvents()
      }
    FileClose(handle);
 
-   // Truncate consumed IPC file safely
    int trunc_h = FileOpen(
       filename,
       FILE_WRITE | FILE_TXT | FILE_ANSI | FILE_SHARE_READ | FILE_SHARE_WRITE
@@ -344,7 +537,7 @@ string BuildRobotStatesJson()
       emitted++;
      }
 
-   // 2. Auto-discover sibling-chart EAs (e.g. NasdaqPulse, XAU EA on Chart 1)
+   // 2. Auto-discover sibling-chart EAs
    long my_cid = ChartID();
    for(long cid = ChartFirst(); cid >= 0; cid = ChartNext(cid))
      {
@@ -361,14 +554,12 @@ string BuildRobotStatesJson()
       string c_tf  = TimeframeName(ChartPeriod(cid));
       long magic   = ResolveMagicForSymbol(c_sym, exp_name, c_tf);
 
-      // Skip if already reported via IPC with same magic
       bool dup = false;
       for(int s = 0; s < ArraySize(seen_magics); s++)
          if(seen_magics[s] == magic) { dup = true; break; }
       if(dup)
          continue;
 
-      // Scrape HUD chart labels (NasdaqPulse / institutional EA panels)
       string status = "RUNNING";
       string hud_lines = "";
       int obj_total = ObjectsTotal(cid, 0, -1);
@@ -414,8 +605,10 @@ string BuildRobotStatesJson()
 
       if(emitted > 0) items += ",";
       items += StringFormat(
-         "{\"magic_number\":%I64d,\"status\":\"%s\",\"execution_ms\":0,\"state_json\":%s}",
+         "{\"magic_number\":%I64d,\"ea_name\":\"%s\",\"symbol\":\"%s\",\"status\":\"%s\",\"execution_ms\":0,\"state_json\":%s}",
          magic,
+         EscapeJson(exp_name),
+         EscapeJson(c_sym),
          EscapeJson(status),
          state_obj
       );
@@ -442,14 +635,13 @@ bool PostJson(const string endpoint, const string json_body, string &response_ou
 
    int len = StringToCharArray(json_body, post_data, 0, WHOLE_ARRAY, CP_UTF8);
    if(len > 0)
-      ArrayResize(post_data, len - 1); // strip trailing NUL
+      ArrayResize(post_data, len - 1);
 
    ResetLastError();
    int status = WebRequest("POST", url, headers, HttpTimeoutMs, post_data, result, result_headers);
    int err = GetLastError();
    if(status < 200 || status >= 300)
      {
-      PrintFormat("[ExnessPanelBridge] POST %s failed: HTTP %d (err=%d) url=%s", endpoint, status, err, url);
       if(status == -1 && err == 4014)
         {
          datetime now = TimeLocal();
@@ -458,7 +650,7 @@ bool PostJson(const string endpoint, const string json_body, string &response_ou
             g_last4014HintTime = now;
             string origin = ExtractOrigin(url);
             PrintFormat(
-               "[ExnessPanelBridge] ERR 4014 (URL not whitelisted in MT5)! Add '%s' (or 'https://terminal.huseynovlar.org') in MT5: Tools -> Options -> Expert Advisors -> Allow WebRequest for listed URL | Сервис -> Настройки -> Советники -> Разрешить WebRequest для следующих URL",
+               "[ExnessPanelBridge] ERR 4014 (URL not whitelisted in MT5)! Add '%s' in MT5: Tools -> Options -> Expert Advisors -> Allow WebRequest for listed URL",
                origin
             );
            }
@@ -550,6 +742,61 @@ void SendDealByTicket(const ulong ticket)
   }
 
 //+------------------------------------------------------------------+
+void StreamRecentTicks()
+  {
+   MqlTick ticks[];
+   int copied = 0;
+   if(g_lastTickMsc == 0)
+     {
+      copied = CopyTicks(g_symbol, ticks, COPY_TICKS_INFO, 0, 60);
+     }
+   else
+     {
+      copied = CopyTicks(g_symbol, ticks, COPY_TICKS_INFO, (ulong)(g_lastTickMsc + 1), 60);
+     }
+   if(copied <= 0)
+      return;
+
+   int start_idx = MathMax(0, copied - 40);
+   string arr_json = "[";
+   int emitted = 0;
+   for(int i = start_idx; i < copied; i++)
+     {
+      if(ticks[i].bid <= 0)
+         continue;
+      if(ticks[i].time_msc > g_lastTickMsc)
+         g_lastTickMsc = ticks[i].time_msc;
+      if(emitted > 0) arr_json += ",";
+      arr_json += StringFormat(
+         "{\"time_msc\":%I64d,\"bid\":%.5f,\"ask\":%.5f}",
+         ticks[i].time_msc,
+         ticks[i].bid,
+         ticks[i].ask > 0 ? ticks[i].ask : ticks[i].bid
+      );
+      emitted++;
+     }
+   arr_json += "]";
+   if(emitted == 0)
+      return;
+
+   string ws_msg = StringFormat(
+      "{\"type\":\"ticks\",\"symbol\":\"%s\",\"ticks\":%s}",
+      EscapeJson(g_symbol),
+      arr_json
+   );
+   if(!WsSendJsonFrame(ws_msg))
+     {
+      string body = StringFormat(
+         "{\"symbol\":\"%s\",\"ticks\":%s}",
+         EscapeJson(g_symbol),
+         arr_json
+      );
+      string resp = "";
+      PostJson("/ticks", body, resp);
+     }
+  }
+
+//+------------------------------------------------------------------+
 void SendSnapshotAndProcessCommands()
   {
    int total_pos = PositionsTotal();
@@ -601,8 +848,8 @@ void SendSnapshotAndProcessCommands()
      }
 
    long ping_ms = TerminalInfoInteger(TERMINAL_PING_LAST) / 1000;
-   string body = StringFormat(
-      "{\"balance\":%.4f,\"equity\":%.4f,\"floating_pnl\":%.4f,\"margin\":%.4f,\"free_margin\":%.4f,\"margin_level\":%.2f,\"algo_trading_enabled\":%s,\"terminal_connected\":%s,\"ping_ms\":%I64d,\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread_pts\":%d,\"open_positions\":%s,\"robot_states\":%s}",
+   string core_fields = StringFormat(
+      "\"balance\":%.4f,\"equity\":%.4f,\"floating_pnl\":%.4f,\"margin\":%.4f,\"free_margin\":%.4f,\"margin_level\":%.2f,\"algo_trading_enabled\":%s,\"terminal_connected\":%s,\"ping_ms\":%I64d,\"symbol\":\"%s\",\"bid\":%.5f,\"ask\":%.5f,\"spread_pts\":%d,\"open_positions\":%s,\"robot_states\":%s",
       AccountInfoDouble(ACCOUNT_BALANCE),
       AccountInfoDouble(ACCOUNT_EQUITY),
       AccountInfoDouble(ACCOUNT_PROFIT),
@@ -618,8 +865,11 @@ void SendSnapshotAndProcessCommands()
       robot_states_json
    );
 
+   if(WsSendJsonFrame("{\"type\":\"snapshot\"," + core_fields + "}"))
+      return;
+
    string resp = "";
-   if(PostJson("/snapshot", body, resp))
+   if(PostJson("/snapshot", "{" + core_fields + "}", resp))
      {
       if(AllowRemoteClose && StringFind(resp, "\"CLOSE_ALL\"") >= 0)
         {
@@ -634,51 +884,93 @@ void SendSnapshotAndProcessCommands()
   }
 
 //+------------------------------------------------------------------+
-void SyncRecentBars(const ENUM_TIMEFRAMES tf, const string tf_name, const int count)
+void SyncRecentBarsChunked(const ENUM_TIMEFRAMES tf, const string tf_name, const int total_count)
   {
    MqlRates rates[];
    ArraySetAsSeries(rates, false);
-   int copied = CopyRates(g_symbol, tf, 0, count, rates);
+   int copied = CopyRates(g_symbol, tf, 0, total_count, rates);
    if(copied <= 0)
       return;
 
-   string bars_json = "[";
-   for(int i = 0; i < copied; i++)
+   int chunk_size = 250;
+   for(int offset = 0; offset < copied; offset += chunk_size)
      {
-      if(i > 0) bars_json += ",";
-      bars_json += StringFormat(
-         "{\"time\":%I64d,\"open\":%.5f,\"high\":%.5f,\"low\":%.5f,\"close\":%.5f,\"volume\":%I64d}",
-         (long)rates[i].time, rates[i].open, rates[i].high, rates[i].low, rates[i].close, rates[i].tick_volume
-      );
-     }
-   bars_json += "]";
+      int end_idx = MathMin(copied, offset + chunk_size);
+      string bars_json = "[";
+      for(int i = offset; i < end_idx; i++)
+        {
+         if(i > offset) bars_json += ",";
+         bars_json += StringFormat(
+            "{\"time\":%I64d,\"open\":%.5f,\"high\":%.5f,\"low\":%.5f,\"close\":%.5f,\"volume\":%I64d}",
+            (long)rates[i].time, rates[i].open, rates[i].high, rates[i].low, rates[i].close, rates[i].tick_volume
+         );
+        }
+      bars_json += "]";
 
-   string body = StringFormat(
-      "{\"symbol\":\"%s\",\"timeframe\":\"%s\",\"bars\":%s}",
-      EscapeJson(g_symbol), tf_name, bars_json
-   );
-   string resp = "";
-   PostJson("/bars", body, resp);
+      string ws_frame = StringFormat(
+         "{\"type\":\"bars\",\"symbol\":\"%s\",\"timeframe\":\"%s\",\"bars\":%s}",
+         EscapeJson(g_symbol), tf_name, bars_json
+      );
+      if(!WsSendJsonFrame(ws_frame))
+        {
+         string body = StringFormat(
+            "{\"symbol\":\"%s\",\"timeframe\":\"%s\",\"bars\":%s}",
+            EscapeJson(g_symbol), tf_name, bars_json
+         );
+         string resp = "";
+         PostJson("/bars", body, resp);
+        }
+     }
   }
 
 //+------------------------------------------------------------------+
 int OnInit()
   {
+   if(MQLInfoInteger(MQL_TESTER))
+      return(INIT_SUCCEEDED);
+
    g_symbol = (ChartSymbolOverride != "") ? ChartSymbolOverride : _Symbol;
-   EventSetTimer(1);
+
+   // Auto-detect trading symbol from sibling chart if Bridge was attached to an idle FX chart
+   if(ChartSymbolOverride == "")
+     {
+      long my_cid = ChartID();
+      for(long cid = ChartFirst(); cid >= 0; cid = ChartNext(cid))
+        {
+         if(cid == my_cid) continue;
+         string exp = ChartGetString(cid, CHART_EXPERT_NAME);
+         if(exp != "" && StringFind(exp, "ExnessPanelBridge") < 0)
+           {
+            g_symbol = ChartSymbol(cid);
+            break;
+           }
+        }
+     }
+
    SendBootstrapAndSyncHistory();
-   SyncRecentBars(PERIOD_M1, "M1", 120);
-   SyncRecentBars(PERIOD_M5, "M5", 120);
-   SyncRecentBars(PERIOD_M15, "M15", 120);
-   SyncRecentBars(PERIOD_H1, "H1", 120);
-   SyncRecentBars(PERIOD_H4, "H4", 120);
-   SyncRecentBars(PERIOD_D1, "D1", 120);
+   EnsureWsConnected();
+
+   // Push deep multi-day / multi-week candle history (1000 bars per timeframe!)
+   SyncRecentBarsChunked(PERIOD_M1,  "M1",  1000);
+   SyncRecentBarsChunked(PERIOD_M5,  "M5",  1000);
+   SyncRecentBarsChunked(PERIOD_M15, "M15", 1000);
+   SyncRecentBarsChunked(PERIOD_M30, "M30", 600);
+   SyncRecentBarsChunked(PERIOD_H1,  "H1",  1000);
+   SyncRecentBarsChunked(PERIOD_H4,  "H4",  600);
+   SyncRecentBarsChunked(PERIOD_D1,  "D1",  600);
+
+   StreamRecentTicks();
+   SendSnapshotAndProcessCommands();
+
+   // 500ms sub-second timer on dedicated Bridge chart thread (0% impact on trading EA)
+   EventSetMillisecondTimer(500);
    return(INIT_SUCCEEDED);
   }
 
 void OnDeinit(const int reason)
   {
    EventKillTimer();
+   CloseWsStream();
   }
 
 void OnTradeTransaction(
@@ -687,6 +979,8 @@ void OnTradeTransaction(
    const MqlTradeResult &result
 )
   {
+   if(MQLInfoInteger(MQL_TESTER))
+      return;
    if(trans.type == TRADE_TRANSACTION_DEAL_ADD && trans.deal > 0)
      {
       SendDealByTicket(trans.deal);
@@ -696,7 +990,9 @@ void OnTradeTransaction(
 
 void OnTimer()
   {
-   // Continuously track in-memory MAE/MFE every second (zero network overhead)
+   if(MQLInfoInteger(MQL_TESTER))
+      return;
+
    for(int i = 0; i < PositionsTotal(); i++)
      {
       ulong ticket = PositionGetTicket(i);
@@ -707,20 +1003,35 @@ void OnTimer()
         }
      }
 
-   datetime now = TimeCurrent();
-   if(now - g_lastSnapshotTime >= SnapshotIntervalSec)
+   // 1. Sub-second (500ms) real broker Bid/Ask tick stream
+   StreamRecentTicks();
+
+   ulong now_ms = GetTickCount64();
+   ulong snap_ms = (ulong)MathMax(1, SnapshotIntervalSec) * 1000;
+   ulong fast_bars_ms = (ulong)MathMax(1, BarsSyncIntervalSec) * 1000;
+
+   // 2. Every 1 second: full account Equity + Positions + Robot Live HUD
+   if(now_ms - g_lastSnapshotTickMs >= snap_ms)
      {
-      g_lastSnapshotTime = now;
+      g_lastSnapshotTickMs = now_ms;
       SendSnapshotAndProcessCommands();
      }
 
-   if(now - g_lastBarsSyncTime >= BarsSyncIntervalSec)
+   // 3. Every 2 seconds: live forming M1 & M5 candles
+   if(now_ms - g_lastFastBarsTickMs >= fast_bars_ms)
      {
-      g_lastBarsSyncTime = now;
-      SyncRecentBars(PERIOD_M1, "M1", 5);
-      SyncRecentBars(PERIOD_M5, "M5", 5);
-      SyncRecentBars(PERIOD_M15, "M15", 3);
-      SyncRecentBars(PERIOD_H1, "H1", 3);
+      g_lastFastBarsTickMs = now_ms;
+      SyncRecentBarsChunked(PERIOD_M1, "M1", 3);
+      SyncRecentBarsChunked(PERIOD_M5, "M5", 3);
+     }
+
+   // 4. Every 15 seconds: higher-timeframe candles
+   if(now_ms - g_lastSlowBarsTickMs >= 15000)
+     {
+      g_lastSlowBarsTickMs = now_ms;
+      SyncRecentBarsChunked(PERIOD_M15, "M15", 3);
+      SyncRecentBarsChunked(PERIOD_H1,  "H1",  3);
+      SyncRecentBarsChunked(PERIOD_H4,  "H4",  2);
      }
   }
 //+------------------------------------------------------------------+

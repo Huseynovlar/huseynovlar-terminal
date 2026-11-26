@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import contextlib
+import json
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.crypto import hash_api_key
+from app.core.database import get_db, get_session_factory
 from app.core.deps import verify_account_api_key
 from app.core.market_ws_hub import market_ws_hub
 from app.core.symbols import canonical_asset_code
@@ -620,3 +623,141 @@ async def ingest_bars(
             },
         )
     return {"status": "ok", "upserted": upserted}
+
+
+class TickItem(BaseModel):
+    time_msc: int = 0
+    bid: float
+    ask: float = 0.0
+
+
+class TicksPayload(BaseModel):
+    symbol: str
+    ticks: list[TickItem] = Field(default_factory=list)
+
+
+async def _process_mt5_ticks(symbol: str, ticks: list[TickItem]) -> int:
+    raw_sym = symbol.strip().upper()
+    canon_sym = canonical_asset_code(raw_sym) or raw_sym
+    if not canon_sym or not ticks:
+        return 0
+    recorded = 0
+    last_entry: dict[str, Any] | None = None
+    for t in ticks[-80:]:
+        if t.bid <= 0:
+            continue
+        eff_ask = t.ask if t.ask >= t.bid else t.bid
+        entry = market_ws_hub.record_tick(
+            canon_sym,
+            t.bid,
+            eff_ask,
+            source="mt5_live",
+            min_interval=0.0,
+            ts_ms=t.time_msc if t.time_msc > 0 else None,
+        )
+        if entry:
+            last_entry = entry
+            recorded += 1
+    if last_entry is not None:
+        await ws_hub.broadcast("tick", {**last_entry, "raw_symbol": raw_sym})
+    return recorded
+
+
+@router.post("/ticks")
+async def ingest_ticks(
+    body: TicksPayload,
+    _: TradingAccount = Depends(verify_account_api_key),
+) -> dict[str, Any]:
+    """Ingest sub-second / 1-second millisecond CopyTicks batches from ExnessPanelBridge.mq5."""
+    recorded = await _process_mt5_ticks(body.symbol, body.ticks)
+    return {"status": "ok", "recorded": recorded}
+
+
+async def _auth_mt5_ws_account(ws: WebSocket, db: AsyncSession) -> TradingAccount | None:
+    raw_key = ws.query_params.get("api_key") or ws.headers.get("x-account-api-key") or ""
+    raw_key = raw_key.strip()
+    if not raw_key:
+        return None
+    digest = hash_api_key(raw_key)
+    return (
+        await db.execute(
+            select(TradingAccount).where(TradingAccount.api_key_hash == digest, TradingAccount.is_active.is_(True))
+        )
+    ).scalar_one_or_none()
+
+
+@router.websocket("/ws")
+async def ingest_ws_stream(ws: WebSocket) -> None:
+    """Persistent real-time WebSocket stream for MT5 ExnessPanelBridge.mq5 (ticks, 1s snapshots, bars)."""
+    db_override = ws.app.dependency_overrides.get(get_db)
+
+    async def _with_db(fn: Any) -> Any:
+        if db_override is not None:
+            gen = db_override()
+            session = await anext(gen)
+            try:
+                return await fn(session)
+            finally:
+                with contextlib.suppress(StopAsyncIteration):
+                    await anext(gen)
+        factory = get_session_factory()
+        async with factory() as session:
+            return await fn(session)
+
+    account: TradingAccount | None = await _with_db(lambda db: _auth_mt5_ws_account(ws, db))
+    if account is None:
+        await ws.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid account API key")
+        return
+
+    acc_id = account.id
+    await ws.accept()
+    await ws.send_text(json.dumps({"type": "welcome", "account_id": acc_id}))
+
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(msg, dict):
+                continue
+
+            mtype = str(msg.get("type") or "")
+            if mtype == "ping":
+                await ws.send_text(json.dumps({"type": "pong"}))
+            elif mtype == "tick":
+                sym = str(msg.get("symbol") or "")
+                bid = float(msg.get("bid") or 0.0)
+                ask = float(msg.get("ask") or bid)
+                tmsc = int(msg.get("time_msc") or 0)
+                if sym and bid > 0:
+                    await _process_mt5_ticks(sym, [TickItem(time_msc=tmsc, bid=bid, ask=ask)])
+            elif mtype == "ticks":
+                parsed = TicksPayload.model_validate(msg)
+                await _process_mt5_ticks(parsed.symbol, parsed.ticks)
+            elif mtype == "snapshot":
+
+                async def _do_snap(db: AsyncSession, payload_dict: dict[str, Any] = msg) -> dict[str, Any]:
+                    acc_row = await db.get(TradingAccount, acc_id)
+                    if not acc_row:
+                        return {"pending_commands": []}
+                    snap_body = SnapshotPayload.model_validate(payload_dict)
+                    return await ingest_snapshot(snap_body, acc_row, db)
+
+                snap_res = await _with_db(_do_snap)
+                cmds = snap_res.get("pending_commands") or []
+                if cmds:
+                    await ws.send_text(json.dumps({"type": "commands", "pending_commands": cmds}))
+            elif mtype == "bars":
+
+                async def _do_bars(db: AsyncSession, payload_dict: dict[str, Any] = msg) -> None:
+                    acc_row = await db.get(TradingAccount, acc_id)
+                    if acc_row:
+                        bars_body = BarsPayload.model_validate(payload_dict)
+                        await ingest_bars(bars_body, acc_row, db)
+
+                await _with_db(_do_bars)
+    except WebSocketDisconnect:
+        pass
+

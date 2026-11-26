@@ -629,13 +629,14 @@ async def download_mt5_bridge_set(
 
     content = "\r\n".join(
         [
-            "; Huseynovlar Terminal — ExnessPanelBridge.mq5 Preset",
+            "; Huseynovlar Terminal — ExnessPanelBridge.mq5 v2.20 Real-Time Preset",
             f"; Account: {account.name} (MT5 #{account.mt5_login} / {account.currency})",
             f"ApiBaseUrl={api_base_url}",
             f"AccountApiKey={api_key_line}",
             "ChartSymbolOverride=",
-            "SnapshotIntervalSec=5",
-            "BarsSyncIntervalSec=15",
+            "UseWebSocketStream=true",
+            "SnapshotIntervalSec=1",
+            "BarsSyncIntervalSec=2",
             "InitialHistoryDays=90",
             "HttpTimeoutMs=2500",
             "AllowRemoteClose=false",

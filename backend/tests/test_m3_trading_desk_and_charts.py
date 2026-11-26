@@ -428,11 +428,44 @@ def test_websocket_live_auth_welcome_and_ping_pong():
             assert int(rpc_tk["headers"]["x-total-count"]) > 0
             assert len(rpc_tk["data"]) == 5
 
+        # 3. Create account & test MT5 persistent WebSocket ingestion (/api/v1/ingest/ws?api_key=...)
+        acc_res = tc.post(
+            "/api/v1/accounts",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": "WS MT5 Acc", "mt5_login": "551001", "mt5_server": "Exness-MT5Real", "currency": "USD"},
+        )
+        assert acc_res.status_code == 201
+        mt5_key = acc_res.json()["api_key"]
+
+        with tc.websocket_connect(f"/api/v1/ingest/ws?api_key={mt5_key}") as mt5_ws:
+            w_msg = mt5_ws.receive_json()
+            assert w_msg["type"] == "welcome"
+            mt5_ws.send_json({"type": "ping"})
+            assert mt5_ws.receive_json()["type"] == "pong"
+            mt5_ws.send_json(
+                {
+                    "type": "ticks",
+                    "symbol": "XAUUSDc",
+                    "ticks": [{"time_msc": 1700000001000, "bid": 3567.16, "ask": 3567.36}],
+                }
+            )
+            mt5_ws.send_json(
+                {
+                    "type": "snapshot",
+                    "balance": 5000.0,
+                    "equity": 5025.0,
+                    "floating_pnl": 25.0,
+                    "symbol": "XAUUSDc",
+                    "bid": 3567.16,
+                    "ask": 3567.36,
+                }
+            )
+
     asyncio.run(engine.dispose())
 
 
 async def test_tickers_news_keywords_mt5_ticks_and_ai_503_fallback(client: AsyncClient):
-    """Verify XAUSD/GOLD search returns XAUUSD + news_keywords, /charts/ticks works, and AI 503 auto-falls back."""
+    """Verify XAUSD/GOLD search, EconomicEvent calendar_events on Hub View, /ingest/ticks, and AI 503 fallback."""
     import httpx
 
     h, _ = await _bootstrap(client)
@@ -454,9 +487,57 @@ async def test_tickers_news_keywords_mt5_ticks_and_ai_503_fallback(client: Async
     assert t_btc[0]["symbol"] == "BTCUSD"
     assert "Bitcoin" in t_btc[0]["news_keywords"]
 
-    # 3. AI 503 fallback: first Gemini model returns 503 UNAVAILABLE, second succeeds!
-    await client.put("/api/v1/profile/vault/google_ai_api_key", headers=h, json={"value": "AIzaFallbackKey"})
+    # 3. Populate EconomicEvent row & verify GET /assets/XAUUSD serializes calendar_events cleanly
     await client.post("/api/v1/assets", headers=h, json={"code": "XAUUSD", "name": "Gold Spot", "group": "metals"})
+    mock_cal = MagicMock()
+    mock_cal.status_code = 200
+    mock_cal.raise_for_status = MagicMock()
+    mock_cal.json.return_value = [
+        {
+            "title": "US CPI m/m",
+            "country": "USD",
+            "date": datetime.now(UTC).isoformat(),
+            "impact": "High",
+            "forecast": "0.2%",
+            "previous": "0.3%",
+        }
+    ]
+    mock_cal_http = AsyncMock()
+    mock_cal_http.__aenter__.return_value = mock_cal_http
+    mock_cal_http.get = AsyncMock(return_value=mock_cal)
+    with patch("app.modules.intelligence.router.httpx.AsyncClient", return_value=mock_cal_http):
+        await client.post("/api/v1/intelligence/calendar/refresh", headers=h)
+
+    hub_res = await client.get("/api/v1/assets/XAUUSD", headers=h)
+    assert hub_res.status_code == 200
+    assert len(hub_res.json()["calendar_events"]) == 1
+    assert hub_res.json()["calendar_events"][0]["title"] == "US CPI m/m"
+
+    # 4. POST /ingest/ticks -> GET /charts/ticks/XAUUSD returns buffered ticks
+    acc = (
+        await client.post(
+            "/api/v1/accounts",
+            headers=h,
+            json={"name": "Gold Tick Acc", "mt5_login": "771001", "mt5_server": "Exness-MT5Real", "currency": "USD"},
+        )
+    ).json()
+    tk_post = await client.post(
+        "/api/v1/ingest/ticks",
+        headers={"X-Account-Api-Key": acc["api_key"]},
+        json={
+            "symbol": "XAUUSDc",
+            "ticks": [
+                {"time_msc": 1700000010000, "bid": 3567.15, "ask": 3567.35},
+                {"time_msc": 1700000010500, "bid": 3567.20, "ask": 3567.40},
+            ],
+        },
+    )
+    assert tk_post.status_code == 200 and tk_post.json()["recorded"] == 2
+    tk_get = (await client.get("/api/v1/charts/ticks/XAUUSD", headers=h)).json()
+    assert len(tk_get["ticks"]) >= 2
+
+    # 5. AI 503 fallback: first Gemini model returns 503 UNAVAILABLE, second succeeds!
+    await client.put("/api/v1/profile/vault/google_ai_api_key", headers=h, json={"value": "AIzaFallbackKey"})
 
     resp_503 = MagicMock()
     resp_503.status_code = 503
@@ -490,4 +571,5 @@ async def test_tickers_news_keywords_mt5_ticks_and_ai_503_fallback(client: Async
     assert ai.status_code == 200
     assert "Обзор XAUUSD" in ai.json()["response_md"]
     assert "Обзор XAUUSD" in ai.json()["content_md"]
+
 
