@@ -22,13 +22,6 @@ function cleanSymbol(raw: string): string {
     .replace(/(C|M|RAW|PRO)$/, "");
 }
 
-function hashHue(str: string): number {
-  let h = 0;
-  for (let i = 0; i < str.length; i += 1) {
-    h = (h * 31 + str.charCodeAt(i)) % 360;
-  }
-  return h;
-}
 
 export interface AssetLogoProps {
   symbol: string;
@@ -47,7 +40,7 @@ export interface AssetLogoProps {
  */
 export function AssetLogo({ symbol, size = 24, logoUrl, className = "" }: AssetLogoProps) {
   const [imgFailed, setImgFailed] = useState(false);
-  const norm = cleanSymbol(symbol || "ASSET");
+  const norm = cleanSymbol(symbol || "");
 
   // 1. FX dual country flags via local flags.css
   if (norm.length === 6) {
@@ -102,25 +95,23 @@ export function AssetLogo({ symbol, size = 24, logoUrl, className = "" }: AssetL
         height={size}
         loading="lazy"
         onError={() => setImgFailed(true)}
-        className={`inline-block shrink-0 rounded-md object-contain ${className}`}
+        className={`inline-block shrink-0 rounded-[4px] object-contain ${className}`}
         style={{ width: size, height: size }}
       />
     );
   }
 
-  // 3. Deterministic monogram fallback
-  const hue = hashHue(norm);
-  const label = norm.slice(0, 3);
+  // 3. Strict monochrome circle with 2-letter ticker fallback (Anti-AI Pro UI standard)
+  const label = norm ? norm.slice(0, 2) : "--";
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center rounded-md font-mono font-bold text-white select-none ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-full border border-[#2C3649] bg-[#171E2B] font-mono font-semibold text-[#94A3B8] select-none ${className}`}
       style={{
         width: size,
         height: size,
-        fontSize: Math.max(9, Math.round(size * 0.36)),
-        background: `linear-gradient(135deg, hsl(${hue} 65% 42%), hsl(${(hue + 28) % 360} 65% 30%))`,
+        fontSize: Math.max(9, Math.round(size * 0.38)),
       }}
-      title={norm}
+      title={norm || "Ticker"}
     >
       {label}
     </span>

@@ -1172,6 +1172,7 @@ async def get_asset_detail(
                 "account_id": r.account_id,
                 "account_name": acc_map[r.account_id].name if r.account_id in acc_map else "",
                 "account_login": acc_map[r.account_id].mt5_login if r.account_id in acc_map else "",
+                "account_currency": acc_map[r.account_id].currency if r.account_id in acc_map else "USD",
                 "name": r.name,
                 "program_name": r.program_name,
                 "version": r.version,
@@ -1179,6 +1180,11 @@ async def get_asset_detail(
                 "symbol": r.symbol,
                 "live_status": r.live_status,
                 "live_state_json": r.live_state_json or {},
+                "seq": int((r.live_state_json or {}).get("seq") or 0),
+                "updated_at_utc": str(
+                    (r.live_state_json or {}).get("updated_at_utc")
+                    or (r.last_heartbeat_at.isoformat() if r.last_heartbeat_at else "")
+                ),
                 "last_execution_ms": r.last_execution_ms,
                 "last_heartbeat_at": r.last_heartbeat_at.isoformat() if r.last_heartbeat_at else None,
                 "is_active": r.is_active,

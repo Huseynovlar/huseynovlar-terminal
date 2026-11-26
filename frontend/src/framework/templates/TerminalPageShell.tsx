@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
 
-import { Badge } from "@/components/ui/badge";
-
 interface TerminalPageShellProps {
   title: string;
   subtitle?: string;
@@ -11,25 +9,22 @@ interface TerminalPageShellProps {
 }
 
 /**
- * Unified Bloomberg-compact institutional page template.
- * Guarantees consistent header alignment, tabular numbers, and compact spacing across every Terminal page.
+ * Unified Anti-AI Pro UI institutional page template.
+ * Single-line 14-16px header, zero marketing subtitles, crisp 1px borders, tabular numbers.
  */
-export function TerminalPageShell({ title, subtitle, badge, actions, children }: TerminalPageShellProps) {
+export function TerminalPageShell({ title, badge, actions, children }: TerminalPageShellProps) {
   return (
     <div className="space-y-3 tabular-nums">
-      <div className="flex flex-col gap-2.5 border-b border-border/60 pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold tracking-tight sm:text-xl">{title}</h1>
-            {badge ? (
-              <Badge variant="secondary" className="text-[10px] font-mono font-medium uppercase tracking-wider">
-                {badge}
-              </Badge>
-            ) : null}
-          </div>
-          {subtitle ? <p className="text-muted-foreground text-xs sm:text-sm">{subtitle}</p> : null}
+      <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
+        <div className="flex items-center gap-2">
+          <h1 className="text-[15px] font-semibold tracking-tight text-foreground">{title}</h1>
+          {badge ? (
+            <span className="rounded-[3px] border border-border bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              {badge}
+            </span>
+          ) : null}
         </div>
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions ? <div className="flex flex-wrap items-center gap-1.5">{actions}</div> : null}
       </div>
       <div className="space-y-3">{children}</div>
     </div>

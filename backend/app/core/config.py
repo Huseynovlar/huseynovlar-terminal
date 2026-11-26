@@ -100,6 +100,17 @@ class Settings(BaseSettings):
     finnhub_api_key: str = Field(default="", alias="FINNHUB_API_KEY")
     kraken_api_key: str = Field(default="", alias="KRAKEN_API_KEY")
     kraken_private_key: str = Field(default="", alias="KRAKEN_PRIVATE_KEY")
+    exness_account_id: str = Field(default="", alias="EXNESS_ACCOUNT_ID")
+
+    # Institutional, Macro, Calendar & BMAP providers (loaded from /opt/huseynovlar-terminal/.env)
+    fred_api_key: str = Field(default="", alias="FRED_API_KEY")
+    coinmarketcal_api_key: str = Field(default="", alias="COINMARKETCAL_API_KEY")
+    aisstream_api_key: str = Field(default="", alias="AISSTREAM_API_KEY")
+
+    # Provider-agnostic OpenAI-compatible LLM adapter (DeepSeek / Qwen / OpenAI)
+    llm_api_key: str = Field(default="", alias="LLM_API_KEY")
+    llm_base_url: str = Field(default="", alias="LLM_BASE_URL")
+    llm_model: str = Field(default="", alias="LLM_MODEL")
 
     def model_post_init(self, __context: Any) -> None:
         # Support alternative env names if primary aliases are empty
@@ -145,6 +156,13 @@ class Settings(BaseSettings):
                 ("FINNHUB_API_KEY", "finnhub_api_key"),
                 ("KRAKEN_API_KEY", "kraken_api_key"),
                 ("KRAKEN_PRIVATE_KEY", "kraken_private_key"),
+                ("EXNESS_ACCOUNT_ID", "exness_account_id"),
+                ("FRED_API_KEY", "fred_api_key"),
+                ("COINMARKETCAL_API_KEY", "coinmarketcal_api_key"),
+                ("AISSTREAM_API_KEY", "aisstream_api_key"),
+                ("LLM_API_KEY", "llm_api_key"),
+                ("LLM_BASE_URL", "llm_base_url"),
+                ("LLM_MODEL", "llm_model"),
             ):
                 val = etc_values.get(env_key)
                 if val:

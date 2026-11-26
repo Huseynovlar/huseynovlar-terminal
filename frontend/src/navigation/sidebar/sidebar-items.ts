@@ -1,25 +1,23 @@
 import {
+  Activity,
   Banknote,
   BookOpen,
   Bot,
+  Building2,
   Calendar,
-  Compass,
-  FileSearch,
   Gauge,
+  Globe,
   Grid2x2,
-  History,
   Home,
-  Keyboard,
+  Landmark,
   Layers,
+  LayoutGrid,
   type LucideIcon,
-  MonitorSmartphone,
   Newspaper,
+  Scale,
   Server,
   Settings,
-  ShieldCheck,
-  UserRound,
-  Users,
-  Wrench,
+  Wallet,
 } from "lucide-react";
 
 import { getDictionary, type TranslationDict } from "@/framework/i18n";
@@ -77,6 +75,9 @@ export function applySidebarOrder<T extends { id: string }>(items: T[], order: r
     .map((x) => x.item);
 }
 
+/**
+ * Final 4-block, 19-item Bloomberg-grade navigation architecture (terminal_architecture_map.md §2).
+ */
 export function buildSidebarItems(
   dict: TranslationDict,
   hiddenPageIds: string[] = [],
@@ -86,10 +87,11 @@ export function buildSidebarItems(
   const groups: NavGroup[] = [
     {
       id: 1,
-      label: dict.nav.groupDesk,
+      label: "Терминал",
       items: [
         { id: "home", title: dict.nav.home, url: "/dashboard/home", icon: Home },
-        { id: "accounts", title: dict.nav.accounts, url: "/dashboard/accounts", icon: Layers },
+        { id: "hubs", title: dict.nav.hubs, url: "/dashboard/hubs", icon: Layers },
+        { id: "accounts", title: "Счета и Брокеры", url: "/dashboard/accounts", icon: Wallet },
         { id: "robots", title: dict.nav.robots, url: "/dashboard/robots", icon: Bot },
         { id: "journal", title: dict.nav.journal, url: "/dashboard/journal", icon: BookOpen },
         { id: "treasury", title: dict.nav.treasury, url: "/dashboard/treasury", icon: Banknote },
@@ -97,45 +99,33 @@ export function buildSidebarItems(
     },
     {
       id: 2,
-      label: dict.nav.groupMarkets,
+      label: "Рынки и Аналитика",
       items: [
-        { id: "hubs", title: dict.nav.hubs, url: "/dashboard/hubs", icon: Layers },
-        { id: "tickers", title: "Справочник тикеров", url: "/dashboard/tickers", icon: BookOpen },
-        { id: "explorer", title: dict.nav.explorer, url: "/dashboard/explorer", icon: Compass },
+        { id: "tickers", title: "Справочник рынков", url: "/dashboard/tickers", icon: BookOpen },
+        { id: "multichart", title: "Мультиграфик", url: "/dashboard/multichart", icon: LayoutGrid },
         { id: "treemap", title: dict.nav.treemap, url: "/dashboard/treemap", icon: Grid2x2 },
+        { id: "stat-arb", title: "Стат. арбитраж и Спреды", url: "/dashboard/stat-arb", icon: Scale },
+        { id: "derivatives", title: "Деривативы и Ончейн", url: "/dashboard/derivatives", icon: Activity },
         { id: "analytics", title: dict.nav.analytics, url: "/dashboard/analytics", icon: Gauge },
-        { id: "calendar", title: dict.nav.calendar, url: "/dashboard/calendar", icon: Calendar },
       ],
     },
     {
       id: 3,
-      label: dict.nav.groupIntelligence,
+      label: "Институционал, Макро и Новости",
       items: [
+        { id: "macro", title: "Макро, Облигации и COT", url: "/dashboard/macro", icon: Landmark },
+        { id: "ownership", title: "Владение и Фонды", url: "/dashboard/ownership", icon: Building2 },
+        { id: "global-map", title: "Глобальная карта (BMAP)", url: "/dashboard/global-map", icon: Globe },
+        { id: "calendar", title: "Календари", url: "/dashboard/calendar", icon: Calendar },
         { id: "news", title: dict.nav.news, url: "/dashboard/news", icon: Newspaper },
-        { id: "news-sources", title: dict.nav.newsSources, url: "/dashboard/news/sources", icon: ShieldCheck },
       ],
     },
     {
       id: 4,
-      label: dict.nav.groupOperations,
+      label: "Система",
       items: [
-        { id: "containers", title: dict.nav.containers, url: "/dashboard/containers", icon: Server },
-        { id: "setup", title: dict.nav.setup, url: "/dashboard/setup", icon: Wrench },
-        { id: "wiki", title: dict.nav.wiki, url: "/dashboard/wiki", icon: BookOpen },
-      ],
-    },
-    {
-      id: 5,
-      label: dict.nav.groupSystem,
-      items: [
-        { id: "users", title: dict.nav.users, url: "/dashboard/users", icon: Users },
-        { id: "profile", title: dict.nav.profile, url: "/dashboard/profile", icon: UserRound },
-        { id: "security", title: dict.nav.security, url: "/dashboard/security", icon: ShieldCheck },
-        { id: "sessions", title: dict.nav.sessions, url: "/dashboard/sessions", icon: MonitorSmartphone },
-        { id: "login-history", title: dict.nav.loginHistory, url: "/dashboard/login-history", icon: History },
-        { id: "audit", title: dict.nav.audit, url: "/dashboard/audit", icon: FileSearch },
-        { id: "preferences", title: dict.nav.preferences, url: "/dashboard/preferences", icon: Settings },
-        { id: "hotkeys", title: dict.nav.hotkeys, url: "/dashboard/hotkeys", icon: Keyboard },
+        { id: "infrastructure", title: "Инфраструктура MT5", url: "/dashboard/infrastructure", icon: Server },
+        { id: "settings", title: "Настройки", url: "/dashboard/settings", icon: Settings },
       ],
     },
   ];

@@ -32,22 +32,30 @@ import { Route as mainDashboardAuditIndexRouteImport } from './routes/(main)/das
 import { Route as mainDashboardCalendarIndexRouteImport } from './routes/(main)/dashboard/calendar/index'
 import { Route as mainDashboardContainersIndexRouteImport } from './routes/(main)/dashboard/containers/index'
 import { Route as mainDashboardContainersNewRouteImport } from './routes/(main)/dashboard/containers/new'
+import { Route as mainDashboardDerivativesIndexRouteImport } from './routes/(main)/dashboard/derivatives/index'
 import { Route as mainDashboardExplorerIndexRouteImport } from './routes/(main)/dashboard/explorer/index'
+import { Route as mainDashboardGlobalMapIndexRouteImport } from './routes/(main)/dashboard/global-map/index'
 import { Route as mainDashboardHomeIndexRouteImport } from './routes/(main)/dashboard/home/index'
 import { Route as mainDashboardHotkeysIndexRouteImport } from './routes/(main)/dashboard/hotkeys/index'
 import { Route as mainDashboardHubsIndexRouteImport } from './routes/(main)/dashboard/hubs/index'
 import { Route as mainDashboardHubsNewRouteImport } from './routes/(main)/dashboard/hubs/new'
 import { Route as mainDashboardJournalIndexRouteImport } from './routes/(main)/dashboard/journal/index'
 import { Route as mainDashboardLoginHistoryIndexRouteImport } from './routes/(main)/dashboard/login-history/index'
+import { Route as mainDashboardMacroIndexRouteImport } from './routes/(main)/dashboard/macro/index'
+import { Route as mainDashboardMultichartIndexRouteImport } from './routes/(main)/dashboard/multichart/index'
 import { Route as mainDashboardNewsIndexRouteImport } from './routes/(main)/dashboard/news/index'
+import { Route as mainDashboardOwnershipIndexRouteImport } from './routes/(main)/dashboard/ownership/index'
 import { Route as mainDashboardPreferencesIndexRouteImport } from './routes/(main)/dashboard/preferences/index'
 import { Route as mainDashboardProfilesIndexRouteImport } from './routes/(main)/dashboard/profiles/index'
 import { Route as mainDashboardRobotsIndexRouteImport } from './routes/(main)/dashboard/robots/index'
 import { Route as mainDashboardRobotsNewRouteImport } from './routes/(main)/dashboard/robots/new'
 import { Route as mainDashboardSecurityIndexRouteImport } from './routes/(main)/dashboard/security/index'
 import { Route as mainDashboardSessionsIndexRouteImport } from './routes/(main)/dashboard/sessions/index'
+import { Route as mainDashboardSettingsIndexRouteImport } from './routes/(main)/dashboard/settings/index'
 import { Route as mainDashboardSetupIndexRouteImport } from './routes/(main)/dashboard/setup/index'
+import { Route as mainDashboardStatArbIndexRouteImport } from './routes/(main)/dashboard/stat-arb/index'
 import { Route as mainDashboardTickersIndexRouteImport } from './routes/(main)/dashboard/tickers/index'
+import { Route as mainDashboardTickersSymbolRouteImport } from './routes/(main)/dashboard/tickers/$symbol'
 import { Route as mainDashboardTreasuryIndexRouteImport } from './routes/(main)/dashboard/treasury/index'
 import { Route as mainDashboardTreasuryNewRouteImport } from './routes/(main)/dashboard/treasury/new'
 import { Route as mainDashboardUsersIndexRouteImport } from './routes/(main)/dashboard/users/index'
@@ -209,10 +217,22 @@ const mainDashboardContainersNewRoute =
     path: '/containers/new',
     getParentRoute: () => mainDashboardRouteRoute,
   } as any)
+const mainDashboardDerivativesIndexRoute =
+  mainDashboardDerivativesIndexRouteImport.update({
+    id: '/derivatives/',
+    path: '/derivatives/',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
 const mainDashboardExplorerIndexRoute =
   mainDashboardExplorerIndexRouteImport.update({
     id: '/explorer/',
     path: '/explorer/',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
+const mainDashboardGlobalMapIndexRoute =
+  mainDashboardGlobalMapIndexRouteImport.update({
+    id: '/global-map/',
+    path: '/global-map/',
     getParentRoute: () => mainDashboardRouteRoute,
   } as any)
 const mainDashboardHomeIndexRoute = mainDashboardHomeIndexRouteImport.update({
@@ -248,11 +268,28 @@ const mainDashboardLoginHistoryIndexRoute =
     path: '/login-history/',
     getParentRoute: () => mainDashboardRouteRoute,
   } as any)
+const mainDashboardMacroIndexRoute = mainDashboardMacroIndexRouteImport.update({
+  id: '/macro/',
+  path: '/macro/',
+  getParentRoute: () => mainDashboardRouteRoute,
+} as any)
+const mainDashboardMultichartIndexRoute =
+  mainDashboardMultichartIndexRouteImport.update({
+    id: '/multichart/',
+    path: '/multichart/',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
 const mainDashboardNewsIndexRoute = mainDashboardNewsIndexRouteImport.update({
   id: '/news/',
   path: '/news/',
   getParentRoute: () => mainDashboardRouteRoute,
 } as any)
+const mainDashboardOwnershipIndexRoute =
+  mainDashboardOwnershipIndexRouteImport.update({
+    id: '/ownership/',
+    path: '/ownership/',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
 const mainDashboardPreferencesIndexRoute =
   mainDashboardPreferencesIndexRouteImport.update({
     id: '/preferences/',
@@ -288,15 +325,33 @@ const mainDashboardSessionsIndexRoute =
     path: '/sessions/',
     getParentRoute: () => mainDashboardRouteRoute,
   } as any)
+const mainDashboardSettingsIndexRoute =
+  mainDashboardSettingsIndexRouteImport.update({
+    id: '/settings/',
+    path: '/settings/',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
 const mainDashboardSetupIndexRoute = mainDashboardSetupIndexRouteImport.update({
   id: '/setup/',
   path: '/setup/',
   getParentRoute: () => mainDashboardRouteRoute,
 } as any)
+const mainDashboardStatArbIndexRoute =
+  mainDashboardStatArbIndexRouteImport.update({
+    id: '/stat-arb/',
+    path: '/stat-arb/',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
 const mainDashboardTickersIndexRoute =
   mainDashboardTickersIndexRouteImport.update({
     id: '/tickers/',
     path: '/tickers/',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
+const mainDashboardTickersSymbolRoute =
+  mainDashboardTickersSymbolRouteImport.update({
+    id: '/tickers/$symbol',
+    path: '/tickers/$symbol',
     getParentRoute: () => mainDashboardRouteRoute,
   } as any)
 const mainDashboardTreasuryIndexRoute =
@@ -510,6 +565,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/containers/new': typeof mainDashboardContainersNewRoute
   '/dashboard/hubs/new': typeof mainDashboardHubsNewRoute
   '/dashboard/robots/new': typeof mainDashboardRobotsNewRoute
+  '/dashboard/tickers/$symbol': typeof mainDashboardTickersSymbolRoute
   '/dashboard/treasury/new': typeof mainDashboardTreasuryNewRoute
   '/dashboard/users/new': typeof mainDashboardUsersNewRoute
   '/dashboard/wiki/categories': typeof mainDashboardWikiCategoriesRoute
@@ -518,19 +574,26 @@ export interface FileRoutesByFullPath {
   '/dashboard/audit/': typeof mainDashboardAuditIndexRoute
   '/dashboard/calendar/': typeof mainDashboardCalendarIndexRoute
   '/dashboard/containers/': typeof mainDashboardContainersIndexRoute
+  '/dashboard/derivatives/': typeof mainDashboardDerivativesIndexRoute
   '/dashboard/explorer/': typeof mainDashboardExplorerIndexRoute
+  '/dashboard/global-map/': typeof mainDashboardGlobalMapIndexRoute
   '/dashboard/home/': typeof mainDashboardHomeIndexRoute
   '/dashboard/hotkeys/': typeof mainDashboardHotkeysIndexRoute
   '/dashboard/hubs/': typeof mainDashboardHubsIndexRoute
   '/dashboard/journal/': typeof mainDashboardJournalIndexRoute
   '/dashboard/login-history/': typeof mainDashboardLoginHistoryIndexRoute
+  '/dashboard/macro/': typeof mainDashboardMacroIndexRoute
+  '/dashboard/multichart/': typeof mainDashboardMultichartIndexRoute
   '/dashboard/news/': typeof mainDashboardNewsIndexRoute
+  '/dashboard/ownership/': typeof mainDashboardOwnershipIndexRoute
   '/dashboard/preferences/': typeof mainDashboardPreferencesIndexRoute
   '/dashboard/profiles/': typeof mainDashboardProfilesIndexRoute
   '/dashboard/robots/': typeof mainDashboardRobotsIndexRoute
   '/dashboard/security/': typeof mainDashboardSecurityIndexRoute
   '/dashboard/sessions/': typeof mainDashboardSessionsIndexRoute
+  '/dashboard/settings/': typeof mainDashboardSettingsIndexRoute
   '/dashboard/setup/': typeof mainDashboardSetupIndexRoute
+  '/dashboard/stat-arb/': typeof mainDashboardStatArbIndexRoute
   '/dashboard/tickers/': typeof mainDashboardTickersIndexRoute
   '/dashboard/treasury/': typeof mainDashboardTreasuryIndexRoute
   '/dashboard/users/': typeof mainDashboardUsersIndexRoute
@@ -582,6 +645,7 @@ export interface FileRoutesByTo {
   '/dashboard/containers/new': typeof mainDashboardContainersNewRoute
   '/dashboard/hubs/new': typeof mainDashboardHubsNewRoute
   '/dashboard/robots/new': typeof mainDashboardRobotsNewRoute
+  '/dashboard/tickers/$symbol': typeof mainDashboardTickersSymbolRoute
   '/dashboard/treasury/new': typeof mainDashboardTreasuryNewRoute
   '/dashboard/users/new': typeof mainDashboardUsersNewRoute
   '/dashboard/wiki/categories': typeof mainDashboardWikiCategoriesRoute
@@ -590,19 +654,26 @@ export interface FileRoutesByTo {
   '/dashboard/audit': typeof mainDashboardAuditIndexRoute
   '/dashboard/calendar': typeof mainDashboardCalendarIndexRoute
   '/dashboard/containers': typeof mainDashboardContainersIndexRoute
+  '/dashboard/derivatives': typeof mainDashboardDerivativesIndexRoute
   '/dashboard/explorer': typeof mainDashboardExplorerIndexRoute
+  '/dashboard/global-map': typeof mainDashboardGlobalMapIndexRoute
   '/dashboard/home': typeof mainDashboardHomeIndexRoute
   '/dashboard/hotkeys': typeof mainDashboardHotkeysIndexRoute
   '/dashboard/hubs': typeof mainDashboardHubsIndexRoute
   '/dashboard/journal': typeof mainDashboardJournalIndexRoute
   '/dashboard/login-history': typeof mainDashboardLoginHistoryIndexRoute
+  '/dashboard/macro': typeof mainDashboardMacroIndexRoute
+  '/dashboard/multichart': typeof mainDashboardMultichartIndexRoute
   '/dashboard/news': typeof mainDashboardNewsIndexRoute
+  '/dashboard/ownership': typeof mainDashboardOwnershipIndexRoute
   '/dashboard/preferences': typeof mainDashboardPreferencesIndexRoute
   '/dashboard/profiles': typeof mainDashboardProfilesIndexRoute
   '/dashboard/robots': typeof mainDashboardRobotsIndexRoute
   '/dashboard/security': typeof mainDashboardSecurityIndexRoute
   '/dashboard/sessions': typeof mainDashboardSessionsIndexRoute
+  '/dashboard/settings': typeof mainDashboardSettingsIndexRoute
   '/dashboard/setup': typeof mainDashboardSetupIndexRoute
+  '/dashboard/stat-arb': typeof mainDashboardStatArbIndexRoute
   '/dashboard/tickers': typeof mainDashboardTickersIndexRoute
   '/dashboard/treasury': typeof mainDashboardTreasuryIndexRoute
   '/dashboard/users': typeof mainDashboardUsersIndexRoute
@@ -656,6 +727,7 @@ export interface FileRoutesById {
   '/(main)/dashboard/containers/new': typeof mainDashboardContainersNewRoute
   '/(main)/dashboard/hubs/new': typeof mainDashboardHubsNewRoute
   '/(main)/dashboard/robots/new': typeof mainDashboardRobotsNewRoute
+  '/(main)/dashboard/tickers/$symbol': typeof mainDashboardTickersSymbolRoute
   '/(main)/dashboard/treasury/new': typeof mainDashboardTreasuryNewRoute
   '/(main)/dashboard/users/new': typeof mainDashboardUsersNewRoute
   '/(main)/dashboard/wiki/categories': typeof mainDashboardWikiCategoriesRoute
@@ -664,19 +736,26 @@ export interface FileRoutesById {
   '/(main)/dashboard/audit/': typeof mainDashboardAuditIndexRoute
   '/(main)/dashboard/calendar/': typeof mainDashboardCalendarIndexRoute
   '/(main)/dashboard/containers/': typeof mainDashboardContainersIndexRoute
+  '/(main)/dashboard/derivatives/': typeof mainDashboardDerivativesIndexRoute
   '/(main)/dashboard/explorer/': typeof mainDashboardExplorerIndexRoute
+  '/(main)/dashboard/global-map/': typeof mainDashboardGlobalMapIndexRoute
   '/(main)/dashboard/home/': typeof mainDashboardHomeIndexRoute
   '/(main)/dashboard/hotkeys/': typeof mainDashboardHotkeysIndexRoute
   '/(main)/dashboard/hubs/': typeof mainDashboardHubsIndexRoute
   '/(main)/dashboard/journal/': typeof mainDashboardJournalIndexRoute
   '/(main)/dashboard/login-history/': typeof mainDashboardLoginHistoryIndexRoute
+  '/(main)/dashboard/macro/': typeof mainDashboardMacroIndexRoute
+  '/(main)/dashboard/multichart/': typeof mainDashboardMultichartIndexRoute
   '/(main)/dashboard/news/': typeof mainDashboardNewsIndexRoute
+  '/(main)/dashboard/ownership/': typeof mainDashboardOwnershipIndexRoute
   '/(main)/dashboard/preferences/': typeof mainDashboardPreferencesIndexRoute
   '/(main)/dashboard/profiles/': typeof mainDashboardProfilesIndexRoute
   '/(main)/dashboard/robots/': typeof mainDashboardRobotsIndexRoute
   '/(main)/dashboard/security/': typeof mainDashboardSecurityIndexRoute
   '/(main)/dashboard/sessions/': typeof mainDashboardSessionsIndexRoute
+  '/(main)/dashboard/settings/': typeof mainDashboardSettingsIndexRoute
   '/(main)/dashboard/setup/': typeof mainDashboardSetupIndexRoute
+  '/(main)/dashboard/stat-arb/': typeof mainDashboardStatArbIndexRoute
   '/(main)/dashboard/tickers/': typeof mainDashboardTickersIndexRoute
   '/(main)/dashboard/treasury/': typeof mainDashboardTreasuryIndexRoute
   '/(main)/dashboard/users/': typeof mainDashboardUsersIndexRoute
@@ -731,6 +810,7 @@ export interface FileRouteTypes {
     | '/dashboard/containers/new'
     | '/dashboard/hubs/new'
     | '/dashboard/robots/new'
+    | '/dashboard/tickers/$symbol'
     | '/dashboard/treasury/new'
     | '/dashboard/users/new'
     | '/dashboard/wiki/categories'
@@ -739,19 +819,26 @@ export interface FileRouteTypes {
     | '/dashboard/audit/'
     | '/dashboard/calendar/'
     | '/dashboard/containers/'
+    | '/dashboard/derivatives/'
     | '/dashboard/explorer/'
+    | '/dashboard/global-map/'
     | '/dashboard/home/'
     | '/dashboard/hotkeys/'
     | '/dashboard/hubs/'
     | '/dashboard/journal/'
     | '/dashboard/login-history/'
+    | '/dashboard/macro/'
+    | '/dashboard/multichart/'
     | '/dashboard/news/'
+    | '/dashboard/ownership/'
     | '/dashboard/preferences/'
     | '/dashboard/profiles/'
     | '/dashboard/robots/'
     | '/dashboard/security/'
     | '/dashboard/sessions/'
+    | '/dashboard/settings/'
     | '/dashboard/setup/'
+    | '/dashboard/stat-arb/'
     | '/dashboard/tickers/'
     | '/dashboard/treasury/'
     | '/dashboard/users/'
@@ -803,6 +890,7 @@ export interface FileRouteTypes {
     | '/dashboard/containers/new'
     | '/dashboard/hubs/new'
     | '/dashboard/robots/new'
+    | '/dashboard/tickers/$symbol'
     | '/dashboard/treasury/new'
     | '/dashboard/users/new'
     | '/dashboard/wiki/categories'
@@ -811,19 +899,26 @@ export interface FileRouteTypes {
     | '/dashboard/audit'
     | '/dashboard/calendar'
     | '/dashboard/containers'
+    | '/dashboard/derivatives'
     | '/dashboard/explorer'
+    | '/dashboard/global-map'
     | '/dashboard/home'
     | '/dashboard/hotkeys'
     | '/dashboard/hubs'
     | '/dashboard/journal'
     | '/dashboard/login-history'
+    | '/dashboard/macro'
+    | '/dashboard/multichart'
     | '/dashboard/news'
+    | '/dashboard/ownership'
     | '/dashboard/preferences'
     | '/dashboard/profiles'
     | '/dashboard/robots'
     | '/dashboard/security'
     | '/dashboard/sessions'
+    | '/dashboard/settings'
     | '/dashboard/setup'
+    | '/dashboard/stat-arb'
     | '/dashboard/tickers'
     | '/dashboard/treasury'
     | '/dashboard/users'
@@ -876,6 +971,7 @@ export interface FileRouteTypes {
     | '/(main)/dashboard/containers/new'
     | '/(main)/dashboard/hubs/new'
     | '/(main)/dashboard/robots/new'
+    | '/(main)/dashboard/tickers/$symbol'
     | '/(main)/dashboard/treasury/new'
     | '/(main)/dashboard/users/new'
     | '/(main)/dashboard/wiki/categories'
@@ -884,19 +980,26 @@ export interface FileRouteTypes {
     | '/(main)/dashboard/audit/'
     | '/(main)/dashboard/calendar/'
     | '/(main)/dashboard/containers/'
+    | '/(main)/dashboard/derivatives/'
     | '/(main)/dashboard/explorer/'
+    | '/(main)/dashboard/global-map/'
     | '/(main)/dashboard/home/'
     | '/(main)/dashboard/hotkeys/'
     | '/(main)/dashboard/hubs/'
     | '/(main)/dashboard/journal/'
     | '/(main)/dashboard/login-history/'
+    | '/(main)/dashboard/macro/'
+    | '/(main)/dashboard/multichart/'
     | '/(main)/dashboard/news/'
+    | '/(main)/dashboard/ownership/'
     | '/(main)/dashboard/preferences/'
     | '/(main)/dashboard/profiles/'
     | '/(main)/dashboard/robots/'
     | '/(main)/dashboard/security/'
     | '/(main)/dashboard/sessions/'
+    | '/(main)/dashboard/settings/'
     | '/(main)/dashboard/setup/'
+    | '/(main)/dashboard/stat-arb/'
     | '/(main)/dashboard/tickers/'
     | '/(main)/dashboard/treasury/'
     | '/(main)/dashboard/users/'
@@ -1098,11 +1201,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof mainDashboardContainersNewRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
+    '/(main)/dashboard/derivatives/': {
+      id: '/(main)/dashboard/derivatives/'
+      path: '/derivatives'
+      fullPath: '/dashboard/derivatives/'
+      preLoaderRoute: typeof mainDashboardDerivativesIndexRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
     '/(main)/dashboard/explorer/': {
       id: '/(main)/dashboard/explorer/'
       path: '/explorer'
       fullPath: '/dashboard/explorer/'
       preLoaderRoute: typeof mainDashboardExplorerIndexRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
+    '/(main)/dashboard/global-map/': {
+      id: '/(main)/dashboard/global-map/'
+      path: '/global-map'
+      fullPath: '/dashboard/global-map/'
+      preLoaderRoute: typeof mainDashboardGlobalMapIndexRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
     '/(main)/dashboard/home/': {
@@ -1147,11 +1264,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof mainDashboardLoginHistoryIndexRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
+    '/(main)/dashboard/macro/': {
+      id: '/(main)/dashboard/macro/'
+      path: '/macro'
+      fullPath: '/dashboard/macro/'
+      preLoaderRoute: typeof mainDashboardMacroIndexRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
+    '/(main)/dashboard/multichart/': {
+      id: '/(main)/dashboard/multichart/'
+      path: '/multichart'
+      fullPath: '/dashboard/multichart/'
+      preLoaderRoute: typeof mainDashboardMultichartIndexRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
     '/(main)/dashboard/news/': {
       id: '/(main)/dashboard/news/'
       path: '/news'
       fullPath: '/dashboard/news/'
       preLoaderRoute: typeof mainDashboardNewsIndexRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
+    '/(main)/dashboard/ownership/': {
+      id: '/(main)/dashboard/ownership/'
+      path: '/ownership'
+      fullPath: '/dashboard/ownership/'
+      preLoaderRoute: typeof mainDashboardOwnershipIndexRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
     '/(main)/dashboard/preferences/': {
@@ -1196,6 +1334,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof mainDashboardSessionsIndexRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
+    '/(main)/dashboard/settings/': {
+      id: '/(main)/dashboard/settings/'
+      path: '/settings'
+      fullPath: '/dashboard/settings/'
+      preLoaderRoute: typeof mainDashboardSettingsIndexRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
     '/(main)/dashboard/setup/': {
       id: '/(main)/dashboard/setup/'
       path: '/setup'
@@ -1203,11 +1348,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof mainDashboardSetupIndexRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
+    '/(main)/dashboard/stat-arb/': {
+      id: '/(main)/dashboard/stat-arb/'
+      path: '/stat-arb'
+      fullPath: '/dashboard/stat-arb/'
+      preLoaderRoute: typeof mainDashboardStatArbIndexRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
     '/(main)/dashboard/tickers/': {
       id: '/(main)/dashboard/tickers/'
       path: '/tickers'
       fullPath: '/dashboard/tickers/'
       preLoaderRoute: typeof mainDashboardTickersIndexRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
+    '/(main)/dashboard/tickers/$symbol': {
+      id: '/(main)/dashboard/tickers/$symbol'
+      path: '/tickers/$symbol'
+      fullPath: '/dashboard/tickers/$symbol'
+      preLoaderRoute: typeof mainDashboardTickersSymbolRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
     '/(main)/dashboard/treasury/': {
@@ -1454,6 +1613,7 @@ interface mainDashboardRouteRouteChildren {
   mainDashboardContainersNewRoute: typeof mainDashboardContainersNewRoute
   mainDashboardHubsNewRoute: typeof mainDashboardHubsNewRoute
   mainDashboardRobotsNewRoute: typeof mainDashboardRobotsNewRoute
+  mainDashboardTickersSymbolRoute: typeof mainDashboardTickersSymbolRoute
   mainDashboardTreasuryNewRoute: typeof mainDashboardTreasuryNewRoute
   mainDashboardUsersNewRoute: typeof mainDashboardUsersNewRoute
   mainDashboardWikiCategoriesRoute: typeof mainDashboardWikiCategoriesRoute
@@ -1462,19 +1622,26 @@ interface mainDashboardRouteRouteChildren {
   mainDashboardAuditIndexRoute: typeof mainDashboardAuditIndexRoute
   mainDashboardCalendarIndexRoute: typeof mainDashboardCalendarIndexRoute
   mainDashboardContainersIndexRoute: typeof mainDashboardContainersIndexRoute
+  mainDashboardDerivativesIndexRoute: typeof mainDashboardDerivativesIndexRoute
   mainDashboardExplorerIndexRoute: typeof mainDashboardExplorerIndexRoute
+  mainDashboardGlobalMapIndexRoute: typeof mainDashboardGlobalMapIndexRoute
   mainDashboardHomeIndexRoute: typeof mainDashboardHomeIndexRoute
   mainDashboardHotkeysIndexRoute: typeof mainDashboardHotkeysIndexRoute
   mainDashboardHubsIndexRoute: typeof mainDashboardHubsIndexRoute
   mainDashboardJournalIndexRoute: typeof mainDashboardJournalIndexRoute
   mainDashboardLoginHistoryIndexRoute: typeof mainDashboardLoginHistoryIndexRoute
+  mainDashboardMacroIndexRoute: typeof mainDashboardMacroIndexRoute
+  mainDashboardMultichartIndexRoute: typeof mainDashboardMultichartIndexRoute
   mainDashboardNewsIndexRoute: typeof mainDashboardNewsIndexRoute
+  mainDashboardOwnershipIndexRoute: typeof mainDashboardOwnershipIndexRoute
   mainDashboardPreferencesIndexRoute: typeof mainDashboardPreferencesIndexRoute
   mainDashboardProfilesIndexRoute: typeof mainDashboardProfilesIndexRoute
   mainDashboardRobotsIndexRoute: typeof mainDashboardRobotsIndexRoute
   mainDashboardSecurityIndexRoute: typeof mainDashboardSecurityIndexRoute
   mainDashboardSessionsIndexRoute: typeof mainDashboardSessionsIndexRoute
+  mainDashboardSettingsIndexRoute: typeof mainDashboardSettingsIndexRoute
   mainDashboardSetupIndexRoute: typeof mainDashboardSetupIndexRoute
+  mainDashboardStatArbIndexRoute: typeof mainDashboardStatArbIndexRoute
   mainDashboardTickersIndexRoute: typeof mainDashboardTickersIndexRoute
   mainDashboardTreasuryIndexRoute: typeof mainDashboardTreasuryIndexRoute
   mainDashboardUsersIndexRoute: typeof mainDashboardUsersIndexRoute
@@ -1523,6 +1690,7 @@ const mainDashboardRouteRouteChildren: mainDashboardRouteRouteChildren = {
   mainDashboardContainersNewRoute: mainDashboardContainersNewRoute,
   mainDashboardHubsNewRoute: mainDashboardHubsNewRoute,
   mainDashboardRobotsNewRoute: mainDashboardRobotsNewRoute,
+  mainDashboardTickersSymbolRoute: mainDashboardTickersSymbolRoute,
   mainDashboardTreasuryNewRoute: mainDashboardTreasuryNewRoute,
   mainDashboardUsersNewRoute: mainDashboardUsersNewRoute,
   mainDashboardWikiCategoriesRoute: mainDashboardWikiCategoriesRoute,
@@ -1531,19 +1699,26 @@ const mainDashboardRouteRouteChildren: mainDashboardRouteRouteChildren = {
   mainDashboardAuditIndexRoute: mainDashboardAuditIndexRoute,
   mainDashboardCalendarIndexRoute: mainDashboardCalendarIndexRoute,
   mainDashboardContainersIndexRoute: mainDashboardContainersIndexRoute,
+  mainDashboardDerivativesIndexRoute: mainDashboardDerivativesIndexRoute,
   mainDashboardExplorerIndexRoute: mainDashboardExplorerIndexRoute,
+  mainDashboardGlobalMapIndexRoute: mainDashboardGlobalMapIndexRoute,
   mainDashboardHomeIndexRoute: mainDashboardHomeIndexRoute,
   mainDashboardHotkeysIndexRoute: mainDashboardHotkeysIndexRoute,
   mainDashboardHubsIndexRoute: mainDashboardHubsIndexRoute,
   mainDashboardJournalIndexRoute: mainDashboardJournalIndexRoute,
   mainDashboardLoginHistoryIndexRoute: mainDashboardLoginHistoryIndexRoute,
+  mainDashboardMacroIndexRoute: mainDashboardMacroIndexRoute,
+  mainDashboardMultichartIndexRoute: mainDashboardMultichartIndexRoute,
   mainDashboardNewsIndexRoute: mainDashboardNewsIndexRoute,
+  mainDashboardOwnershipIndexRoute: mainDashboardOwnershipIndexRoute,
   mainDashboardPreferencesIndexRoute: mainDashboardPreferencesIndexRoute,
   mainDashboardProfilesIndexRoute: mainDashboardProfilesIndexRoute,
   mainDashboardRobotsIndexRoute: mainDashboardRobotsIndexRoute,
   mainDashboardSecurityIndexRoute: mainDashboardSecurityIndexRoute,
   mainDashboardSessionsIndexRoute: mainDashboardSessionsIndexRoute,
+  mainDashboardSettingsIndexRoute: mainDashboardSettingsIndexRoute,
   mainDashboardSetupIndexRoute: mainDashboardSetupIndexRoute,
+  mainDashboardStatArbIndexRoute: mainDashboardStatArbIndexRoute,
   mainDashboardTickersIndexRoute: mainDashboardTickersIndexRoute,
   mainDashboardTreasuryIndexRoute: mainDashboardTreasuryIndexRoute,
   mainDashboardUsersIndexRoute: mainDashboardUsersIndexRoute,

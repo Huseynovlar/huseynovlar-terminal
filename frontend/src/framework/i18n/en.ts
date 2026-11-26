@@ -60,7 +60,7 @@ export const en: { [K in keyof I18nSchema]: { [P in keyof I18nSchema[K]]: string
     robots: "Trading Robots",
     journal: "Deals Journal",
     treasury: "Treasury & Transfers",
-    hubs: "Asset Hubs",
+    hubs: "My Assets",
     explorer: "Asset Explorer",
     treemap: "Market Treemap",
     analytics: "Analytics & Risk Lab",

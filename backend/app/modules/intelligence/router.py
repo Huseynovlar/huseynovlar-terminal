@@ -1440,6 +1440,74 @@ def _build_algorithmic_brief_fallback(meta: dict[str, Any]) -> str:
     )
 
 
+def _strip_markdown_tables(text: str) -> str:
+    """Convert any Markdown table rows into clean bullet lines so AI Brief never renders Markdown tables."""
+    lines = text.splitlines()
+    out: list[str] = []
+    header_cols: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 2:
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            # Skip separator rows like |---|---|
+            if all(re.fullmatch(r":?-{2,}:?", c.replace(" ", "")) for c in cells if c):
+                continue
+            if not header_cols:
+                header_cols = cells
+                continue
+            parts = []
+            for idx, val in enumerate(cells):
+                if not val:
+                    continue
+                if idx < len(header_cols) and header_cols[idx]:
+                    parts.append(f"{header_cols[idx]}: {val}")
+                else:
+                    parts.append(val)
+            if parts:
+                out.append("• " + " · ".join(parts))
+        else:
+            header_cols = []
+            out.append(line)
+    return "\n".join(out).strip()
+
+
+async def _try_openai_compatible_llm(system_prompt: str, user_prompt: str) -> tuple[str, str] | None:
+    """Provider-agnostic OpenAI-compatible adapter (DeepSeek / Qwen / OpenAI / Groq via .env)."""
+    import os
+
+    api_key = (os.getenv("LLM_API_KEY") or "").strip()
+    base_url = (os.getenv("LLM_BASE_URL") or "").strip().rstrip("/")
+    model = (os.getenv("LLM_MODEL") or "deepseek-chat").strip()
+    if not api_key or not base_url:
+        return None
+    endpoint = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(35.0, connect=8.0)) as http:
+            resp = await http.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.25,
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                txt = (
+                    ((data.get("choices") or [{}])[0].get("message") or {}).get("content")
+                    or ""
+                ).strip()
+                if txt:
+                    return txt, model
+    except Exception:
+        logger.warning("OpenAI-compatible LLM adapter failed", exc_info=True)
+    return None
+
+
 async def _try_free_llm_fallback(system_prompt: str, user_prompt: str) -> tuple[str, str] | None:
     """Zero-key free LLM fallback (Pollinations OpenAI-compatible API) used when Gemini models return 503/429."""
     try:
@@ -1506,10 +1574,9 @@ async def gemini_ai_copilot(
 
     if not api_key and not is_asset_brief:
         reply = (
-            "**Google AI (Gemini) ключ не настроен.**\n\n"
-            "Добавьте `GEMINI_API_KEY` (или `google_ai_api_key`) в `/opt/huseynovlar-terminal/.env` "
-            "на сервере и перезапустите backend.\n\n"
-            f"Живой контекст портфеля, готовый для передачи в Gemini:\n> {context_text}"
+            "Google AI (Gemini) ключ не настроен.\n\n"
+            "• Добавьте GEMINI_API_KEY / google_ai_api_key (или LLM_API_KEY + LLM_BASE_URL) в .env и перезапустите backend.\n"
+            f"• Текущий контекст портфеля: {context_text}"
         )
         return {
             "configured": False,
@@ -1520,11 +1587,14 @@ async def gemini_ai_copilot(
         }
 
     sys_instruction = (
-        "Ты — институциональный мульти-активный аналитик уровня Bloomberg / MetaTrader 5. "
-        "Отвечай на русском языке чётко, структурированно, по пунктам: "
-        "1) Рыночный режим и ключевые уровни графика (SELL ZONE / FAIR VWAP / BUY ZONE / RSI), "
-        "2) Сводка новостей за 24 часа и их влияние, "
-        "3) Оценка рисков и сценарий для торгового робота. Используй только переданные реальные данные."
+        "Ты — институциональный мульти-активный аналитик уровня Bloomberg. "
+        "Отвечай на русском языке кратко и строго по делу — ТОЛЬКО чистый структурированный текст и короткие буллеты (• или -). "
+        "ЖЁСТКИЙ ЗАПРЕТ: НИКАКИХ Markdown-таблиц (символов |), никаких эмодзи и воды. "
+        "Структура ответа:\n"
+        "1) Рыночный режим и ключевые уровни графика (SELL ZONE / FAIR VWAP / BUY ZONE / RSI)\n"
+        "2) Сводка новостей за 24 часа и их влияние на цену\n"
+        "3) Оценка рисков и рабочий сценарий.\n"
+        "Используй только переданные реальные данные."
     )
     full_text_prompt = f"{sys_instruction}\n\n{context_text}\n\nЗапрос: {body.prompt}"
 
@@ -1532,7 +1602,12 @@ async def gemini_ai_copilot(
     used_model = primary_model
     last_status_exc: httpx.HTTPStatusError | None = None
 
-    if api_key:
+    # 1. Optional provider-agnostic OpenAI-compatible LLM (DeepSeek / Qwen / OpenAI) if configured via env
+    compat_res = await _try_openai_compatible_llm(sys_instruction, f"{context_text}\n\nЗапрос: {body.prompt}")
+    if compat_res is not None:
+        text_out, used_model = compat_res
+
+    if not text_out and api_key:
         candidate_models = list(
             dict.fromkeys(
                 [
@@ -1622,6 +1697,9 @@ async def gemini_ai_copilot(
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Gemini API error ({sc}): {body_snip}")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Empty response from AI provider")
 
+    # Enforce plain text & short bullets (never Markdown tables)
+    text_out = _strip_markdown_tables(text_out)
+
     kind_val = body.mode or body.kind
     briefing = AiBriefing(kind=kind_val[:32], model_name=used_model[:64], prompt=body.prompt, response_md=text_out)
     db.add(briefing)
@@ -1705,3 +1783,135 @@ async def delete_ai_briefing(
         ip_address=extract_client_ip(request),
     )
     await db.commit()
+
+
+_CRYPTO_FUTURES_MAP: dict[str, str] = {
+    "BTCUSD": "BTCUSDT",
+    "ETHUSD": "ETHUSDT",
+    "SOLUSD": "SOLUSDT",
+    "BNBUSD": "BNBUSDT",
+    "XRPUSD": "XRPUSDT",
+    "ADAUSD": "ADAUSDT",
+    "DOGEUSD": "DOGEUSDT",
+    "TONUSD": "TONUSDT",
+    "LTCUSD": "LTCUSDT",
+}
+
+_CFTC_COT_MARKETS: dict[str, str] = {
+    "XAUUSD": "GOLD - COMMODITY EXCHANGE INC.",
+    "XAGUSD": "SILVER - COMMODITY EXCHANGE INC.",
+    "USTEC": "NASDAQ MINI - CHICAGO MERCANTILE EXCHANGE",
+    "US500": "E-MINI S&P 500 - CHICAGO MERCANTILE EXCHANGE",
+    "EURUSD": "EURO FX - CHICAGO MERCANTILE EXCHANGE",
+    "GBPUSD": "BRITISH POUND - CHICAGO MERCANTILE EXCHANGE",
+    "USDJPY": "JAPANESE YEN - CHICAGO MERCANTILE EXCHANGE",
+    "USOIL": "CRUDE OIL, LIGHT SWEET - NEW YORK MERCANTILE EXCHANGE",
+}
+
+
+@router.get("/derivatives/{symbol}")
+async def get_symbol_derivatives_and_cot(
+    symbol: str,
+    _: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Fetch live derivatives (Binance Futures OI/Funding, Deribit IV) or institutional CFTC COT + US Treasury data."""
+    canon = canonical_asset_code(symbol) or symbol.strip().upper()
+    result: dict[str, Any] = {
+        "symbol": canon,
+        "kind": "crypto" if canon in _CRYPTO_FUTURES_MAP else "institutional",
+        "sources": [],
+        "metrics": {},
+        "cot": None,
+        "treasury": [],
+    }
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(6.0, connect=3.0)) as http:
+        if canon in _CRYPTO_FUTURES_MAP:
+            fapi_sym = _CRYPTO_FUTURES_MAP[canon]
+            try:
+                oi_resp = await http.get("https://fapi.binance.com/fapi/v1/openInterest", params={"symbol": fapi_sym})
+                if oi_resp.status_code == 200:
+                    oi_data = oi_resp.json()
+                    result["metrics"]["open_interest"] = float(oi_data.get("openInterest") or 0.0)
+                    result["sources"].append("Binance Futures")
+            except Exception:
+                pass
+            try:
+                prem_resp = await http.get("https://fapi.binance.com/fapi/v1/premiumIndex", params={"symbol": fapi_sym})
+                if prem_resp.status_code == 200:
+                    pr = prem_resp.json()
+                    result["metrics"]["mark_price"] = float(pr.get("markPrice") or 0.0)
+                    result["metrics"]["index_price"] = float(pr.get("indexPrice") or 0.0)
+                    result["metrics"]["funding_rate_pct"] = round(float(pr.get("lastFundingRate") or 0.0) * 100.0, 4)
+                    result["metrics"]["next_funding_time_ms"] = int(pr.get("nextFundingTime") or 0)
+            except Exception:
+                pass
+            if canon in ("BTCUSD", "ETHUSD"):
+                ccy = "BTC" if canon == "BTCUSD" else "ETH"
+                try:
+                    d_resp = await http.get(
+                        "https://www.deribit.com/api/v2/public/get_historical_volatility",
+                        params={"currency": ccy},
+                    )
+                    if d_resp.status_code == 200:
+                        rows = d_resp.json().get("result") or []
+                        if rows:
+                            result["metrics"]["deribit_hv_pct"] = round(float(rows[-1][1]), 2)
+                            result["sources"].append("Deribit v2")
+                except Exception:
+                    pass
+        else:
+            cot_market = _CFTC_COT_MARKETS.get(canon)
+            if cot_market:
+                try:
+                    cot_resp = await http.get(
+                        "https://publicreporting.cftc.gov/resource/6dca-aqww.json",
+                        params={
+                            "$where": f"market_and_exchange_names='{cot_market}'",
+                            "$order": "report_date_as_yyyy_mm_dd DESC",
+                            "$limit": 1,
+                        },
+                    )
+                    if cot_resp.status_code == 200:
+                        rows = cot_resp.json()
+                        if rows:
+                            row = rows[0]
+                            nc_long = int(float(row.get("noncomm_positions_long_all") or 0))
+                            nc_short = int(float(row.get("noncomm_positions_short_all") or 0))
+                            c_long = int(float(row.get("comm_positions_long_all") or 0))
+                            c_short = int(float(row.get("comm_positions_short_all") or 0))
+                            oi = int(float(row.get("open_interest_all") or 0))
+                            result["cot"] = {
+                                "report_date": str(row.get("report_date_as_yyyy_mm_dd") or "")[:10],
+                                "market": cot_market,
+                                "open_interest": oi,
+                                "noncomm_long": nc_long,
+                                "noncomm_short": nc_short,
+                                "noncomm_net": nc_long - nc_short,
+                                "comm_net": c_long - c_short,
+                            }
+                            result["sources"].append("CFTC COT")
+                except Exception:
+                    pass
+            try:
+                tr_resp = await http.get(
+                    "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/avg_interest_rates",
+                    params={"sort": "-record_date", "page[size]": 4},
+                )
+                if tr_resp.status_code == 200:
+                    trows = tr_resp.json().get("data") or []
+                    result["treasury"] = [
+                        {
+                            "security": str(r.get("security_desc") or ""),
+                            "rate_pct": float(r.get("avg_interest_rate_amt") or 0.0),
+                            "date": str(r.get("record_date") or ""),
+                        }
+                        for r in trows[:4]
+                    ]
+                    if trows:
+                        result["sources"].append("U.S. Treasury")
+            except Exception:
+                pass
+
+    return result
+

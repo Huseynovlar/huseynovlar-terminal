@@ -146,30 +146,30 @@ function DashboardLayout() {
       >
         <HotkeyEngine />
         <LockScreenOverlay user={currentUser} />
-        <AppSidebar variant={variant ?? "floating"} collapsible={collapsible ?? "icon"} currentUser={currentUser} />
+        <AppSidebar variant={variant === "floating" ? "sidebar" : (variant ?? "sidebar")} collapsible={collapsible ?? "icon"} currentUser={currentUser} />
         <SidebarInset
           className={cn(
             "[html[data-content-layout=centered]_&>*]:mx-auto",
             "[html[data-content-layout=centered]_&>*]:w-full",
             "[html[data-content-layout=centered]_&>*]:max-w-screen-2xl",
             "peer-data-[variant=inset]:border",
-            "[--dashboard-header-height:--spacing(12)]",
-            "min-w-0 overflow-x-clip",
+            "[--dashboard-header-height:--spacing(11)]",
+            "min-w-0 overflow-x-clip bg-background",
           )}
         >
           <BloombergTickerTape />
           <header
             className={cn(
-              "flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12",
-              "[html[data-navbar-style=sticky]_&]:bg-background/60 [html[data-navbar-style=sticky]_&]:sticky [html[data-navbar-style=sticky]_&]:top-0 [html[data-navbar-style=sticky]_&]:z-50 [html[data-navbar-style=sticky]_&]:overflow-hidden [html[data-navbar-style=sticky]_&]:rounded-t-[inherit] [html[data-navbar-style=sticky]_&]:backdrop-blur-md",
+              "flex h-11 shrink-0 items-center gap-2 border-b border-border bg-card transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-11",
+              "[html[data-navbar-style=sticky]_&]:sticky [html[data-navbar-style=sticky]_&]:top-0 [html[data-navbar-style=sticky]_&]:z-50 [html[data-navbar-style=sticky]_&]:overflow-hidden",
             )}
           >
-            <div className="flex w-full items-center justify-between px-4 lg:px-6">
-              <div className="flex items-center gap-1 lg:gap-2">
+            <div className="flex w-full items-center justify-between px-3">
+              <div className="flex items-center gap-1.5">
                 <SidebarTrigger className="-ml-1" />
                 <Separator
                   orientation="vertical"
-                  className="mx-2 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center"
+                  className="mx-1.5 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center"
                 />
                 <SearchDialog />
               </div>
@@ -185,7 +185,7 @@ function DashboardLayout() {
               </div>
             </div>
           </header>
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-3 has-data-[content-padding=false]:p-0 md:p-5 md:has-data-[content-padding=false]:p-0">
+          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-3 has-data-[content-padding=false]:p-0">
             <Outlet />
           </div>
         </SidebarInset>

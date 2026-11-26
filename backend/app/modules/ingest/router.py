@@ -122,6 +122,8 @@ class BootstrapPayload(BaseModel):
     balance: float = 0.0
     equity: float = 0.0
     terminal_build: int = 0
+    sent_at_utc: str = ""
+    sent_at_msc: int = 0
 
 
 class OpenPositionItem(BaseModel):
@@ -150,6 +152,10 @@ class RobotLiveStateItem(BaseModel):
     version: str = ""
     status: str = "RUNNING"
     execution_ms: int = 0
+    seq: int = 0
+    updated_at_utc: str = ""
+    updated_at_msc: int = 0
+    bid: float = 0.0
     state_json: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -172,6 +178,10 @@ class SnapshotPayload(BaseModel):
     algo_trading_enabled: bool = False
     terminal_connected: bool = True
     ping_ms: int = 0
+    seq: int = 0
+    sent_at_utc: str = ""
+    sent_at_msc: int = 0
+    updated_at_utc: str = ""
     symbol: str = ""
     bid: float = 0.0
     ask: float = 0.0
@@ -198,6 +208,7 @@ class TradeEventPayload(BaseModel):
     comment: str = ""
     ea_name: str = ""
     time_msc: int = 0
+    sent_at_msc: int = 0
 
 
 class BarItem(BaseModel):
@@ -212,6 +223,7 @@ class BarItem(BaseModel):
 class BarsPayload(BaseModel):
     symbol: str
     timeframe: str = Field(pattern="^(M1|M5|M15|M30|H1|H4|D1|W1)$")
+    sent_at_msc: int = 0
     bars: list[BarItem] = Field(default_factory=list)
 
 
@@ -274,20 +286,33 @@ async def ingest_snapshot(
     updated_robots: list[Robot] = []
     seen_magics: set[int] = set()
 
-    # 1. Process explicit robot_states (from ExnessPanelHook.mqh / ep_ipc / Bridge)
+    # 1. Process explicit robot_states (from ExnessPanelHook.mqh / ep_ipc / Bridge v2.33)
+    snap_utc = body.updated_at_utc or body.sent_at_utc or now.isoformat()
     for rs in body.robot_states:
         ea_label = rs.ea_name or rs.program_name or str(rs.state_json.get("ea_name") or "")
         sym = rs.symbol or str(rs.state_json.get("symbol") or body.symbol or "")
+        enriched_state = dict(rs.state_json or {})
+        eff_seq = rs.seq or body.seq or int(enriched_state.get("seq") or 0)
+        eff_updated = rs.updated_at_utc or snap_utc or str(enriched_state.get("updated_at_utc") or now.isoformat())
+        eff_bid = rs.bid or body.bid or float(enriched_state.get("bid") or 0.0)
+        if eff_seq > 0:
+            enriched_state["seq"] = eff_seq
+        if eff_updated:
+            enriched_state["updated_at_utc"] = eff_updated
+        if rs.updated_at_msc > 0:
+            enriched_state["updated_at_msc"] = rs.updated_at_msc
+        if eff_bid > 0:
+            enriched_state["bid"] = eff_bid
         robot = await _upsert_robot_telemetry(
             db,
             account,
             magic_number=rs.magic_number,
             ea_name=ea_label,
             symbol=sym,
-            version=rs.version or str(rs.state_json.get("version") or ""),
+            version=rs.version or str(enriched_state.get("version") or ""),
             status_str=rs.status,
             execution_ms=rs.execution_ms,
-            state_json=rs.state_json,
+            state_json=enriched_state,
             now=now,
         )
         updated_robots.append(robot)
@@ -424,16 +449,21 @@ async def ingest_snapshot(
         )
 
     for robot in updated_robots:
+        r_state = robot.live_state_json or {}
         await ws_hub.broadcast(
             "robot_state",
             {
                 "robot_id": robot.id,
                 "account_id": account.id,
+                "account_name": account.name,
+                "account_login": account.mt5_login,
                 "magic_number": robot.magic_number,
                 "name": robot.name,
                 "symbol": robot.symbol,
                 "live_status": robot.live_status,
-                "live_state_json": robot.live_state_json or {},
+                "live_state_json": r_state,
+                "seq": int(r_state.get("seq") or body.seq or 0),
+                "updated_at_utc": str(r_state.get("updated_at_utc") or body.updated_at_utc or now.isoformat()),
                 "last_execution_ms": robot.last_execution_ms,
                 "last_heartbeat_at": now.isoformat(),
             },
@@ -633,6 +663,7 @@ class TickItem(BaseModel):
 
 class TicksPayload(BaseModel):
     symbol: str
+    sent_at_msc: int = 0
     ticks: list[TickItem] = Field(default_factory=list)
 
 
@@ -688,7 +719,7 @@ async def _auth_mt5_ws_account(ws: WebSocket, db: AsyncSession) -> TradingAccoun
 
 @router.websocket("/ws")
 async def ingest_ws_stream(ws: WebSocket) -> None:
-    """Persistent real-time WebSocket stream for MT5 ExnessPanelBridge.mq5 (ticks, 1s snapshots, bars)."""
+    """Persistent real-time WebSocket stream for MT5 ExnessPanelBridge.mq5 v2.33 (wss://)."""
     db_override = ws.app.dependency_overrides.get(get_db)
 
     async def _with_db(fn: Any) -> Any:
@@ -711,7 +742,7 @@ async def ingest_ws_stream(ws: WebSocket) -> None:
 
     acc_id = account.id
     await ws.accept()
-    await ws.send_text(json.dumps({"type": "welcome", "account_id": acc_id}))
+    await ws.send_text(json.dumps({"type": "welcome", "account_id": acc_id, "bridge_min_ver": "2.33"}))
 
     try:
         while True:
@@ -724,40 +755,63 @@ async def ingest_ws_stream(ws: WebSocket) -> None:
                 continue
 
             mtype = str(msg.get("type") or "")
-            if mtype == "ping":
-                await ws.send_text(json.dumps({"type": "pong"}))
-            elif mtype == "tick":
-                sym = str(msg.get("symbol") or "")
-                bid = float(msg.get("bid") or 0.0)
-                ask = float(msg.get("ask") or bid)
-                tmsc = int(msg.get("time_msc") or 0)
-                if sym and bid > 0:
-                    await _process_mt5_ticks(sym, [TickItem(time_msc=tmsc, bid=bid, ask=ask)])
-            elif mtype == "ticks":
-                parsed = TicksPayload.model_validate(msg)
-                await _process_mt5_ticks(parsed.symbol, parsed.ticks)
-            elif mtype == "snapshot":
+            try:
+                if mtype == "ping":
+                    await ws.send_text(json.dumps({"type": "pong"}))
+                elif mtype == "tick":
+                    sym = str(msg.get("symbol") or "")
+                    bid = float(msg.get("bid") or 0.0)
+                    ask = float(msg.get("ask") or bid)
+                    tmsc = int(msg.get("time_msc") or 0)
+                    if sym and bid > 0:
+                        await _process_mt5_ticks(sym, [TickItem(time_msc=tmsc, bid=bid, ask=ask)])
+                elif mtype == "ticks":
+                    parsed = TicksPayload.model_validate(msg)
+                    await _process_mt5_ticks(parsed.symbol, parsed.ticks)
+                elif mtype == "snapshot":
 
-                async def _do_snap(db: AsyncSession, payload_dict: dict[str, Any] = msg) -> dict[str, Any]:
-                    acc_row = await db.get(TradingAccount, acc_id)
-                    if not acc_row:
-                        return {"pending_commands": []}
-                    snap_body = SnapshotPayload.model_validate(payload_dict)
-                    return await ingest_snapshot(snap_body, acc_row, db)
+                    async def _do_snap(db: AsyncSession, payload_dict: dict[str, Any] = msg) -> dict[str, Any]:
+                        acc_row = await db.get(TradingAccount, acc_id)
+                        if not acc_row:
+                            return {"pending_commands": []}
+                        snap_body = SnapshotPayload.model_validate(payload_dict)
+                        return await ingest_snapshot(snap_body, acc_row, db)
 
-                snap_res = await _with_db(_do_snap)
-                cmds = snap_res.get("pending_commands") or []
-                if cmds:
-                    await ws.send_text(json.dumps({"type": "commands", "pending_commands": cmds}))
-            elif mtype == "bars":
+                    snap_res = await _with_db(_do_snap)
+                    cmds = snap_res.get("pending_commands") or []
+                    if cmds:
+                        await ws.send_text(json.dumps({"type": "commands", "pending_commands": cmds}))
+                elif mtype == "bars":
 
-                async def _do_bars(db: AsyncSession, payload_dict: dict[str, Any] = msg) -> None:
-                    acc_row = await db.get(TradingAccount, acc_id)
-                    if acc_row:
-                        bars_body = BarsPayload.model_validate(payload_dict)
-                        await ingest_bars(bars_body, acc_row, db)
+                    async def _do_bars(db: AsyncSession, payload_dict: dict[str, Any] = msg) -> None:
+                        acc_row = await db.get(TradingAccount, acc_id)
+                        if acc_row:
+                            bars_body = BarsPayload.model_validate(payload_dict)
+                            await ingest_bars(bars_body, acc_row, db)
 
-                await _with_db(_do_bars)
+                    await _with_db(_do_bars)
+                elif mtype == "trade_event":
+
+                    async def _do_trade(db: AsyncSession, payload_dict: dict[str, Any] = msg) -> None:
+                        acc_row = await db.get(TradingAccount, acc_id)
+                        if acc_row:
+                            ev_body = TradeEventPayload.model_validate(payload_dict)
+                            await ingest_trade_event(ev_body, acc_row, db)
+
+                    await _with_db(_do_trade)
+                elif mtype == "bootstrap":
+
+                    async def _do_boot(db: AsyncSession, payload_dict: dict[str, Any] = msg) -> dict[str, Any]:
+                        acc_row = await db.get(TradingAccount, acc_id)
+                        if not acc_row:
+                            return {}
+                        boot_body = BootstrapPayload.model_validate(payload_dict)
+                        return await ingest_bootstrap(boot_body, acc_row, db)
+
+                    boot_res = await _with_db(_do_boot)
+                    await ws.send_text(json.dumps({"type": "bootstrap_ack", **boot_res}))
+            except Exception as frame_exc:
+                await ws.send_text(json.dumps({"type": "error", "frame": mtype, "detail": str(frame_exc)[:200]}))
     except WebSocketDisconnect:
         pass
 

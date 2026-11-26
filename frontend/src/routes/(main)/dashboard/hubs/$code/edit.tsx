@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Plus, Save, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Plus, RefreshCw, Save, X } from "lucide-react";
 
 import { AsyncButton } from "@/components/ui/async-button";
 import { Badge } from "@/components/ui/badge";
@@ -113,14 +113,14 @@ function HubEditPage() {
         <Link
           to="/dashboard/hubs/$code"
           params={{ code }}
-          className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
+          className="inline-flex h-8 items-center rounded-[4px] border border-[#1E2634] px-3 text-xs font-medium hover:bg-[#171E2B]"
         >
           <ArrowLeft className="mr-1.5 size-3.5" />
           {t.common.back}
         </Link>
       }
     >
-      <Card className="max-w-2xl border-border/70">
+      <Card className="max-w-2xl rounded-[4px] border-[#1E2634] bg-[#11161F] shadow-none">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm">
             <AssetLogo symbol={code} size={22} />
@@ -139,7 +139,7 @@ function HubEditPage() {
                 id="he-grp"
                 value={group}
                 onChange={(e) => setGroup(e.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs"
+                className="h-9 w-full rounded-[4px] border border-input bg-background px-2.5 text-xs"
               >
                 <option value="metals">Metals</option>
                 <option value="indices">Indices</option>
@@ -155,12 +155,12 @@ function HubEditPage() {
               <Input id="he-syms" value={brokerSymbols} onChange={(e) => setBrokerSymbols(e.target.value)} />
             </div>
 
-            <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+            <div className="space-y-2 rounded-[4px] border border-[#1E2634] bg-[#0B0E14] p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label>Ключевые слова новостей (из справочника тикеров)</Label>
                 <Button type="button" size="xs" variant="outline" onClick={() => void handleFillFromDirectory()}>
-                  <Sparkles className="mr-1 size-3" />
-                  Подтянуть все слова для {code}
+                  <RefreshCw className="mr-1 size-3" />
+                  Подтянуть слова для {code}
                 </Button>
               </div>
               <div className="flex flex-wrap gap-1.5">

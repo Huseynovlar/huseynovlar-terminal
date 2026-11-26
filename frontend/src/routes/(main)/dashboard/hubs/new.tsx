@@ -235,10 +235,10 @@ function HubCreatePage() {
               />
             </div>
 
-            <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+            <div className="space-y-2 rounded-[4px] border border-[#1E2634] bg-[#0B0E14] p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label>Ключевые слова новостей (подтягиваются из справочника тикеров)</Label>
-                <span className="font-mono text-[10px] text-muted-foreground">
+                <span className="font-mono text-[10px] text-[#64748B] tabular-nums">
                   Выбрано: {newsKeywords.length}
                 </span>
               </div>
@@ -246,12 +246,12 @@ function HubCreatePage() {
               {newsKeywords.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {newsKeywords.map((kw) => (
-                    <Badge key={kw} variant="secondary" className="inline-flex items-center gap-1 text-[11px]">
+                    <Badge key={kw} variant="secondary" className="inline-flex items-center gap-1 rounded-[3px] text-[11px]">
                       {kw}
                       <button
                         type="button"
                         onClick={() => removeKeyword(kw)}
-                        className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                        className="ml-0.5 rounded-[2px] p-0.5 hover:bg-[#171E2B]"
                         title="Удалить тег"
                       >
                         <X className="size-2.5" />
@@ -260,19 +260,17 @@ function HubCreatePage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-[11px] text-muted-foreground">
-                  Выбери основной тикер выше — все связанные новостные кодовые слова (крипта, макро, ЦБ, сектор) подставятся автоматически.
+                <p className="text-[11px] text-[#64748B]">
+                  Выберите основной тикер выше — связанные ключевые слова подставятся автоматически.
                 </p>
               )}
 
               <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
-                <div>
-                  <TickerSelect
-                    value=""
-                    placeholder="+ Добавить ключевые слова из другого тикера (DXY, BTC...)"
-                    onSelectTicker={mergeRelatedTickerKeywords}
-                  />
-                </div>
+                <TickerSelect
+                  value=""
+                  placeholder="+ Добавить ключевые слова из другого тикера (DXY, BTC...)"
+                  onSelectTicker={mergeRelatedTickerKeywords}
+                />
                 <div className="flex gap-1.5">
                   <Input
                     value={customTag}

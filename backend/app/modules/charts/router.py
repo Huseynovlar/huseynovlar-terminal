@@ -354,39 +354,43 @@ def _estimate_half_spread(canon: str, ref_price: float) -> float:
 @router.get("/charts/ticks/{symbol}")
 async def get_symbol_recent_ticks(
     symbol: str,
-    limit: int = Query(default=140, ge=10, le=200),
+    limit: int = Query(default=140, ge=10, le=500),
+    market_only: bool = Query(default=False),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Return rolling live Bid/Ask ticks + latest L2 orderbook for immediate MT5-style Tick Chart hydration."""
+    """Return rolling live Bid/Ask ticks + latest L2 orderbook + server-computed spread."""
     canon = canonical_asset_code(symbol) or symbol.strip().upper()
     live_ticks = market_ws_hub.get_recent_ticks(canon, limit=limit)
+    if market_only:
+        live_ticks = [t for t in live_ticks if str(t.get("source") or "") != "mt5_live"]
     ob = market_ws_hub.get_latest_orderbook(canon)
 
     if len(live_ticks) < 24:
-        # Backfill older path from recent M1/M5 DB or upstream bars so cold-opened chart has full tick trajectory
-        bars_db = (
-            (
-                await db.execute(
-                    select(MarketBar)
-                    .where(sql_symbol_match(MarketBar.symbol, canon), MarketBar.timeframe.in_(["M1", "M5"]))
-                    .order_by(MarketBar.bar_time.desc())
-                    .limit(30)
+        seed_bars: list[dict[str, Any]] = []
+        if not market_only:
+            bars_db = (
+                (
+                    await db.execute(
+                        select(MarketBar)
+                        .where(sql_symbol_match(MarketBar.symbol, canon), MarketBar.timeframe.in_(["M1", "M5"]))
+                        .order_by(MarketBar.bar_time.desc())
+                        .limit(30)
+                    )
                 )
+                .scalars()
+                .all()
             )
-            .scalars()
-            .all()
-        )
-        seed_bars: list[dict[str, Any]] = [
-            {
-                "time": int(b.bar_time),
-                "open": float(b.open),
-                "high": float(b.high),
-                "low": float(b.low),
-                "close": float(b.close),
-            }
-            for b in reversed(bars_db)
-        ]
+            seed_bars = [
+                {
+                    "time": int(b.bar_time),
+                    "open": float(b.open),
+                    "high": float(b.high),
+                    "low": float(b.low),
+                    "close": float(b.close),
+                }
+                for b in reversed(bars_db)
+            ]
         if len(seed_bars) < 12:
             with contextlib.suppress(Exception):
                 y = await fetch_yahoo_chart(canon, "M1")
@@ -422,10 +426,30 @@ async def get_symbol_recent_ticks(
                     prev_p = mid_p
             live_ticks = (synth + live_ticks)[-limit:]
 
+    spread_usd = 0.0
+    spread_bps = 0.0
+    if ob and ob.get("bids") and ob.get("asks"):
+        best_bid = float(ob["bids"][0][0])
+        best_ask = float(ob["asks"][0][0])
+        if best_bid > 0 and best_ask >= best_bid:
+            spread_usd = round(best_ask - best_bid, 5)
+            mid = (best_ask + best_bid) / 2.0
+            spread_bps = round((spread_usd / mid) * 10_000.0, 2) if mid > 0 else 0.0
+    elif live_ticks:
+        last_t = live_ticks[-1]
+        best_bid = float(last_t.get("bid") or 0.0)
+        best_ask = float(last_t.get("ask") or best_bid)
+        if best_bid > 0 and best_ask >= best_bid:
+            spread_usd = round(best_ask - best_bid, 5)
+            mid = (best_ask + best_bid) / 2.0
+            spread_bps = round((spread_usd / mid) * 10_000.0, 2) if mid > 0 else 0.0
+
     return {
         "symbol": canon,
         "ticks": live_ticks,
         "orderbook": ob,
+        "spread_usd": spread_usd,
+        "spread_bps": spread_bps,
     }
 
 
@@ -505,10 +529,13 @@ async def get_asset_chart_bundle(
     account_id: str | None = None,
     magic_number: int | None = None,
     limit: int = Query(default=1000, ge=20, le=2000),
+    market_only: bool = Query(default=False),
+    provider: str = Query(default="auto"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Return multi-day OHLCV candles (MT5 DB + historical backfill), positions, deals, and chart state."""
+    """Return multi-day OHLCV candles, server-computed 24h market stats, positions, deals, and chart state."""
+    t0_ms = int(datetime.now(UTC).timestamp() * 1000)
     raw_code = asset_code.strip().upper()
     code = canonical_asset_code(raw_code) or raw_code
     asset = (await db.execute(select(AssetHub).where(AssetHub.code == code))).scalar_one_or_none()
@@ -517,41 +544,45 @@ async def get_asset_chart_bundle(
     broker_syms = asset.broker_symbols if asset and asset.broker_symbols else [code]
     symbols = expand_symbol_variants(code, broker_syms)
 
-    # 1. Candles from MT5 DB (deduplicated strictly by bar_time across broker symbol variants)
-    bars = (
-        (
-            await db.execute(
-                select(MarketBar)
-                .where(sql_symbol_match(MarketBar.symbol, code, broker_syms), MarketBar.timeframe == timeframe)
-                .order_by(MarketBar.bar_time.desc())
-                .limit(limit * 2)
+    mt5_bars: list[dict[str, Any]] = []
+    if not market_only:
+        # 1. Candles from MT5 DB (legacy backward-compat mode when market_only=False)
+        bars = (
+            (
+                await db.execute(
+                    select(MarketBar)
+                    .where(sql_symbol_match(MarketBar.symbol, code, broker_syms), MarketBar.timeframe == timeframe)
+                    .order_by(MarketBar.bar_time.desc())
+                    .limit(limit * 2)
+                )
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
-    mt5_by_time: dict[int, dict[str, Any]] = {}
-    for b in reversed(bars):
-        bt = int(b.bar_time)
-        prev = mt5_by_time.get(bt)
-        if prev is None or b.volume >= prev["volume"]:
-            mt5_by_time[bt] = {
-                "time": bt,
-                "open": float(b.open),
-                "high": float(b.high),
-                "low": float(b.low),
-                "close": float(b.close),
-                "volume": int(b.volume or 0),
-            }
-    mt5_bars = [mt5_by_time[t] for t in sorted(mt5_by_time.keys())][-limit:]
+        mt5_by_time: dict[int, dict[str, Any]] = {}
+        for b in reversed(bars):
+            bt = int(b.bar_time)
+            prev = mt5_by_time.get(bt)
+            if prev is None or b.volume >= prev["volume"]:
+                mt5_by_time[bt] = {
+                    "time": bt,
+                    "open": float(b.open),
+                    "high": float(b.high),
+                    "low": float(b.low),
+                    "close": float(b.close),
+                    "volume": int(b.volume or 0),
+                }
+        mt5_bars = [mt5_by_time[t] for t in sorted(mt5_by_time.keys())][-limit:]
 
-    # 2. Always ensure multi-day / multi-week history prior to recent 24h MT5 bars
+    # 2. Direct market data history (strictly used when market_only=True or to backfill multi-day history)
     bars_out = mt5_bars
-    source = "mt5_live"
+    source = "mt5_live" if mt5_bars else "market_history"
+    ydata_meta: dict[str, Any] = {}
     min_history_bars = min(limit, 320)
-    if len(mt5_bars) < min_history_bars:
+    if market_only or len(mt5_bars) < min_history_bars:
         try:
             ydata = await fetch_yahoo_chart(code, timeframe)
+            ydata_meta = ydata
             up_raw = [
                 {
                     "time": int(ub["time"]),
@@ -564,15 +595,14 @@ async def get_asset_chart_bundle(
                 for ub in (ydata.get("bars") or [])
                 if ub.get("time") and ub.get("close")
             ]
-            if not mt5_bars:
+            if market_only or not mt5_bars:
                 dedup_up: dict[int, dict[str, Any]] = {ub["time"]: ub for ub in up_raw}
                 bars_out = [dedup_up[t] for t in sorted(dedup_up.keys())][-limit:]
-                source = "market_history"
+                source = str(ydata.get("source") or "market_history")
             elif up_raw:
                 first_mt5 = mt5_bars[0]
                 older = [ub for ub in up_raw if ub["time"] < first_mt5["time"]]
                 if older:
-                    # Continuous futures-to-spot seam alignment so e.g. GC=F -> XAUUSDc has zero artificial gap
                     seam_ref = older[-1]["close"]
                     delta = first_mt5["open"] - seam_ref
                     if seam_ref > 0 and abs(delta) / seam_ref < 0.05:
@@ -595,7 +625,48 @@ async def get_asset_chart_bundle(
                     bars_out = [merged_by_time[t] for t in sorted(merged_by_time.keys())][-limit:]
                     source = "mt5_merged"
         except Exception:
-            source = "mt5_live" if mt5_bars else "mt5_db"
+            source = "mt5_live" if mt5_bars else "unavailable"
+
+    # Server-side 24h market statistics
+    latency_ms = max(1, int(datetime.now(UTC).timestamp() * 1000) - t0_ms)
+    now_sec = int(datetime.now(UTC).timestamp())
+    cutoff_24h = now_sec - 86400
+    bars_24h = [b for b in bars_out if int(b["time"]) >= cutoff_24h] or bars_out[-24:]
+    last_price = float(bars_out[-1]["close"]) if bars_out else float(ydata_meta.get("price") or 0.0)
+    open_24h = float(bars_24h[0]["open"]) if bars_24h else last_price
+    high_24h = max((float(b["high"]) for b in bars_24h), default=last_price)
+    low_24h = min((float(b["low"]) for b in bars_24h), default=last_price)
+    vol_24h = sum(float(b.get("volume") or 0.0) for b in bars_24h)
+    change_24h_pct = (
+        round(((last_price - open_24h) / open_24h) * 100.0, 2)
+        if open_24h > 0
+        else float(ydata_meta.get("change_pct") or 0.0)
+    )
+    ob = market_ws_hub.get_latest_orderbook(code)
+    spread_usd = 0.0
+    spread_bps = 0.0
+    if ob and ob.get("bids") and ob.get("asks"):
+        bb = float(ob["bids"][0][0])
+        ba = float(ob["asks"][0][0])
+        if bb > 0 and ba >= bb:
+            spread_usd = round(ba - bb, 5)
+            spread_bps = round((spread_usd / ((ba + bb) / 2.0)) * 10_000.0, 2)
+    elif last_price > 0:
+        hs = _estimate_half_spread(code, last_price)
+        spread_usd = round(hs * 2.0, 5)
+        spread_bps = round((spread_usd / last_price) * 10_000.0, 2)
+
+    market_stats = {
+        "price": round(last_price, 5),
+        "change_pct": change_24h_pct,
+        "high_24h": round(high_24h, 5),
+        "low_24h": round(low_24h, 5),
+        "volume_24h": round(vol_24h, 2),
+        "spread_usd": spread_usd,
+        "spread_bps": spread_bps,
+        "provider": provider if provider != "auto" else source,
+        "latency_ms": latency_ms,
+    }
 
     # 3. Accounts map
     accounts = (await db.execute(select(TradingAccount))).scalars().all()
@@ -634,6 +705,7 @@ async def get_asset_chart_bundle(
         "logo_url": asset.logo_url if asset and asset.logo_url else f"/api/v1/assets/logo/{code}",
         "symbols": symbols[:25],
         "bars": bars_out,
+        "market_stats": market_stats,
         "chart_state": {
             "timeframe": saved_state.timeframe,
             "indicators_json": saved_state.indicators_json or {},
@@ -735,12 +807,12 @@ async def _authenticate_ws_and_portfolio(
     }
 
 
-@router.websocket("/ws/live")
-async def websocket_live(
+async def _run_ws_session(
     ws: WebSocket,
-    settings: Settings = Depends(get_settings),
+    settings: Settings,
+    *,
+    channels: set[str] | None = None,
 ) -> None:
-    """Authenticated live WebSocket stream with welcome, 10s heartbeat, ping/pong RTT, and Redis Pub/Sub."""
     db_override = ws.app.dependency_overrides.get(get_db)
     portfolio: dict[str, Any] | None = None
     if db_override is not None:
@@ -760,7 +832,7 @@ async def websocket_live(
         await ws.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication required")
         return
 
-    await ws_hub.connect(ws, send_welcome=True, portfolio=portfolio)
+    await ws_hub.connect(ws, send_welcome=True, portfolio=portfolio, channels=channels)
     heartbeat_task = asyncio.create_task(ws_hub.run_heartbeat_loop(ws, interval_sec=10.0))
     try:
         while True:
@@ -773,3 +845,39 @@ async def websocket_live(
         with contextlib.suppress(asyncio.CancelledError):
             await heartbeat_task
         await ws_hub.disconnect(ws)
+
+
+@router.websocket("/ws/live")
+async def websocket_live(
+    ws: WebSocket,
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Authenticated live WebSocket stream with welcome, 10s heartbeat, ping/pong RTT, and Redis Pub/Sub."""
+    await _run_ws_session(ws, settings, channels=None)
+
+
+@router.websocket("/ws/account")
+async def websocket_account(
+    ws: WebSocket,
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Dedicated account & MT5 robot telemetry WebSocket channel."""
+    await _run_ws_session(ws, settings, channels={"account"})
+
+
+@router.websocket("/ws/market")
+async def websocket_market(
+    ws: WebSocket,
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Dedicated subscription-based market data WebSocket channel (direct market WS only, no MT5 bridge)."""
+    await _run_ws_session(ws, settings, channels={"market"})
+
+
+@router.websocket("/ws/news")
+async def websocket_news(
+    ws: WebSocket,
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Dedicated real-time news & macro calendar WebSocket channel."""
+    await _run_ws_session(ws, settings, channels={"news"})

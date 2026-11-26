@@ -23,6 +23,8 @@ class LiveWebSocketHub:
         self._channel = channel
         self._instance_id = uuid.uuid4().hex[:12]
         self._connections: set[WebSocket] = set()
+        self._conn_channels: dict[WebSocket, set[str]] = {}
+        self._conn_market_symbols: dict[WebSocket, set[str]] = {}
         self._lock = asyncio.Lock()
         self._redis: Any = None
         self._pubsub: Any = None
@@ -106,10 +108,15 @@ class LiveWebSocketHub:
         *,
         send_welcome: bool = True,
         portfolio: dict[str, Any] | None = None,
+        channels: set[str] | None = None,
     ) -> None:
         await ws.accept()
         async with self._lock:
             self._connections.add(ws)
+            if channels is not None:
+                self._conn_channels[ws] = set(channels)
+                if "market" in channels:
+                    self._conn_market_symbols[ws] = set()
         if send_welcome:
             now = datetime.now(UTC)
             welcome: dict[str, Any] = {
@@ -126,6 +133,8 @@ class LiveWebSocketHub:
     async def disconnect(self, ws: WebSocket) -> None:
         async with self._lock:
             self._connections.discard(ws)
+            self._conn_channels.pop(ws, None)
+            self._conn_market_symbols.pop(ws, None)
 
     async def send_heartbeat(self, ws: WebSocket) -> bool:
         now = datetime.now(UTC)
@@ -253,6 +262,26 @@ class LiveWebSocketHub:
                 await ws.send_json(pong)
         elif msg_type == "rpc" and parsed is not None:
             asyncio.create_task(self._dispatch_rpc(ws, parsed))
+        elif msg_type == "subscribe" and parsed is not None:
+            ch = str(parsed.get("channel") or "").strip().lower()
+            sym = str(parsed.get("symbol") or "").strip().upper()
+            async with self._lock:
+                if ch:
+                    self._conn_channels.setdefault(ws, set()).add(ch)
+                if sym:
+                    self._conn_market_symbols.setdefault(ws, set()).add(sym)
+            with contextlib.suppress(Exception):
+                await ws.send_json({"type": "subscribed", "channel": ch or "all", "symbol": sym or None})
+        elif msg_type == "unsubscribe" and parsed is not None:
+            ch = str(parsed.get("channel") or "").strip().lower()
+            sym = str(parsed.get("symbol") or "").strip().upper()
+            async with self._lock:
+                if sym and ws in self._conn_market_symbols:
+                    self._conn_market_symbols[ws].discard(sym)
+                elif ch and ws in self._conn_channels:
+                    self._conn_channels[ws].discard(ch)
+            with contextlib.suppress(Exception):
+                await ws.send_json({"type": "unsubscribed", "channel": ch or "all", "symbol": sym or None})
 
     async def run_heartbeat_loop(self, ws: WebSocket, interval_sec: float = 10.0) -> None:
         while True:
@@ -261,9 +290,37 @@ class LiveWebSocketHub:
             if not ok:
                 break
 
+    @staticmethod
+    def _event_channel(event_type: str) -> str:
+        if event_type in ("tick", "orderbook", "bar_update", "liquidation", "macro_quotes"):
+            return "market"
+        if event_type in ("breaking_news", "calendar_alert"):
+            return "news"
+        return "account"
+
+    def _should_deliver(self, ws: WebSocket, event_type: str, data: dict[str, Any]) -> bool:
+        channels = self._conn_channels.get(ws)
+        evt_ch = self._event_channel(event_type)
+        if channels is not None and evt_ch not in channels:
+            return False
+        if evt_ch == "market":
+            # Never stream MT5 bridge ticks to dedicated /ws/market subscribers
+            if channels is not None and str(data.get("source") or "") == "mt5_live":
+                return False
+            syms = self._conn_market_symbols.get(ws)
+            if syms is not None and event_type in ("tick", "orderbook", "bar_update", "liquidation"):
+                if not syms:
+                    return False
+                ev_sym = str(data.get("symbol") or data.get("asset_code") or "").strip().upper()
+                if ev_sym and ev_sym not in syms:
+                    return False
+        return True
+
     async def _fanout_local(self, payload: dict[str, Any]) -> None:
+        event_type = str(payload.get("type") or "")
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
         async with self._lock:
-            targets = list(self._connections)
+            targets = [ws for ws in self._connections if self._should_deliver(ws, event_type, data)]
         if not targets:
             return
         dead: list[WebSocket] = []
@@ -276,6 +333,8 @@ class LiveWebSocketHub:
             async with self._lock:
                 for ws in dead:
                     self._connections.discard(ws)
+                    self._conn_channels.pop(ws, None)
+                    self._conn_market_symbols.pop(ws, None)
 
     async def broadcast(self, event_type: str, data: dict[str, Any]) -> None:
         payload = {"type": event_type, "data": data}

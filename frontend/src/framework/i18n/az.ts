@@ -60,7 +60,7 @@ export const az: { [K in keyof I18nSchema]: { [P in keyof I18nSchema[K]]: string
     robots: "Ticarət robotları",
     journal: "Əməliyyat jurnalı",
     treasury: "Xəzinə və köçürmələr",
-    hubs: "Aktiv mərkəzləri",
+    hubs: "Mənim aktivlərim",
     explorer: "Aktiv axtarışı",
     treemap: "Bazar xəritəsi",
     analytics: "Analitika və risklər",

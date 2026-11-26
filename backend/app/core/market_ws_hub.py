@@ -139,12 +139,15 @@ class ServerMarketWsHub:
             return
         self._tiingo_key = (settings.tiingo_api_key if settings else "").strip()
         self._stop_event.clear()
-        self._tasks = [asyncio.create_task(self._run_binance_vision_loop())]
+        self._tasks = [
+            asyncio.create_task(self._run_binance_vision_loop()),
+            asyncio.create_task(self._run_binance_liquidations_loop()),
+        ]
         if self._tiingo_key:
             self._tasks.append(asyncio.create_task(self._run_tiingo_fx_loop(self._tiingo_key)))
-            logger.info("market_ws_hub: started Binance Vision + Tiingo FX real-time WS collectors")
+            logger.info("market_ws_hub: started Binance Vision + Futures Liquidations + Tiingo FX WS collectors")
         else:
-            logger.info("market_ws_hub: started Binance Vision real-time WS collector (TIINGO_API_KEY not set)")
+            logger.info("market_ws_hub: started Binance Vision + Futures Liquidations WS collectors")
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -291,6 +294,57 @@ class ServerMarketWsHub:
                 raise
             except Exception as exc:
                 logger.warning("market_ws_hub: Tiingo FX WS error (%s); reconnecting in %.0fs", exc, backoff)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=backoff)
+                backoff = min(30.0, backoff * 2.0)
+
+    async def _run_binance_liquidations_loop(self) -> None:
+        import websockets
+
+        url = "wss://fstream.binance.com/ws/!forceOrder@arr"
+        backoff = 3.0
+        while not self._stop_event.is_set():
+            try:
+                async with websockets.connect(url, ping_interval=25, ping_timeout=20) as ws:
+                    logger.info("market_ws_hub: connected to Binance Futures Liquidations WS")
+                    backoff = 3.0
+                    async for raw in ws:
+                        if self._stop_event.is_set():
+                            break
+                        if not isinstance(raw, str):
+                            continue
+                        try:
+                            msg = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+                        order = msg.get("o")
+                        if not isinstance(order, dict):
+                            continue
+                        sym_low = str(order.get("s") or "").lower()
+                        canon = BINANCE_STREAMS.get(sym_low)
+                        if not canon:
+                            continue
+                        price = float(order.get("ap") or order.get("p") or 0.0)
+                        qty = float(order.get("q") or 0.0)
+                        if price <= 0 or qty <= 0:
+                            continue
+                        side = str(order.get("S") or "SELL").upper()
+                        await ws_hub.broadcast(
+                            "liquidation",
+                            {
+                                "symbol": canon,
+                                "side": "BUY" if side == "BUY" else "SELL",
+                                "price": price,
+                                "qty": qty,
+                                "usd_value": round(price * qty, 2),
+                                "source": "binance_futures",
+                                "ts_ms": int(order.get("T") or time.time() * 1000),
+                            },
+                        )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("market_ws_hub: Binance Liquidations WS error (%s); reconnecting in %.0fs", exc, backoff)
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(self._stop_event.wait(), timeout=backoff)
                 backoff = min(30.0, backoff * 2.0)
