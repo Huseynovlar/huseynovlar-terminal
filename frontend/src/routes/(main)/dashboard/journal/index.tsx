@@ -279,7 +279,8 @@ function JournalPage() {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2">Time</th>
+                  <th className="px-3 py-2 font-medium">ID</th>
+                  <th className="px-3 py-2">Time (UTC)</th>
                   <th className="px-3 py-2">Account</th>
                   <th className="px-3 py-2">Kind</th>
                   <th className="px-3 py-2">Comment</th>
@@ -288,15 +289,25 @@ function JournalPage() {
               </thead>
               <tbody>
                 {transfers.length === 0 ? (
-                  <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">{t.common.noData}</td></tr>
+                  <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">{t.common.noData}</td></tr>
                 ) : (
                   transfers.map((op) => (
-                    <tr key={op.id} className="border-b border-border/40">
-                      <td className="px-3 py-2 font-mono">{formatTerminalDateTime(op.timestamp)}</td>
+                    <tr key={op.id} className="border-b border-border/40 hover:bg-muted/20">
+                      <td className="px-3 py-2 font-mono text-[11px]">
+                        <Link
+                          to="/dashboard/treasury/$opId"
+                          params={{ opId: op.id }}
+                          title={String(op.id)}
+                          className="text-primary hover:underline"
+                        >
+                          {String(op.id).slice(0, 8)}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2 font-mono tabular-nums">{formatTerminalDateTime(op.timestamp)}</td>
                       <td className="px-3 py-2">{op.account_name}</td>
                       <td className="px-3 py-2"><Badge variant="outline" className="font-mono text-[10px]">{op.op_kind}</Badge></td>
                       <td className="px-3 py-2 text-muted-foreground">{op.comment || "—"}</td>
-                      <td className={`px-3 py-2 text-right font-mono font-semibold ${op.amount_usd >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                      <td className={`px-3 py-2 text-right font-mono font-semibold tabular-nums ${op.amount_usd >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
                         {formatSignedUsd(op.amount_usd, privacyMode)}
                       </td>
                     </tr>

@@ -852,8 +852,24 @@ async def get_treasury_report(
         deal_stmt = deal_stmt.where(Deal.account_id == account_id)
     deals = (await db.execute(deal_stmt)).scalars().all()
 
-    total_deposited = sum(o.amount_usd for o in ops if o.op_kind == "DEPOSIT" and o.amount_usd > 0)
-    total_withdrawn = abs(sum(o.amount_usd for o in ops if o.op_kind == "WITHDRAWAL" and o.amount_usd < 0))
+    def _is_internal_transfer(o: BalanceOperation) -> bool:
+        if o.op_kind == "INTERNAL_TRANSFER":
+            return True
+        c = (o.comment or "").lower()
+        keywords = ("internal transfer", "transfer between", "transfer from", "transfer to", "int. transfer")
+        return any(k in c for k in keywords)
+
+    total_deposited = sum(
+        o.amount_usd for o in ops if o.op_kind == "DEPOSIT" and o.amount_usd > 0 and not _is_internal_transfer(o)
+    )
+    total_withdrawn = abs(
+        sum(
+            o.amount_usd
+            for o in ops
+            if o.op_kind == "WITHDRAWAL" and o.amount_usd < 0 and not _is_internal_transfer(o)
+        )
+    )
+    total_internal_transfers = sum(abs(o.amount_usd) for o in ops if _is_internal_transfer(o))
     total_vault = abs(sum(o.amount_usd for o in ops if o.op_kind == "EXNESS_VAULT" and o.amount_usd < 0))
     total_rebates = sum(o.amount_usd for o in ops if o.op_kind == "REBATE")
     working_capital = sum(a.last_equity / (a.currency_divisor or 1.0) for a in accounts)
@@ -865,6 +881,7 @@ async def get_treasury_report(
             "working_capital_usd": round(working_capital, 2),
             "total_deposited_usd": round(total_deposited, 2),
             "total_withdrawn_usd": round(total_withdrawn, 2),
+            "total_internal_transfers_usd": round(total_internal_transfers, 2),
             "total_vault_usd": round(total_vault, 2),
             "total_rebates_usd": round(total_rebates, 2),
             "realized_trading_profit_usd": round(realized_profit, 2),
@@ -878,6 +895,7 @@ async def get_treasury_report(
 
 @router.get("/treasury/operations")
 async def list_treasury_operations(
+    q: str | None = Query(default=None),
     account_id: str | None = None,
     op_kind: str | None = None,
     limit: int = Query(default=200, ge=1, le=500),
@@ -890,6 +908,14 @@ async def list_treasury_operations(
         stmt = stmt.where(BalanceOperation.account_id == account_id)
     if op_kind:
         stmt = stmt.where(BalanceOperation.op_kind == op_kind.upper())
+    if q and q.strip():
+        pat = f"%{q.strip()}%"
+        stmt = stmt.where(
+            BalanceOperation.id.ilike(pat)
+            | BalanceOperation.op_kind.ilike(pat)
+            | BalanceOperation.comment.ilike(pat)
+            | BalanceOperation.notes.ilike(pat)
+        )
     ops = (await db.execute(stmt)).scalars().all()
     acc_map = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}
     return page.apply([_serialize_treasury_op(o, acc_map) for o in ops])
@@ -946,7 +972,42 @@ async def get_treasury_operation(
     if not op:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Treasury operation not found")
     acc = await db.get(TradingAccount, op.account_id)
-    return _serialize_treasury_op(op, {acc.id: acc} if acc else {})
+    acc_map = {acc.id: acc} if acc else {}
+
+    prior_ops = (
+        (
+            await db.execute(
+                select(BalanceOperation).where(
+                    BalanceOperation.account_id == op.account_id,
+                    BalanceOperation.time_msc < op.time_msc,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    prior_deals = (
+        (
+            await db.execute(
+                select(Deal).where(
+                    Deal.account_id == op.account_id,
+                    Deal.entry_type.in_([1, 2]),
+                    Deal.time_msc <= op.time_msc,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    balance_before = round(
+        sum(p.amount_usd for p in prior_ops) + sum(_deal_net_usd(d, acc_map) for d in prior_deals),
+        2,
+    )
+    balance_after = round(balance_before + op.amount_usd, 2)
+    payload = _serialize_treasury_op(op, acc_map)
+    payload["balance_before_usd"] = balance_before
+    payload["balance_after_usd"] = balance_after
+    return payload
 
 
 @router.patch("/treasury/operations/{op_id}")
@@ -960,6 +1021,11 @@ async def update_treasury_operation(
     op = await db.get(BalanceOperation, op_id)
     if not op:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Treasury operation not found")
+    if not op.is_manual:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Broker-synced transactions are read-only and cannot be edited",
+        )
     acc = await db.get(TradingAccount, op.account_id)
     div = (acc.currency_divisor if acc and acc.currency_divisor else 1.0)
 

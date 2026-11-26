@@ -1,5 +1,4 @@
 import {
-  Activity,
   Banknote,
   BookOpen,
   Bot,
@@ -18,7 +17,6 @@ import {
   Server,
   Settings,
   ShieldCheck,
-  Sparkles,
   UserRound,
   Users,
   Wrench,
@@ -91,7 +89,6 @@ export function buildSidebarItems(
       label: dict.nav.groupDesk,
       items: [
         { id: "home", title: dict.nav.home, url: "/dashboard/home", icon: Home },
-        { id: "charts", title: dict.nav.charts, url: "/dashboard/charts", icon: Activity },
         { id: "accounts", title: dict.nav.accounts, url: "/dashboard/accounts", icon: Layers },
         { id: "robots", title: dict.nav.robots, url: "/dashboard/robots", icon: Bot },
         { id: "journal", title: dict.nav.journal, url: "/dashboard/journal", icon: BookOpen },
@@ -115,7 +112,6 @@ export function buildSidebarItems(
       items: [
         { id: "news", title: dict.nav.news, url: "/dashboard/news", icon: Newspaper },
         { id: "news-sources", title: dict.nav.newsSources, url: "/dashboard/news/sources", icon: ShieldCheck },
-        { id: "ai", title: dict.nav.ai, url: "/dashboard/ai", icon: Sparkles },
       ],
     },
     {
@@ -143,7 +139,15 @@ export function buildSidebarItems(
     },
   ];
 
-  return groups
+  const orderedGroups =
+    sidebarOrder.length > 0
+      ? applySidebarOrder(
+          groups.map((g) => ({ ...g, _sortId: String(g.id), id: String(g.id) })),
+          sidebarOrder,
+        ).map((g) => ({ id: Number(g._sortId), label: g.label, items: g.items }))
+      : groups;
+
+  return orderedGroups
     .map((group) => ({
       ...group,
       items: applySidebarOrder(

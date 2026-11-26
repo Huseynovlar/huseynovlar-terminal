@@ -1,10 +1,9 @@
-import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Lock, Pencil, Trash2 } from "lucide-react";
 
-import { formatSignedUsd } from "@/components/m5/chart-indicators";
+import { formatSignedUsd, formatUsd } from "@/components/m5/chart-indicators";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,24 +14,30 @@ import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useTerminalStore } from "@/framework/terminal-store";
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import type { TreasuryOp } from "@/routes/(main)/dashboard/treasury/index";
 
 export const Route = createFileRoute("/(main)/dashboard/treasury/$opId/")({
   component: TreasuryDetailPage,
 });
 
+interface TreasuryOpDetail extends TreasuryOp {
+  balance_before_usd?: number | null;
+  balance_after_usd?: number | null;
+}
+
 function TreasuryDetailPage() {
   const { opId } = Route.useParams();
   const { t } = useI18n();
   const navigate = useNavigate();
   const privacyMode = useTerminalStore((s) => s.privacyMode);
-  const [op, setOp] = useState<TreasuryOp | null>(null);
+  const [op, setOp] = useState<TreasuryOpDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
-    apiRequest<TreasuryOp>(`/treasury/operations/${encodeURIComponent(opId)}`)
+    apiRequest<TreasuryOpDetail>(`/treasury/operations/${encodeURIComponent(opId)}`)
       .then(setOp)
       .catch((err) => notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
@@ -64,6 +69,7 @@ function TreasuryDetailPage() {
   return (
     <TerminalPageShell
       title={`${t.treasury.detailTitle}`}
+      subtitle={`ID: ${op.id}`}
       badge={op.op_kind}
       actions={
         <>
@@ -71,29 +77,68 @@ function TreasuryDetailPage() {
             <ArrowLeft className="mr-1.5 size-3.5" />
             {t.common.backToList}
           </Link>
-          <Link to="/dashboard/treasury/$opId/edit" params={{ opId: op.id }} className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent">
-            <Pencil className="mr-1.5 size-3.5" />
-            {t.common.edit}
-          </Link>
-          <Button size="sm" variant="destructive" onClick={() => setDeleteOpen(true)}>
-            <Trash2 className="mr-1.5 size-3.5" />
-            {t.common.delete}
-          </Button>
+          {op.is_manual ? (
+            <>
+              <Link to="/dashboard/treasury/$opId/edit" params={{ opId: op.id }} className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent">
+                <Pencil className="mr-1.5 size-3.5" />
+                {t.common.edit}
+              </Link>
+              <Button size="sm" variant="destructive" onClick={() => setDeleteOpen(true)}>
+                <Trash2 className="mr-1.5 size-3.5" />
+                {t.common.delete}
+              </Button>
+            </>
+          ) : (
+            <Badge variant="secondary" className="gap-1 font-mono text-[10px]">
+              <Lock className="size-3" />
+              Broker-synced (Read-Only)
+            </Badge>
+          )}
         </>
       }
     >
-      <Card className="max-w-xl border-border/70">
+      <Card className="max-w-2xl border-border/70">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center justify-between text-sm">
             <span>{op.account_name || op.account_login}</span>
             <Badge variant="outline">{op.op_kind}</Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-xs">
-          <div><span className="text-muted-foreground">Amount USD:</span> <span className="font-mono font-bold">{formatSignedUsd(op.amount_usd, privacyMode)}</span></div>
-          <div><span className="text-muted-foreground">Timestamp:</span> <span className="font-mono">{formatTerminalDateTime(op.timestamp)}</span></div>
-          <div><span className="text-muted-foreground">Comment:</span> {op.comment || "—"}</div>
-          <div><span className="text-muted-foreground">Notes:</span> {op.notes || "—"}</div>
+        <CardContent className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <div className="text-muted-foreground">ID</div>
+            <div className="font-mono break-all">{op.id}</div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Balance Before</div>
+            <div className="font-mono text-sm font-semibold tabular-nums">
+              {op.balance_before_usd != null ? formatUsd(op.balance_before_usd, privacyMode) : "—"}
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Balance After</div>
+            <div className="font-mono text-sm font-semibold tabular-nums">
+              {op.balance_after_usd != null ? formatUsd(op.balance_after_usd, privacyMode) : "—"}
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Amount USD</div>
+            <div className={`font-mono text-sm font-bold tabular-nums ${op.amount_usd >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+              {formatSignedUsd(op.amount_usd, privacyMode)}
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Timestamp (UTC)</div>
+            <div className="font-mono tabular-nums">{formatTerminalDateTime(op.timestamp)}</div>
+          </div>
+          <div className="sm:col-span-2">
+            <div className="text-muted-foreground">Comment</div>
+            <div>{op.comment || "—"}</div>
+          </div>
+          <div className="sm:col-span-2">
+            <div className="text-muted-foreground">Notes</div>
+            <div>{op.notes || "—"}</div>
+          </div>
         </CardContent>
       </Card>
 

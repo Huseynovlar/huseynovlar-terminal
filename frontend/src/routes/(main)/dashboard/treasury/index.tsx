@@ -1,8 +1,7 @@
-import { formatTerminalDateTime } from "@/framework/use-utc-clock";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Eye, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { Eye, Lock, Pencil, Plus, RefreshCw, Save, Search, Trash2 } from "lucide-react";
 
 import { formatSignedUsd, formatUsd } from "@/components/m5/chart-indicators";
 import { AsyncButton } from "@/components/ui/async-button";
@@ -11,12 +10,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useTerminalStore } from "@/framework/terminal-store";
+import { useLiveEvents } from "@/framework/use-live-socket";
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 
 export const Route = createFileRoute("/(main)/dashboard/treasury/")({
   component: TreasuryListPage,
@@ -60,26 +62,32 @@ function TreasuryListPage() {
 
   const [report, setReport] = useState<TreasuryReport | null>(null);
   const [targetInput, setTargetInput] = useState(String(vaultTargetUsd || 500));
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TreasuryOp | null>(null);
 
-  const loadReport = useCallback(async () => {
-    setLoading(true);
+  const loadReport = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const target = Math.max(1, Number(vaultTargetUsd) || 500);
       const res = await apiRequest<TreasuryReport>(`/analytics/treasury?vault_target_usd=${target}`);
       setReport(res);
     } catch (err) {
-      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+      if (!silent) notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
   }, [t.common.errorTitle, vaultTargetUsd]);
 
   useEffect(() => {
-    void loadReport();
+    void loadReport(false);
   }, [loadReport]);
+
+  useLiveEvents(["snapshot", "trade_event"], () => {
+    void loadReport(true);
+  });
 
   useEffect(() => {
     setTargetInput(String(vaultTargetUsd || 500));
@@ -102,7 +110,7 @@ function TreasuryListPage() {
       await apiRequest(`/treasury/operations/${encodeURIComponent(deleteTarget.id)}`, { method: "DELETE" });
       notify.success(t.common.deletedSuccess, deleteTarget.op_kind);
       setDeleteTarget(null);
-      await loadReport();
+      await loadReport(true);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
@@ -111,28 +119,34 @@ function TreasuryListPage() {
   }
 
   const s = report?.summary;
-  const ops = report?.operations ?? [];
+  const allOps = report?.operations ?? [];
+  const filteredOps = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allOps;
+    return allOps.filter(
+      (op) =>
+        op.id.toLowerCase().includes(q) ||
+        (op.account_name || "").toLowerCase().includes(q) ||
+        (op.account_login || "").toLowerCase().includes(q) ||
+        (op.op_kind || "").toLowerCase().includes(q) ||
+        (op.comment || "").toLowerCase().includes(q) ||
+        (op.notes || "").toLowerCase().includes(q),
+    );
+  }, [allOps, search]);
+
+  const pagedOps = useMemo(
+    () => filteredOps.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE),
+    [filteredOps, page],
+  );
 
   return (
     <TerminalPageShell
       title={t.treasury.title}
       subtitle={t.treasury.subtitle}
+      badge={`${filteredOps.length}`}
       actions={
         <>
-          <div className="flex items-center gap-1.5">
-            <Input
-              type="number"
-              value={targetInput}
-              onChange={(e) => setTargetInput(e.target.value)}
-              className="h-8 w-28 font-mono text-xs"
-              aria-label={t.treasury.vaultTarget}
-            />
-            <Button size="sm" variant="outline" onClick={handleSaveTarget}>
-              <Save className="mr-1 size-3.5" />
-              {t.treasury.saveTarget}
-            </Button>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => void loadReport()}>
+          <Button size="sm" variant="outline" onClick={() => void loadReport(false)}>
             <RefreshCw className="mr-1.5 size-3.5" />
             {t.common.refresh}
           </Button>
@@ -147,14 +161,37 @@ function TreasuryListPage() {
       }
     >
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t.treasury.workingCapital}</div><div className="mt-1 font-mono text-lg font-bold">{formatUsd(s?.working_capital_usd, privacyMode)}</div></CardContent></Card>
-        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t.treasury.deposited}</div><div className="mt-1 font-mono text-lg font-bold">{formatUsd(s?.total_deposited_usd, privacyMode)}</div></CardContent></Card>
-        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t.treasury.withdrawn}</div><div className="mt-1 font-mono text-lg font-bold">{formatUsd(s?.total_withdrawn_usd, privacyMode)}</div></CardContent></Card>
-        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t.treasury.inVault}</div><div className="mt-1 font-mono text-lg font-bold text-emerald-500">{formatUsd(s?.total_vault_usd, privacyMode)}</div></CardContent></Card>
-        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t.treasury.readyForVault}</div><div className="mt-1 font-mono text-lg font-bold text-primary">{formatUsd(s?.profit_ready_for_vault_usd, privacyMode)}</div><div className="text-[10px] text-muted-foreground">Target: {formatUsd(s?.vault_target_usd, privacyMode)}</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t.treasury.workingCapital}</div><div className="mt-1 font-mono text-base font-bold tabular-nums">{formatUsd(s?.working_capital_usd, privacyMode)}</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t.treasury.deposited}</div><div className="mt-1 font-mono text-base font-bold text-emerald-500 tabular-nums">{formatUsd(s?.total_deposited_usd, privacyMode)}</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t.treasury.withdrawn}</div><div className="mt-1 font-mono text-base font-bold text-rose-500 tabular-nums">{formatUsd(s?.total_withdrawn_usd, privacyMode)}</div></CardContent></Card>
+        <Card><CardContent className="p-3"><div className="text-[11px] text-muted-foreground">{t.treasury.inVault}</div><div className="mt-1 font-mono text-base font-bold tabular-nums">{formatUsd(s?.total_vault_usd, privacyMode)}</div></CardContent></Card>
+        <Card>
+          <CardContent className="p-3">
+            <div className="text-[11px] text-muted-foreground">{t.treasury.vaultTarget}</div>
+            <div className="mt-1 flex items-center gap-1.5">
+              <Input value={targetInput} onChange={(e) => setTargetInput(e.target.value)} className="h-7 font-mono text-xs" />
+              <Button size="sm" variant="outline" className="h-7 px-2" onClick={handleSaveTarget}>
+                <Save className="size-3.5" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {loading ? (
+      <div className="relative max-w-md">
+        <Search className="text-muted-foreground pointer-events-none absolute top-2.5 left-2.5 size-4" />
+        <Input
+          className="pl-8 font-mono text-xs"
+          placeholder="Search by ID, account, operation type, comment..."
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+        />
+      </div>
+
+      {loading && !report ? (
         <TableSkeleton rows={6} cols={7} />
       ) : (
         <Card className="border-border/70">
@@ -163,7 +200,7 @@ function TreasuryListPage() {
               <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-medium">ID</th>
-                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Timestamp (UTC)</th>
                   <th className="px-3 py-2">Account</th>
                   <th className="px-3 py-2">Kind</th>
                   <th className="px-3 py-2">Comment / Notes</th>
@@ -172,39 +209,51 @@ function TreasuryListPage() {
                 </tr>
               </thead>
               <tbody>
-                {ops.length === 0 ? (
+                {pagedOps.length === 0 ? (
                   <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">{t.common.noData}</td></tr>
                 ) : (
-                  ops.map((op) => (
+                  pagedOps.map((op) => (
                     <tr key={op.id} className="border-b border-border/40 hover:bg-muted/20">
-                    <td className="px-3 py-2 font-mono text-[11px]">
-                      <Link
-                        to="/dashboard/treasury/$opId"
-                        params={{ opId: op.id }}
-                        title={String(op.id)}
-                        className="text-primary hover:underline"
-                      >
-                        {String(op.id).slice(0, 8)}
-                      </Link>
-                    </td>
-                      <td className="px-3 py-2 font-mono">{formatTerminalDateTime(op.timestamp)}</td>
+                      <td className="px-3 py-2 font-mono text-[11px]">
+                        <Link
+                          to="/dashboard/treasury/$opId"
+                          params={{ opId: op.id }}
+                          title={String(op.id)}
+                          className="text-primary hover:underline"
+                        >
+                          {String(op.id).slice(0, 8)}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2 font-mono tabular-nums">{formatTerminalDateTime(op.timestamp)}</td>
                       <td className="px-3 py-2">{op.account_name || op.account_login}</td>
-                      <td className="px-3 py-2"><Badge variant="outline" className="font-mono text-[10px]">{op.op_kind}</Badge></td>
+                      <td className="px-3 py-2">
+                        <Badge variant="outline" className="font-mono text-[10px]">
+                          {op.op_kind}
+                        </Badge>
+                      </td>
                       <td className="px-3 py-2 text-muted-foreground">{op.comment || op.notes || "—"}</td>
-                      <td className={`px-3 py-2 text-right font-mono font-semibold ${op.amount_usd >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                      <td className={`px-3 py-2 text-right font-mono font-semibold tabular-nums ${op.amount_usd >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
                         {formatSignedUsd(op.amount_usd, privacyMode)}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <div className="flex justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1">
                           <Link to="/dashboard/treasury/$opId" params={{ opId: op.id }} className="inline-flex h-7 items-center rounded-md border border-input px-2 hover:bg-accent">
                             <Eye className="size-3.5" />
                           </Link>
-                          <Link to="/dashboard/treasury/$opId/edit" params={{ opId: op.id }} className="inline-flex h-7 items-center rounded-md border border-input px-2 hover:bg-accent">
-                            <Pencil className="size-3.5" />
-                          </Link>
-                          <AsyncButton size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => setDeleteTarget(op)}>
-                            <Trash2 className="size-3.5" />
-                          </AsyncButton>
+                          {op.is_manual ? (
+                            <>
+                              <Link to="/dashboard/treasury/$opId/edit" params={{ opId: op.id }} className="inline-flex h-7 items-center rounded-md border border-input px-2 hover:bg-accent">
+                                <Pencil className="size-3.5" />
+                              </Link>
+                              <AsyncButton size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => setDeleteTarget(op)}>
+                                <Trash2 className="size-3.5" />
+                              </AsyncButton>
+                            </>
+                          ) : (
+                            <span title="Broker-synced transaction (read-only)" className="text-muted-foreground inline-flex h-7 items-center px-1.5">
+                              <Lock className="size-3" />
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -212,6 +261,7 @@ function TreasuryListPage() {
                 )}
               </tbody>
             </table>
+            <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={filteredOps.length} onPage={setPage} />
           </CardContent>
         </Card>
       )}

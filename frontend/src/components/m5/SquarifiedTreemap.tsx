@@ -20,6 +20,7 @@ import { apiRequest } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { useI18n } from "@/framework/i18n";
 import { useTerminalStore } from "@/framework/terminal-store";
+import { useLiveEvents } from "@/framework/use-live-socket";
 import { SearchSelect } from "@/components/ui/search-select";
 
 export type TreemapUniverse =
@@ -85,8 +86,8 @@ export function SquarifiedTreemap({ fullPage = true }: { fullPage?: boolean }) {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<(TreemapItem & { sectorName: string }) | null>(null);
 
-  const loadTreemap = useCallback(async () => {
-    setLoading(true);
+  const loadTreemap = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const qs = new URLSearchParams({
         universe,
@@ -98,16 +99,22 @@ export function SquarifiedTreemap({ fullPage = true }: { fullPage?: boolean }) {
       const res = await apiRequest<TreemapResponse>(`/intelligence/treemap?${qs.toString()}`);
       setData(res);
     } catch (err) {
-      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
-      setData(null);
+      if (!silent) {
+        notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+        setData(null);
+      }
     } finally {
       setLoading(false);
     }
   }, [period, searchQuery, sectorFilter, sizeBy, t.common.errorTitle, universe]);
 
   useEffect(() => {
-    void loadTreemap();
+    void loadTreemap(false);
   }, [loadTreemap]);
+
+  useLiveEvents("macro_quotes", () => {
+    void loadTreemap(true);
+  });
 
   const updateFilters = (patch: Partial<{ universe: TreemapUniverse; period: TreemapPeriod; size_by: TreemapSizeBy; sector: string }>) => {
     const next = {
@@ -277,7 +284,7 @@ export function SquarifiedTreemap({ fullPage = true }: { fullPage?: boolean }) {
             </div>
           ) : (
             <div
-              className="relative w-full overflow-hidden rounded-lg border border-border/70 bg-zinc-950/80"
+              className="relative w-full overflow-hidden rounded-lg border border-border/70 bg-muted/40 dark:bg-zinc-950/80"
               style={{ height: canvasHeight, minHeight: 420 }}
             >
               {sectorRects.map((secRect) => {
@@ -290,7 +297,7 @@ export function SquarifiedTreemap({ fullPage = true }: { fullPage?: boolean }) {
                 return (
                   <div
                     key={sec.sector}
-                    className="absolute overflow-hidden border border-zinc-950/90 p-0.5"
+                    className="absolute overflow-hidden border border-border/80 dark:border-zinc-950/90 p-0.5"
                     style={{
                       left: `${secRect.x}%`,
                       top: `${secRect.y}%`,
@@ -299,7 +306,7 @@ export function SquarifiedTreemap({ fullPage = true }: { fullPage?: boolean }) {
                     }}
                   >
                     <div className="flex h-full flex-col">
-                      <div className="truncate bg-zinc-900/95 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
+                      <div className="truncate bg-muted/90 dark:bg-zinc-900/95 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-foreground dark:text-zinc-300">
                         {sec.sector}
                       </div>
                       <div className="relative flex-1">

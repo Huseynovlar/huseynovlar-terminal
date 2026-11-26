@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Save } from "lucide-react";
@@ -7,19 +7,28 @@ import { AsyncButton } from "@/components/ui/async-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchSelect } from "@/components/ui/search-select";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
-import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/hubs/new")({
   component: HubCreatePage,
 });
 
+interface AccountOpt {
+  id: string;
+  name: string;
+  mt5_login: string;
+  currency?: string;
+}
+
 function HubCreatePage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const [accounts, setAccounts] = useState<AccountOpt[]>([]);
+  const [linkedAccountId, setLinkedAccountId] = useState("");
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [group, setGroup] = useState("metals");
@@ -27,12 +36,22 @@ function HubCreatePage() {
   const [newsTags, setNewsTags] = useState("");
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    apiRequest<AccountOpt[]>("/accounts")
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : [];
+        setAccounts(list);
+        if (list.length > 0) setLinkedAccountId(list[0].id);
+      })
+      .catch(() => {});
+  }, []);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
       const cleanCode = code.trim().toUpperCase();
-      await apiRequest("/assets", {
+      const created = await apiRequest<{ id: string; code: string }>("/assets", {
         method: "POST",
         body: JSON.stringify({
           code: cleanCode,
@@ -49,6 +68,12 @@ function HubCreatePage() {
             .filter(Boolean),
         }),
       });
+      if (linkedAccountId && created?.id) {
+        await apiRequest(`/accounts/${encodeURIComponent(linkedAccountId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ primary_asset_id: created.id }),
+        }).catch(() => {});
+      }
       notify.success(t.common.createdSuccess, cleanCode);
       void navigate({ to: "/dashboard/hubs/$code", params: { code: cleanCode } });
     } catch (err) {
@@ -74,6 +99,22 @@ function HubCreatePage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="h-account">Linked MT5 Trading Account</Label>
+              <SearchSelect
+                id="h-account"
+                value={linkedAccountId}
+                onChange={(e) => setLinkedAccountId(e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs"
+              >
+                <option value="">— No account linked —</option>
+                {accounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name} — MT5 #{acc.mt5_login} ({acc.currency || "USD"})
+                  </option>
+                ))}
+              </SearchSelect>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="h-code">Asset Code</Label>
