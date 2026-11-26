@@ -33,14 +33,23 @@ export function TerminalHeaderControls() {
 
   const wsDotColor =
     status === "live"
-      ? "bg-emerald-500"
+      ? "bg-emerald-500 animate-pulse"
       : status === "connecting" || status === "reconnecting"
         ? "bg-amber-500 animate-pulse"
         : "bg-destructive";
 
+  const livePhrase =
+    language === "en" ? "Real-time" : language === "az" ? "Real vaxt" : "В реальном времени";
+  const liveTooltip =
+    language === "en"
+      ? "All data streams in real time via WebSocket push (zero polling)"
+      : language === "az"
+        ? "Bütün məlumatlar WebSocket push ilə real vaxtda yenilənir"
+        : "Данные обновляются в реальном времени по WebSocket без периодических опросов";
+
   const wsLabel =
     status === "live"
-      ? `${t.header.wsLive}${rttMs !== null ? ` • ${rttMs}ms` : ""}`
+      ? `${livePhrase}${rttMs !== null ? ` • ${rttMs}ms` : ""}`
       : status === "connecting"
         ? t.header.wsConnecting
         : status === "reconnecting"
@@ -50,10 +59,15 @@ export function TerminalHeaderControls() {
   return (
     <div className="hidden items-center gap-1.5 md:flex">
       <div
-        className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 font-mono text-[10px] font-semibold tracking-wider tabular-nums ${wsBadgeColor}`}
-        title={wsLabel}
+        className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 font-mono text-[10px] font-semibold tracking-wide tabular-nums ${wsBadgeColor}`}
+        title={liveTooltip}
       >
-        <span className={`size-1.5 rounded-full ${wsDotColor}`} />
+        <span className="relative flex size-2">
+          {status === "live" ? (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+          ) : null}
+          <span className={`relative inline-flex size-2 rounded-full ${wsDotColor}`} />
+        </span>
         <span>{wsLabel}</span>
       </div>
 

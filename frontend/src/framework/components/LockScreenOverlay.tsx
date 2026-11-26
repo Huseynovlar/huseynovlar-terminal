@@ -2,20 +2,17 @@ import { type FormEvent, useState } from "react";
 
 import { Fingerprint, KeyRound, Lock, LogOut, ShieldAlert } from "lucide-react";
 
-import { AppLogo } from "@/components/app-logo";
 import { AsyncButton } from "@/components/ui/async-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { notify } from "@/components/ui/toast";
-import { APP_CONFIG } from "@/config/app-config";
 import { authApi, setAccessToken } from "@/framework/api-client";
+import { AuthShowcasePanel } from "@/framework/components/AuthShowcasePanel";
 import { useI18n } from "@/framework/i18n";
 import { useTerminalStore } from "@/framework/terminal-store";
 import { formatTerminalClock, useUtcClock } from "@/framework/use-utc-clock";
 import { prepareRequestOptions, serializeCredential } from "@/framework/webauthn";
-
-import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
 export interface LockScreenUser {
   id: string;
@@ -29,14 +26,12 @@ export interface LockScreenUser {
  */
 export function LockScreenOverlay({ user }: { user: LockScreenUser }) {
   const { t } = useI18n();
-  const themeMode = usePreferencesStore((s) => s.values.theme_mode);
   const screenLocked = useTerminalStore((s) => s.screenLocked);
   const setScreenLocked = useTerminalStore((s) => s.setScreenLocked);
   const timezone = useTerminalStore((s) => s.timezone);
   const timeFormat = useTerminalStore((s) => s.timeFormat);
   const now = useUtcClock(1000);
   const clock = formatTerminalClock(now, timezone, timeFormat);
-  const previewSrc = themeMode === "light" ? "/login-preview-light.png" : "/login-preview-dark.png";
 
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
@@ -44,7 +39,6 @@ export function LockScreenOverlay({ user }: { user: LockScreenUser }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
-  const [imgFailed, setImgFailed] = useState(false);
 
   if (!screenLocked) return null;
 
@@ -115,46 +109,7 @@ export function LockScreenOverlay({ user }: { user: LockScreenUser }) {
   return (
     <div className="bg-background fixed inset-0 z-[100] grid h-dvh p-2 lg:grid-cols-2">
       {/* Right branded panel identical to Login Screen */}
-      <div className="bg-primary relative order-2 hidden h-full flex-col justify-between overflow-hidden rounded-2xl p-10 lg:flex">
-        <div className="text-primary-foreground space-y-2">
-          <div className="flex items-center gap-2.5">
-            <AppLogo className="size-7" />
-            <span className="border-primary-foreground/25 rounded border px-2 py-0.5 font-mono text-[11px] tracking-wide">
-              {APP_CONFIG.domain}
-            </span>
-          </div>
-          <h1 className="pt-2 text-2xl font-semibold tracking-tight">{t.auth.brandTitle}</h1>
-          <p className="text-primary-foreground/80 max-w-md text-xs leading-relaxed">{t.auth.brandSubtitle}</p>
-        </div>
-
-        <div className="my-6 flex flex-1 items-center justify-center">
-          {!imgFailed ? (
-            <div className="w-full overflow-hidden rounded-xl border border-primary-foreground/20 bg-black/25 shadow-2xl">
-              <img
-                src={previewSrc}
-                alt={APP_CONFIG.name}
-                className="h-auto max-h-[58vh] w-full object-cover object-top"
-                onError={() => setImgFailed(true)}
-              />
-            </div>
-          ) : (
-            <div className="flex h-64 w-full flex-col items-center justify-center rounded-xl border border-primary-foreground/20 bg-black/15 p-6 text-center text-primary-foreground/75">
-              <AppLogo className="mb-3 size-10 opacity-80" />
-              <div className="font-mono text-xs">{APP_CONFIG.name}</div>
-              <div className="mt-1 font-mono text-lg tabular-nums">
-                {clock.time} {clock.label}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="text-primary-foreground/70 flex items-center justify-between border-t border-primary-foreground/15 pt-4 font-mono text-[11px]">
-          <span>{APP_CONFIG.name}</span>
-          <span className="tabular-nums">
-            {clock.time} {clock.label}
-          </span>
-        </div>
-      </div>
+      <AuthShowcasePanel footerRight={`${clock.time} ${clock.label}`} />
 
       {/* Left unlock panel matching Login Screen */}
       <div className="relative order-1 flex h-full items-center justify-center p-6">

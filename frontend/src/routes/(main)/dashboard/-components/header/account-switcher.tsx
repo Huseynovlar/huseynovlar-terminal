@@ -14,13 +14,15 @@ import { notify } from "@/components/ui/toast";
 import { authApi } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { useAuthImage } from "@/framework/use-auth-image";
+import { useLiveSocket } from "@/framework/use-live-socket";
 import { useTerminalStore } from "@/framework/terminal-store";
 import { getInitials } from "@/lib/utils";
 
 import type { CurrentTerminalUser } from "../sidebar/app-sidebar";
 
 export function AccountSwitcher({ user }: { readonly user: CurrentTerminalUser }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const { status: wsStatus, rttMs } = useLiveSocket();
   const profileAvatarUrl = useTerminalStore((s) => s.profileAvatarUrl);
   const livePortfolio = useTerminalStore((s) => s.livePortfolio);
   const privacyMode = useTerminalStore((s) => s.privacyMode);
@@ -41,6 +43,13 @@ export function AccountSwitcher({ user }: { readonly user: CurrentTerminalUser }
     privacyMode
       ? "••••••"
       : `$${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const realtimeCaption =
+    language === "en"
+      ? "Real-time WebSocket"
+      : language === "az"
+        ? "Real vaxt WebSocket"
+        : "В реальном времени";
 
   return (
     <DropdownMenu>
@@ -63,7 +72,20 @@ export function AccountSwitcher({ user }: { readonly user: CurrentTerminalUser }
           <div className="mx-1.5 rounded-md border border-border/60 bg-muted/40 px-2.5 py-2 text-xs">
             <div className="flex items-center justify-between text-[10px] text-muted-foreground">
               <span>{t.home.balance}</span>
-              <span className="font-mono text-emerald-500">WS LIVE</span>
+              <span
+                className={`inline-flex items-center gap-1 font-mono ${
+                  wsStatus === "live" ? "text-emerald-500" : "text-amber-500"
+                }`}
+              >
+                <span
+                  className={`size-1.5 rounded-full ${
+                    wsStatus === "live" ? "animate-pulse bg-emerald-500" : "bg-amber-500"
+                  }`}
+                />
+                {wsStatus === "live"
+                  ? `${realtimeCaption}${rttMs !== null ? ` • ${rttMs}ms` : ""}`
+                  : t.header.wsReconnecting}
+              </span>
             </div>
             <div className="mt-0.5 font-mono text-sm font-bold tabular-nums">
               {fmtMoney(livePortfolio.total_balance_usd)}
