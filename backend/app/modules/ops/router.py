@@ -301,6 +301,9 @@ async def list_managed_containers(
                     "linked_accounts": linked_by_cid.get(ref.id, []),
                 }
             )
+    for item in out:
+        cname = item.get("container_name") or item.get("name")
+        item["network_cmd"] = f"sudo docker network connect exness_mt5_ingest {cname}"
     return page.apply(out)
 
 

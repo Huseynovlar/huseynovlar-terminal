@@ -42,6 +42,7 @@ interface ContainerItem {
   status?: string;
   cpu_pct?: number | null;
   mem_mb?: number | null;
+  network_cmd?: string;
 }
 
 interface AccountOption {
@@ -205,6 +206,20 @@ function ContainersListPage() {
                         <div className="font-mono">{c.mem_mb != null ? `${Math.round(c.mem_mb)} MB` : "—"}</div>
                       </div>
                     </div>
+
+                    {c.network_cmd ? (
+                      <button
+                        type="button"
+                        title="Copy"
+                        className="bg-muted/40 hover:bg-muted w-full truncate rounded-md px-2 py-1 text-left font-mono text-[10px]"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(c.network_cmd ?? "");
+                          notify.success(t.common.savedSuccess);
+                        }}
+                      >
+                        {c.network_cmd}
+                      </button>
+                    ) : null}
 
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap gap-1.5">
