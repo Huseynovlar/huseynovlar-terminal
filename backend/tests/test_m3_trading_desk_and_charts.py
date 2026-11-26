@@ -314,4 +314,22 @@ def test_websocket_live_auth_welcome_and_ping_pong():
             assert pong["type"] == "pong"
             assert pong["client_ts"] == now_ms
 
+            # Multiplexed WebSocket RPC -> executes internal API route with zero HTTP fetch
+            ws.send_json({"type": "rpc", "id": "rpc_test_1", "method": "GET", "path": "/profile/me"})
+            rpc_me = ws.receive_json()
+            assert rpc_me["type"] == "rpc_response"
+            assert rpc_me["id"] == "rpc_test_1"
+            assert rpc_me["ok"] is True
+            assert rpc_me["status"] == 200
+            assert rpc_me["data"]["username"] == "owner"
+
+            ws.send_json(
+                {"type": "rpc", "id": "rpc_test_2", "method": "GET", "path": "/assets/tickers?limit=5&offset=0"}
+            )
+            rpc_tk = ws.receive_json()
+            assert rpc_tk["type"] == "rpc_response"
+            assert rpc_tk["ok"] is True
+            assert int(rpc_tk["headers"]["x-total-count"]) > 0
+            assert len(rpc_tk["data"]) == 5
+
     asyncio.run(engine.dispose())

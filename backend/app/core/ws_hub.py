@@ -141,18 +141,103 @@ class LiveWebSocketHub:
             await self.disconnect(ws)
             return False
 
+    async def _dispatch_rpc(self, ws: WebSocket, parsed: dict[str, Any]) -> None:
+        """Execute an internal API call over WebSocket (zero HTTP fetch from browser) via in-memory ASGI."""
+        req_id = str(parsed.get("id") or "")
+        if not req_id:
+            return
+        method = str(parsed.get("method") or "GET").upper()
+        raw_path = str(parsed.get("path") or "/")
+        if not raw_path.startswith("/api/"):
+            raw_path = f"/api/v1{raw_path if raw_path.startswith('/') else '/' + raw_path}"
+
+        req_headers: dict[str, str] = {}
+        client_headers = parsed.get("headers")
+        if isinstance(client_headers, dict):
+            for k, v in client_headers.items():
+                if isinstance(k, str) and isinstance(v, str):
+                    req_headers[k] = v
+
+        # Forward cookies & Bearer token from the authenticated WebSocket if not overridden
+        cookie_header = ws.headers.get("cookie")
+        if cookie_header and "cookie" not in {k.lower() for k in req_headers}:
+            req_headers["cookie"] = cookie_header
+        if "authorization" not in {k.lower() for k in req_headers}:
+            ws_token = ws.cookies.get("ht_access_token") or ws.query_params.get("token")
+            if ws_token:
+                req_headers["Authorization"] = f"Bearer {ws_token}"
+
+        body_raw = parsed.get("body")
+        content_bytes: bytes | None = None
+        if isinstance(body_raw, str):
+            content_bytes = body_raw.encode("utf-8")
+            if "content-type" not in {k.lower() for k in req_headers}:
+                req_headers["Content-Type"] = "application/json"
+        elif body_raw is not None:
+            content_bytes = json.dumps(body_raw, ensure_ascii=False).encode("utf-8")
+            req_headers["Content-Type"] = "application/json"
+
+        try:
+            import httpx
+
+            client_host = ws.client.host if ws.client else "127.0.0.1"
+            transport = httpx.ASGITransport(app=ws.app, client=(client_host, 0))
+            async with httpx.AsyncClient(transport=transport, base_url="http://ws.internal") as client:
+                resp = await client.request(
+                    method=method,
+                    url=raw_path,
+                    headers=req_headers,
+                    content=content_bytes,
+                )
+
+            out_headers = {
+                k.lower(): v
+                for k, v in resp.headers.items()
+                if k.lower() in ("x-total-count", "content-type", "retry-after")
+            }
+            data: Any = None
+            if resp.status_code != 204 and resp.content:
+                try:
+                    data = resp.json()
+                except Exception:
+                    data = resp.text
+
+            reply = {
+                "type": "rpc_response",
+                "id": req_id,
+                "status": resp.status_code,
+                "ok": 200 <= resp.status_code < 300,
+                "headers": out_headers,
+                "data": data,
+            }
+        except Exception as exc:
+            reply = {
+                "type": "rpc_response",
+                "id": req_id,
+                "status": 500,
+                "ok": False,
+                "headers": {},
+                "data": {"detail": str(exc)},
+            }
+
+        with contextlib.suppress(Exception):
+            await ws.send_json(reply)
+
     async def handle_client_message(self, ws: WebSocket, raw_text: str) -> None:
-        """Handle client ping frames and reply with pong + server timestamp for RTT calculation."""
+        """Handle client ping frames and multiplexed RPC requests over WebSocket."""
         text = raw_text.strip()
         if not text:
             return
         client_ts: Any = None
         msg_type = text.lower()
+        parsed: dict[str, Any] | None = None
         if text.startswith("{"):
             try:
-                parsed = json.loads(text)
-                msg_type = str(parsed.get("type", "")).lower()
-                client_ts = parsed.get("ts") or parsed.get("client_ts")
+                obj = json.loads(text)
+                if isinstance(obj, dict):
+                    parsed = obj
+                    msg_type = str(obj.get("type", "")).lower()
+                    client_ts = obj.get("ts") or obj.get("client_ts")
             except json.JSONDecodeError:
                 return
         if msg_type == "ping":
@@ -166,6 +251,8 @@ class LiveWebSocketHub:
                 pong["client_ts"] = client_ts
             with contextlib.suppress(Exception):
                 await ws.send_json(pong)
+        elif msg_type == "rpc" and parsed is not None:
+            asyncio.create_task(self._dispatch_rpc(ws, parsed))
 
     async def run_heartbeat_loop(self, ws: WebSocket, interval_sec: float = 10.0) -> None:
         while True:

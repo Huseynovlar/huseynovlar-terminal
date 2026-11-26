@@ -1,6 +1,6 @@
 import { createContext, createElement, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-import { getAccessToken } from "@/framework/api-client";
+import { getAccessToken, handleWsRpcResponse, registerWsRpcSocket } from "@/framework/api-client";
 import { soundEngine } from "@/framework/sound-engine";
 import { useTerminalStore } from "@/framework/terminal-store";
 
@@ -86,6 +86,7 @@ export function LiveSocketProvider({ children }: { children: ReactNode }) {
             return;
           }
           attempt = 0;
+          registerWsRpcSocket(socket);
           setConnected(true);
           setStatus("live");
           pingSentAtRef.current = performance.now();
@@ -107,6 +108,7 @@ export function LiveSocketProvider({ children }: { children: ReactNode }) {
         };
 
         socket.onclose = (ev) => {
+          registerWsRpcSocket(null);
           setConnected(false);
           if (pingTimer !== undefined) window.clearInterval(pingTimer);
           if (!disposed) {
@@ -139,6 +141,9 @@ export function LiveSocketProvider({ children }: { children: ReactNode }) {
         socket.onmessage = (msg) => {
           try {
             const raw = JSON.parse(msg.data) as LiveWsEvent;
+            if (handleWsRpcResponse(raw as Record<string, unknown>)) {
+              return;
+            }
             const evt: LiveWsEvent = {
               ...raw,
               data: raw.data ?? (raw.portfolio ? raw.portfolio : {}),
@@ -211,6 +216,7 @@ export function LiveSocketProvider({ children }: { children: ReactNode }) {
 
     return () => {
       disposed = true;
+      registerWsRpcSocket(null);
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
       if (pingTimer !== undefined) window.clearInterval(pingTimer);
       if (ws && ws.readyState === WebSocket.OPEN) {

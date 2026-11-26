@@ -94,6 +94,105 @@ function buildHeaders(init: RequestInit, token: string | null): Headers {
   return headers;
 }
 
+export interface WsRpcEnvelope {
+  status: number;
+  ok: boolean;
+  headers: Record<string, string>;
+  data: unknown;
+}
+
+interface PendingRpc {
+  resolve: (res: WsRpcEnvelope) => void;
+  reject: (err: Error) => void;
+  timer: number;
+}
+
+let activeRpcSocket: WebSocket | null = null;
+const pendingRpcMap = new Map<string, PendingRpc>();
+let rpcSeq = 0;
+
+/**
+ * Registers the live WebSocket instance from `LiveSocketProvider` so all JSON API calls
+ * (`apiRequest` and `apiRequestPaged`) travel over WebSocket with zero HTTP `fetch()` calls.
+ */
+export function registerWsRpcSocket(ws: WebSocket | null) {
+  activeRpcSocket = ws;
+  if (!ws) {
+    for (const [id, pending] of pendingRpcMap.entries()) {
+      window.clearTimeout(pending.timer);
+      pending.reject(new Error("WebSocket disconnected"));
+      pendingRpcMap.delete(id);
+    }
+  }
+}
+
+export function handleWsRpcResponse(frame: Record<string, unknown>): boolean {
+  if (frame.type !== "rpc_response") return false;
+  const id = String(frame.id ?? "");
+  const pending = pendingRpcMap.get(id);
+  if (!pending) return true;
+  pendingRpcMap.delete(id);
+  window.clearTimeout(pending.timer);
+  pending.resolve({
+    status: Number(frame.status ?? 200),
+    ok: Boolean(frame.ok),
+    headers: (frame.headers as Record<string, string>) ?? {},
+    data: frame.data,
+  });
+  return true;
+}
+
+function canUseWsRpc(path: string, init: RequestInit): boolean {
+  if (typeof window === "undefined") return false;
+  if (!activeRpcSocket || activeRpcSocket.readyState !== WebSocket.OPEN) return false;
+  if (init.body instanceof FormData || init.body instanceof Blob || init.body instanceof ArrayBuffer) return false;
+  // Cookie-setting auth endpoints must use HTTP so browser stores HttpOnly Set-Cookie
+  const clean = path.split("?")[0] ?? path;
+  if (clean.startsWith("/auth/")) return false;
+  return true;
+}
+
+function sendWsRpc(path: string, init: RequestInit = {}): Promise<WsRpcEnvelope> {
+  return new Promise<WsRpcEnvelope>((resolve, reject) => {
+    if (!activeRpcSocket || activeRpcSocket.readyState !== WebSocket.OPEN) {
+      reject(new Error("WebSocket not open"));
+      return;
+    }
+    rpcSeq += 1;
+    const id = `rpc_${Date.now()}_${rpcSeq}`;
+    const headersObj: Record<string, string> = {};
+    const h = buildHeaders(init, getAccessToken());
+    h.forEach((v, k) => {
+      headersObj[k] = v;
+    });
+
+    const timer = window.setTimeout(() => {
+      if (pendingRpcMap.has(id)) {
+        pendingRpcMap.delete(id);
+        reject(new Error("WebSocket RPC timeout"));
+      }
+    }, 20000);
+
+    pendingRpcMap.set(id, { resolve, reject, timer });
+    try {
+      activeRpcSocket.send(
+        JSON.stringify({
+          type: "rpc",
+          id,
+          method: (init.method || "GET").toUpperCase(),
+          path,
+          headers: headersObj,
+          body: typeof init.body === "string" ? init.body : null,
+        }),
+      );
+    } catch (err) {
+      pendingRpcMap.delete(id);
+      window.clearTimeout(timer);
+      reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
+}
+
 export async function apiRequestRaw(path: string, init: RequestInit = {}): Promise<Response> {
   const token = getAccessToken();
   let res = await fetch(`${API_BASE}${path}`, {
@@ -120,7 +219,44 @@ export async function apiRequestRaw(path: string, init: RequestInit = {}): Promi
   return res;
 }
 
+function extractRpcError(status: number, data: unknown): string {
+  if (data && typeof data === "object" && "detail" in data) {
+    const d = (data as { detail?: unknown }).detail;
+    if (typeof d === "string") return d;
+    if (d !== undefined) return JSON.stringify(d);
+  }
+  return `HTTP ${status}`;
+}
+
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (canUseWsRpc(path, init)) {
+    try {
+      let rpcRes = await sendWsRpc(path, init);
+      if (rpcRes.status === 401 && !isAuthNoRefreshPath(path)) {
+        const nextToken = await performSingleFlightRefresh();
+        if (nextToken && canUseWsRpc(path, init)) {
+          rpcRes = await sendWsRpc(path, init);
+        } else if (!nextToken) {
+          clearAccessToken();
+          redirectToLoginIfProtected();
+        }
+      }
+      if (!rpcRes.ok) {
+        throw new Error(extractRpcError(rpcRes.status, rpcRes.data));
+      }
+      if (rpcRes.status === 204) return undefined as T;
+      return rpcRes.data as T;
+    } catch (err) {
+      // Only fall back to HTTP if the WebSocket transport itself dropped mid-flight
+      if (
+        !(err instanceof Error) ||
+        (!err.message.includes("WebSocket") && !err.message.includes("RPC timeout"))
+      ) {
+        throw err;
+      }
+    }
+  }
+
   const res = await apiRequestRaw(path, init);
 
   if (!res.ok) {
@@ -234,10 +370,41 @@ export interface PagedResult<T> {
   total: number;
 }
 
-/** GET a list endpoint that returns a plain array plus X-Total-Count header. */
+/** GET a list endpoint that returns a plain array plus X-Total-Count header (over WebSocket RPC when connected). */
 export async function apiRequestPaged<T>(path: string, page: number, pageSize: number): Promise<PagedResult<T>> {
   const sep = path.includes("?") ? "&" : "?";
-  const res = await apiRequestRaw(`${path}${sep}limit=${pageSize}&offset=${(page - 1) * pageSize}`, { method: "GET" });
+  const fullPath = `${path}${sep}limit=${pageSize}&offset=${(page - 1) * pageSize}`;
+  const init: RequestInit = { method: "GET" };
+
+  if (canUseWsRpc(fullPath, init)) {
+    try {
+      let rpcRes = await sendWsRpc(fullPath, init);
+      if (rpcRes.status === 401 && !isAuthNoRefreshPath(fullPath)) {
+        const nextToken = await performSingleFlightRefresh();
+        if (nextToken && canUseWsRpc(fullPath, init)) {
+          rpcRes = await sendWsRpc(fullPath, init);
+        } else if (!nextToken) {
+          clearAccessToken();
+          redirectToLoginIfProtected();
+        }
+      }
+      if (!rpcRes.ok) {
+        throw new Error(extractRpcError(rpcRes.status, rpcRes.data));
+      }
+      const list = Array.isArray(rpcRes.data) ? (rpcRes.data as T[]) : [];
+      const header = Number(rpcRes.headers["x-total-count"]);
+      return { items: list, total: Number.isFinite(header) && header > 0 ? header : list.length };
+    } catch (err) {
+      if (
+        !(err instanceof Error) ||
+        (!err.message.includes("WebSocket") && !err.message.includes("RPC timeout"))
+      ) {
+        throw err;
+      }
+    }
+  }
+
+  const res = await apiRequestRaw(fullPath, init);
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
     try {
