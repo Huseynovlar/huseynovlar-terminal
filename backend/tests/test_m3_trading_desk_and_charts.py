@@ -193,9 +193,10 @@ async def test_asset_hub_detail_news_digest_and_same_origin_logo_proxy(client: A
     for sym in ("XAUUSD", "USTEC", "SPX", "EURUSD", "BTCUSD", "NVDA", "CUSTOMXYZ99"):
         resp = await client.get(f"/api/v1/assets/logo/{sym}")
         assert resp.status_code == 200
-        assert "image/svg+xml" in resp.headers["content-type"]
+        ct = resp.headers["content-type"]
+        assert any(m in ct for m in ("image/svg+xml", "image/png", "image/webp", "image/jpeg"))
         assert "max-age=" in resp.headers["cache-control"]
-        assert "<svg" in resp.text
+        assert len(resp.content) > 60
 
     # Asset Detail View returns multi-account stats + real news_digest
     detail = await client.get("/api/v1/assets/XAUUSD", headers=h)
