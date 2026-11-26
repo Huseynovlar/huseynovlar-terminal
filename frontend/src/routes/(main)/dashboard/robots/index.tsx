@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Bot, Download, Eye, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Bot, Download, Eye, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import { AsyncButton } from "@/components/ui/async-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
-import { apiDownload, apiRequest } from "@/framework/api-client";
+import { apiDownload, apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
@@ -53,28 +55,45 @@ function RobotsListPage() {
   const clock = formatTerminalClock(now, timezone);
 
   const [robots, setRobots] = useState<RobotItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RobotItem | null>(null);
 
-  const loadRobots = useCallback(async () => {
-    setLoading(true);
-    try {
-      const rows = await apiRequest<RobotItem[]>("/robots");
-      setRobots(Array.isArray(rows) ? rows : []);
-    } catch (err) {
-      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [t.common.errorTitle]);
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setDebouncedQ(query.trim());
+      setPage(1);
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [query]);
+
+  const loadRobots = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const qs = debouncedQ ? `?q=${encodeURIComponent(debouncedQ)}` : "";
+        const res = await apiRequestPaged<RobotItem>(`/robots${qs}`, page, DEFAULT_PAGE_SIZE);
+        setRobots(res.items);
+        setTotal(res.total);
+      } catch (err) {
+        if (!silent) notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [debouncedQ, page, t.common.errorTitle],
+  );
 
   useEffect(() => {
-    void loadRobots();
+    void loadRobots(false);
   }, [loadRobots]);
 
-  useLiveEvents(["robot_state", "snapshot"], () => {
-    void loadRobots();
+  useLiveEvents(["robot_state", "robot_telemetry", "snapshot"], () => {
+    void loadRobots(true);
   });
 
   async function handleDownload(path: string, fallback: string, key: string) {
@@ -96,7 +115,7 @@ function RobotsListPage() {
       await apiRequest(`/robots/${encodeURIComponent(deleteTarget.id)}`, { method: "DELETE" });
       notify.success(t.common.deletedSuccess, deleteTarget.name);
       setDeleteTarget(null);
-      await loadRobots();
+      await loadRobots(false);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
@@ -108,7 +127,7 @@ function RobotsListPage() {
     <TerminalPageShell
       title={t.robots.title}
       subtitle={t.robots.subtitle}
-      badge={`${clock.time} ${clock.label}`}
+      badge={`${total} • ${clock.time} ${clock.label}`}
       actions={
         <>
           <AsyncButton
@@ -131,7 +150,7 @@ function RobotsListPage() {
             <Download className="mr-1.5 size-3.5" />
             {t.robots.downloadHook}
           </AsyncButton>
-          <Button size="sm" variant="outline" onClick={() => void loadRobots()}>
+          <Button size="sm" variant="outline" onClick={() => void loadRobots(false)}>
             <RefreshCw className="mr-1.5 size-3.5" />
             {t.common.refresh}
           </Button>
@@ -145,6 +164,16 @@ function RobotsListPage() {
         </>
       }
     >
+      <div className="relative max-w-sm">
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Поиск по имени, символу, Magic # или ID..."
+          className="h-8 pl-8 text-xs"
+        />
+      </div>
+
       {loading ? (
         <TableSkeleton rows={5} cols={8} />
       ) : robots.length === 0 ? (
@@ -273,6 +302,7 @@ function RobotsListPage() {
                 })}
               </tbody>
             </table>
+            <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
           </CardContent>
         </Card>
       )}

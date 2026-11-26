@@ -26,6 +26,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { useI18n } from "@/framework/i18n";
+import { mapSymbolToOpenWs, normalizeCleanSymbol } from "@/framework/open-market-ws";
 import { useLiveEvents } from "@/framework/use-live-socket";
 
 export const CHART_TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"] as const;
@@ -167,11 +168,31 @@ export function InteractiveChartCanvas({
     void loadBars();
   }, [loadBars]);
 
-  // 3. Subscribe to live WebSocket bar_update events
-  useLiveEvents("bar_update", (evt) => {
+  // 3. Subscribe to live WebSocket bar_update & tick events from Terminal WS
+  useLiveEvents(["bar_update", "tick"], (evt) => {
     const payload = evt.data ?? {};
-    const evtSym = String(payload.symbol ?? payload.asset_code ?? "").toUpperCase();
-    if (!evtSym || evtSym !== cleanSymbol) return;
+    const evtSym = normalizeCleanSymbol(String(payload.symbol ?? payload.asset_code ?? ""));
+    if (!evtSym || evtSym !== normalizeCleanSymbol(cleanSymbol)) return;
+
+    if (evt.type === "tick") {
+      const price = Number(payload.bid ?? payload.price ?? payload.close ?? 0);
+      if (!(price > 0)) return;
+      setBars((prev) => {
+        if (prev.length === 0) return prev;
+        const last = prev[prev.length - 1]!;
+        return [
+          ...prev.slice(0, -1),
+          {
+            ...last,
+            close: price,
+            high: Math.max(last.high, price),
+            low: Math.min(last.low, price),
+          },
+        ];
+      });
+      return;
+    }
+
     const barTime = Number(payload.time ?? 0);
     const close = Number(payload.close ?? 0);
     if (!barTime || !close) return;
@@ -195,6 +216,51 @@ export function InteractiveChartCanvas({
       return prev;
     });
   });
+
+  // 3b. Open Public WebSocket real-time candle tick stream (zero polling, zero API keys)
+  useEffect(() => {
+    const mapped = mapSymbolToOpenWs(cleanSymbol);
+    if (!mapped) return;
+    let disposed = false;
+    let ws: WebSocket | null = null;
+    let lastApply = 0;
+
+    try {
+      ws = new WebSocket(`wss://stream.binance.com:9443/ws/${mapped.streamSym}@aggTrade`);
+      ws.onmessage = (ev) => {
+        if (disposed) return;
+        const now = Date.now();
+        if (now - lastApply < 200) return;
+        lastApply = now;
+        try {
+          const msg = JSON.parse(ev.data) as { p?: string };
+          const price = Number(msg.p ?? 0);
+          if (!(price > 0)) return;
+          setBars((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1]!;
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                close: price,
+                high: Math.max(last.high, price),
+                low: Math.min(last.low, price),
+              },
+            ];
+          });
+        } catch {
+          // ignore
+        }
+      };
+    } catch {
+      // ignore
+    }
+    return () => {
+      disposed = true;
+      if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
+    };
+  }, [cleanSymbol]);
 
   // 4. Persist chart state to server (PUT /api/v1/charts/state/{symbol})
   const persistState = useCallback(

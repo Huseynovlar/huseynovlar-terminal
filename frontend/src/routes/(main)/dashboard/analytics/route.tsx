@@ -30,6 +30,7 @@ import { apiDownload, apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useTerminalStore } from "@/framework/terminal-store";
+import { useLiveEvents } from "@/framework/use-live-socket";
 import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/analytics")({
@@ -90,8 +91,11 @@ function AnalyticsLabPage() {
   }, []);
 
   const loadAnalytics = useCallback(
-    async (overrides?: { days?: string; accountId?: string; symbol?: string; magicNumber?: string; side?: string }) => {
-      setLoading(true);
+    async (
+      overrides?: { days?: string; accountId?: string; symbol?: string; magicNumber?: string; side?: string },
+      silent = false,
+    ) => {
+      if (!silent) setLoading(true);
       try {
         const d = overrides?.days ?? days;
         const acc = overrides?.accountId ?? accountId;
@@ -108,17 +112,21 @@ function AnalyticsLabPage() {
         const res = await apiRequest<AnalyticsOverview>(`/analytics/overview?${qs.toString()}`);
         setData(res);
       } catch (err) {
-        notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+        if (!silent) notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [accountId, days, magicNumber, side, symbol, t.common.errorTitle],
   );
 
   useEffect(() => {
-    void loadAnalytics();
+    void loadAnalytics(undefined, false);
   }, [loadAnalytics]);
+
+  useLiveEvents(["trade_event", "snapshot"], () => {
+    void loadAnalytics(undefined, true);
+  });
 
   function applyFilters() {
     setAnalyticsFilters({
@@ -171,8 +179,8 @@ function AnalyticsLabPage() {
   return (
     <TerminalPageShell
       title={t.analytics.title}
-      subtitle={t.analytics.subtitle}
-      badge={`${days}D`}
+      subtitle={`${t.analytics.subtitle} • Источник: MT5 Bridge Deals & Equity Snapshots (${data?.portfolio.accounts_count ?? 0} счетов, ${m?.total_trades ?? 0} сделок • Real-Time WS)`}
+      badge={`${days}D • LIVE WS`}
       actions={
         <>
           <AsyncButton size="sm" variant="outline" loading={exporting === "csv"} onClick={() => void handleExport("csv")}>
