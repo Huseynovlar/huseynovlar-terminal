@@ -2,11 +2,12 @@ import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Globe, MapPin } from "lucide-react";
+import { ArrowLeft, Globe, MapPin, MonitorSmartphone } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GeoLocationMap } from "@/components/ui/geo-map";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
@@ -69,10 +70,16 @@ function LoginHistoryDetailPage() {
       subtitle={entry?.id || entryId}
       badge={entry?.action || "AUTH"}
       actions={
-        <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/dashboard/login-history" />}>
-          <ArrowLeft className="mr-1.5 size-3.5" />
-          {t.common.backToList}
-        </Button>
+        <>
+          <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/dashboard/sessions" />}>
+            <MonitorSmartphone className="mr-1.5 size-3.5" />
+            {t.nav.sessions}
+          </Button>
+          <Button size="sm" variant="outline" nativeButton={false} render={<Link to="/dashboard/login-history" />}>
+            <ArrowLeft className="mr-1.5 size-3.5" />
+            {t.common.backToList}
+          </Button>
+        </>
       }
     >
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -81,6 +88,10 @@ function LoginHistoryDetailPage() {
             <CardTitle className="text-sm">{t.common.details}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-xs">
+            <div>
+              <div className="text-muted-foreground">ID</div>
+              <div className="font-mono break-all">{entry?.id || entryId}</div>
+            </div>
             <div>
               <div className="text-muted-foreground">{t.loginHistory.action}</div>
               <Badge className="mt-0.5 font-mono">{entry?.action || "—"}</Badge>
@@ -109,7 +120,13 @@ function LoginHistoryDetailPage() {
               {t.loginHistory.ipLookup}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2.5 text-xs">
+          <CardContent className="space-y-3 text-xs">
+            <GeoLocationMap
+              lat={geo?.lat}
+              lon={geo?.lon}
+              label={[geo?.city, geo?.country].filter(Boolean).join(", ") || (geo?.is_netbird ? "NetBird VPN" : undefined)}
+              sublabel={entry?.ip_address}
+            />
             {geo ? (
               <>
                 {geo.is_private || geo.is_netbird ? (

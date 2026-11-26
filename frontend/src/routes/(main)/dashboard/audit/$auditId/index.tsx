@@ -78,10 +78,18 @@ function AuditDetailPage() {
               </div>
             </Field>
             <Field label={t.audit.actor}>
-              <div className="font-mono">
-                {entry?.username || "system"}
-                {entry?.user_id ? <span className="text-muted-foreground block text-[10px]">{entry.user_id}</span> : null}
-              </div>
+              {entry?.user_id ? (
+                <Link
+                  to="/dashboard/users/$userId"
+                  params={{ userId: entry.user_id }}
+                  className="text-primary block font-mono hover:underline"
+                >
+                  {entry.username || entry.user_id}
+                  <span className="text-muted-foreground block text-[10px]">{entry.user_id}</span>
+                </Link>
+              ) : (
+                <div className="font-mono">{entry?.username || "system"}</div>
+              )}
             </Field>
             <Field label={t.audit.resourceType}>
               <span className="font-mono">{entry?.resource_type || "—"}</span>

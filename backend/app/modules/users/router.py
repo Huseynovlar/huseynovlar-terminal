@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -142,10 +143,112 @@ async def get_user_detail(
     _: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    from datetime import timedelta
+
+    from app.core.audit_events import audit_event_label
+    from app.db.models import AuditLog, UserSession
+
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return _serialize_user(user)
+
+    now = datetime.now(UTC)
+    sessions = (
+        (
+            await db.execute(
+                select(UserSession)
+                .where(
+                    UserSession.user_id == user.id,
+                    UserSession.revoked.is_(False),
+                    UserSession.expires_at > now,
+                )
+                .order_by(UserSession.created_at.desc())
+                .limit(20)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    recent_logins = (
+        (
+            await db.execute(
+                select(AuditLog)
+                .where(AuditLog.user_id == user.id, AuditLog.action.like("auth.%"))
+                .order_by(AuditLog.created_at.desc())
+                .limit(10)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    recent_audit = (
+        (
+            await db.execute(
+                select(AuditLog)
+                .where(AuditLog.user_id == user.id)
+                .order_by(AuditLog.created_at.desc())
+                .limit(15)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    online_cutoff = now - timedelta(minutes=20)
+    latest_activity = recent_audit[0].created_at if recent_audit else (sessions[0].created_at if sessions else None)
+    if latest_activity and latest_activity.tzinfo is None:
+        latest_activity = latest_activity.replace(tzinfo=UTC)
+    is_online = bool(sessions and latest_activity and latest_activity >= online_cutoff)
+
+    last_ip = (
+        (sessions[0].ip_address if sessions else None)
+        or (recent_logins[0].ip_address if recent_logins else None)
+        or (recent_audit[0].ip_address if recent_audit else None)
+        or ""
+    )
+
+    base = _serialize_user(user)
+    base.update(
+        {
+            "is_online": is_online,
+            "last_ip": last_ip,
+            "active_sessions": [
+                {
+                    "id": s.id,
+                    "ip_address": s.ip_address,
+                    "user_agent": s.user_agent,
+                    "created_at": s.created_at.isoformat(),
+                    "expires_at": s.expires_at.isoformat(),
+                }
+                for s in sessions
+            ],
+            "recent_logins": [
+                {
+                    "id": r.id,
+                    "action": r.action,
+                    "action_label": audit_event_label(r.action),
+                    "ip_address": r.ip_address,
+                    "created_at": r.created_at.isoformat(),
+                }
+                for r in recent_logins
+            ],
+            "recent_audit": [
+                {
+                    "id": r.id,
+                    "action": r.action,
+                    "action_label": audit_event_label(r.action),
+                    "resource_type": r.resource_type,
+                    "resource_id": r.resource_id,
+                    "ip_address": r.ip_address,
+                    "created_at": r.created_at.isoformat(),
+                }
+                for r in recent_audit
+            ],
+        }
+    )
+    return base
 
 
 @router.patch("/{user_id}")
