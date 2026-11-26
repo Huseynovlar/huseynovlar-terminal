@@ -300,7 +300,7 @@ function SecurityPage() {
               <div className="space-y-3">
                 {totpSetup.qr_svg ? (
                   <div
-                    className="mx-auto flex w-48 items-center justify-center rounded-xl bg-white p-3"
+                    className="mx-auto aspect-square w-56 max-w-full rounded-xl bg-white p-3 [&>svg]:block [&>svg]:size-full"
                     // Server-generated SVG QR code from /auth/2fa/setup
                     dangerouslySetInnerHTML={{ __html: totpSetup.qr_svg }}
                   />

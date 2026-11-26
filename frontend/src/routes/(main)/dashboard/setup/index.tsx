@@ -13,6 +13,7 @@ import { notify } from "@/components/ui/toast";
 import { apiDownload, apiRequest, getDirectDownloadUrl } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/setup/")({
   component: SetupWizardPage,
@@ -190,7 +191,7 @@ function SetupWizardPage() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="setup-account">{t.setup.selectAccount}</Label>
-              <select
+              <SearchSelect
                 id="setup-account"
                 value={selectedAccount}
                 onChange={(e) => setSelectedAccount(e.target.value)}
@@ -205,11 +206,11 @@ function SetupWizardPage() {
                     </option>
                   ))
                 )}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="setup-url-mode">{t.setup.urlMode}</Label>
-              <select
+              <SearchSelect
                 id="setup-url-mode"
                 value={urlMode}
                 onChange={(e) => setUrlMode(e.target.value as "internal" | "external")}
@@ -217,7 +218,7 @@ function SetupWizardPage() {
               >
                 <option value="internal">{t.setup.urlModeInternal}</option>
                 <option value="external">{t.setup.urlModeExternal}</option>
-              </select>
+              </SearchSelect>
             </div>
           </div>
 
@@ -306,7 +307,7 @@ function SetupWizardPage() {
                       </Badge>
                     )}
                     {status?.gemini?.model ? (
-                      <span className="text-muted-foreground font-mono">{status.gemini_model}</span>
+                      <span className="text-muted-foreground font-mono">{status.gemini.model}</span>
                     ) : null}
                   </div>
                 </div>

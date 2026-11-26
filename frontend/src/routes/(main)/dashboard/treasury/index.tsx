@@ -154,13 +154,14 @@ function TreasuryListPage() {
       </div>
 
       {loading ? (
-        <TableSkeleton rows={6} cols={6} />
+        <TableSkeleton rows={6} cols={7} />
       ) : (
         <Card className="border-border/70">
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2">Date</th>
                   <th className="px-3 py-2">Account</th>
                   <th className="px-3 py-2">Kind</th>
@@ -171,10 +172,20 @@ function TreasuryListPage() {
               </thead>
               <tbody>
                 {ops.length === 0 ? (
-                  <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">{t.common.noData}</td></tr>
+                  <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">{t.common.noData}</td></tr>
                 ) : (
                   ops.map((op) => (
                     <tr key={op.id} className="border-b border-border/40 hover:bg-muted/20">
+                    <td className="px-3 py-2 font-mono text-[11px]">
+                      <Link
+                        to="/dashboard/treasury/$opId"
+                        params={{ opId: op.id }}
+                        title={String(op.id)}
+                        className="text-primary hover:underline"
+                      >
+                        {String(op.id).slice(0, 8)}
+                      </Link>
+                    </td>
                       <td className="px-3 py-2 font-mono">{new Date(op.timestamp).toLocaleString()}</td>
                       <td className="px-3 py-2">{op.account_name || op.account_login}</td>
                       <td className="px-3 py-2"><Badge variant="outline" className="font-mono text-[10px]">{op.op_kind}</Badge></td>

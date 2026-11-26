@@ -37,6 +37,8 @@ function Layout() {
               Zero-Trust Mesh • FIDO2 Passkeys • TOTP 2FA • Real-Time WebSocket
             </div>
 
+            <TerminalPreview />
+
             <div className="grid grid-cols-1 gap-3 pt-2">
               <div className="rounded-xl border border-primary-foreground/15 bg-primary-foreground/10 p-3.5">
                 <div className="flex items-center gap-2 text-sm font-semibold">
@@ -67,5 +69,45 @@ function Layout() {
         </div>
       </div>
     </main>
+  );
+}
+
+/** Static CSS rendition of the terminal workspace (no network data, purely decorative). */
+function TerminalPreview() {
+  const bars = [38, 52, 44, 61, 55, 70, 64, 78, 72, 86, 80, 92];
+  // Illustrative layout only: no quotes or P&L figures are shown.
+  const rows = ["EURUSD", "XAUUSD", "US500", "BTCUSD"];
+  return (
+    <div
+      aria-hidden="true"
+      className="overflow-hidden rounded-xl border border-primary-foreground/20 bg-black/25 shadow-2xl"
+    >
+      <div className="flex items-center gap-1.5 border-b border-primary-foreground/15 px-3 py-2">
+        <span className="size-2 rounded-full bg-rose-400/80" />
+        <span className="size-2 rounded-full bg-amber-300/80" />
+        <span className="size-2 rounded-full bg-emerald-400/80" />
+        <span className="text-primary-foreground/60 ml-2 font-mono text-[10px]">{APP_CONFIG.domain}/dashboard</span>
+      </div>
+      <div className="grid grid-cols-[1fr_9rem] gap-3 p-3">
+        <div className="flex h-28 items-end gap-1.5">
+          {bars.map((h, i) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: static decorative bars
+              key={i}
+              className="bg-primary-foreground/50 w-full rounded-sm"
+              style={{ height: `${h}%` }}
+            />
+          ))}
+        </div>
+        <div className="space-y-1.5 font-mono text-[10px]">
+          {rows.map((sym) => (
+            <div key={sym} className="flex items-center justify-between rounded bg-primary-foreground/10 px-2 py-1">
+              <span>{sym}</span>
+              <span className="bg-primary-foreground/30 h-1.5 w-8 rounded-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

@@ -298,6 +298,7 @@ export const az: { [K in keyof I18nSchema]: { [P in keyof I18nSchema[K]]: string
     tickerToggle: "Bazar tiker lentini göstər",
     tickerSpeed: "Tiker sürəti",
     sidebarVisibility: "Menyu bölmələrinin görünməsi",
+    sidebarOrder: "Menyu bölmələrinin sırası",
     resetDefaults: "Standarta sıfırla (Tangerine / Floating)",
   },
   hotkeys: {

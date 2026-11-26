@@ -14,6 +14,7 @@ import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import type { TreasuryOp } from "@/routes/(main)/dashboard/treasury/index";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/treasury/$opId/edit")({
   component: TreasuryEditPage,
@@ -85,13 +86,13 @@ function TreasuryEditPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="te-kind">Kind</Label>
-                <select id="te-kind" value={opKind} onChange={(e) => setOpKind(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs">
+                <SearchSelect id="te-kind" value={opKind} onChange={(e) => setOpKind(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs">
                   <option value="DEPOSIT">DEPOSIT</option>
                   <option value="WITHDRAWAL">WITHDRAWAL</option>
                   <option value="INTERNAL_TRANSFER">INTERNAL_TRANSFER</option>
                   <option value="EXNESS_VAULT">EXNESS_VAULT</option>
                   <option value="REBATE">REBATE</option>
-                </select>
+                </SearchSelect>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="te-amt">Amount</Label>

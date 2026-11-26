@@ -146,7 +146,7 @@ function RobotsListPage() {
       }
     >
       {loading ? (
-        <TableSkeleton rows={5} cols={7} />
+        <TableSkeleton rows={5} cols={8} />
       ) : robots.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-xs text-muted-foreground">
@@ -159,6 +159,7 @@ function RobotsListPage() {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2">Robot / EA</th>
                   <th className="px-3 py-2">Symbol</th>
                   <th className="px-3 py-2">Account</th>
@@ -177,6 +178,16 @@ function RobotsListPage() {
                   const onlineNow = liveAgeSec !== null && liveAgeSec <= 90;
                   return (
                     <tr key={r.id} className="border-b border-border/40 hover:bg-muted/20">
+                    <td className="px-3 py-2 font-mono text-[11px]">
+                      <Link
+                        to="/dashboard/robots/$robotId"
+                        params={{ robotId: r.id }}
+                        title={String(r.id)}
+                        className="text-primary hover:underline"
+                      >
+                        {String(r.id).slice(0, 8)}
+                      </Link>
+                    </td>
                       <td className="px-3 py-2 font-medium">
                         <Link
                           to="/dashboard/robots/$robotId"

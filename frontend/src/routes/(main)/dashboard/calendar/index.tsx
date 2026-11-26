@@ -11,6 +11,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/calendar/")({
   component: EconomicCalendarPage,
@@ -91,39 +92,40 @@ function EconomicCalendarPage() {
     >
       <Card className="border-border/70">
         <CardContent className="flex flex-wrap items-center gap-2 p-3 text-xs">
-          <select value={impact} onChange={(e) => setImpact(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
+          <SearchSelect value={impact} onChange={(e) => setImpact(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
             <option value="">{t.calendar.impact}: {t.common.all}</option>
             <option value="High">High</option>
             <option value="Medium">Medium</option>
             <option value="Low">Low</option>
-          </select>
-          <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
+          </SearchSelect>
+          <SearchSelect value={currency} onChange={(e) => setCurrency(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
             <option value="">{t.calendar.currency}: {t.common.all}</option>
             <option value="USD">USD</option>
             <option value="EUR">EUR</option>
             <option value="GBP">GBP</option>
             <option value="JPY">JPY</option>
             <option value="CHF">CHF</option>
-          </select>
-          <select value={asset} onChange={(e) => setAsset(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
+          </SearchSelect>
+          <SearchSelect value={asset} onChange={(e) => setAsset(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
             <option value="">{t.calendar.asset}: {t.common.all}</option>
             <option value="XAUUSD">XAUUSD</option>
             <option value="USTEC">USTEC</option>
             <option value="SPX">SPX</option>
             <option value="EURUSD">EURUSD</option>
             <option value="BTCUSD">BTCUSD</option>
-          </select>
+          </SearchSelect>
         </CardContent>
       </Card>
 
       {loading ? (
-        <TableSkeleton rows={7} cols={6} />
+        <TableSkeleton rows={7} cols={7} />
       ) : (
         <Card className="border-border/70">
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2">Time (UTC)</th>
                   <th className="px-3 py-2">{t.calendar.currency}</th>
                   <th className="px-3 py-2">{t.calendar.impact}</th>
@@ -135,7 +137,7 @@ function EconomicCalendarPage() {
               <tbody>
                 {events.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-10 text-center text-muted-foreground">
+                    <td colSpan={7} className="py-10 text-center text-muted-foreground">
                       <Calendar className="mx-auto mb-2 size-5 opacity-50" />
                       {t.common.noData}
                     </td>
@@ -143,6 +145,16 @@ function EconomicCalendarPage() {
                 ) : (
                   events.map((ev) => (
                     <tr key={ev.id} className="border-b border-border/40 hover:bg-muted/20">
+                    <td className="px-3 py-2 font-mono text-[11px]">
+                      <Link
+                        to="/dashboard/calendar/$eventId"
+                        params={{ eventId: ev.id }}
+                        title={String(ev.id)}
+                        className="text-primary hover:underline"
+                      >
+                        {String(ev.id).slice(0, 8)}
+                      </Link>
+                    </td>
                       <td className="px-3 py-2 font-mono">{new Date(ev.event_time).toLocaleString()}</td>
                       <td className="px-3 py-2 font-mono font-bold">{ev.currency}</td>
                       <td className="px-3 py-2">

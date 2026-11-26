@@ -66,7 +66,24 @@ export interface NavGroup {
   items: NavMainItem[];
 }
 
-export function buildSidebarItems(dict: TranslationDict, hiddenPageIds: string[] = []): NavGroup[] {
+export function applySidebarOrder<T extends { id: string }>(items: T[], order: readonly string[]): T[] {
+  if (order.length === 0) return items;
+  const rank = new Map(order.map((id, idx) => [id, idx]));
+  return items
+    .map((item, idx) => ({ item, idx }))
+    .sort((a, b) => {
+      const ra = rank.get(a.item.id) ?? Number.MAX_SAFE_INTEGER;
+      const rb = rank.get(b.item.id) ?? Number.MAX_SAFE_INTEGER;
+      return ra - rb || a.idx - b.idx;
+    })
+    .map((x) => x.item);
+}
+
+export function buildSidebarItems(
+  dict: TranslationDict,
+  hiddenPageIds: string[] = [],
+  sidebarOrder: readonly string[] = [],
+): NavGroup[] {
   const hidden = new Set(hiddenPageIds);
   const groups: NavGroup[] = [
     {
@@ -129,7 +146,10 @@ export function buildSidebarItems(dict: TranslationDict, hiddenPageIds: string[]
   return groups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => !hidden.has(item.id)),
+      items: applySidebarOrder(
+        group.items.filter((item) => !hidden.has(item.id)),
+        sidebarOrder,
+      ),
     }))
     .filter((group) => group.items.length > 0);
 }

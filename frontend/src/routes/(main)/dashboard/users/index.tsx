@@ -80,13 +80,14 @@ function UsersListPage() {
       }
     >
       {loading ? (
-        <TableSkeleton rows={5} cols={6} />
+        <TableSkeleton rows={5} cols={7} />
       ) : (
         <Card>
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border/60 bg-muted/40 text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2.5 font-medium">{t.auth.username}</th>
                   <th className="px-3 py-2.5 font-medium">{t.auth.displayName}</th>
                   <th className="px-3 py-2.5 font-medium">{t.users.role}</th>
@@ -98,13 +99,23 @@ function UsersListPage() {
               <tbody className="divide-y divide-border/50">
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-muted-foreground py-8 text-center">
+                    <td colSpan={7} className="text-muted-foreground py-8 text-center">
                       {t.common.noData}
                     </td>
                   </tr>
                 ) : (
                   users.map((u) => (
                     <tr key={u.id} className="hover:bg-muted/30">
+                    <td className="px-3 py-2 font-mono text-[11px]">
+                      <Link
+                        to="/dashboard/users/$userId"
+                        params={{ userId: u.id }}
+                        title={String(u.id)}
+                        className="text-primary hover:underline"
+                      >
+                        {String(u.id).slice(0, 8)}
+                      </Link>
+                    </td>
                       <td className="px-3 py-2 font-mono font-medium">
                         <div className="flex items-center gap-1.5">
                           <Users className="size-3.5 text-muted-foreground" />

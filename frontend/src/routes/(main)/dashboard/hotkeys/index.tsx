@@ -40,10 +40,10 @@ function HotkeysPage() {
         </Button>
       }
     >
-      <Card className="max-w-2xl">
-        <CardContent className="divide-y divide-border/50 p-0">
+      <Card className="w-full">
+        <CardContent className="grid grid-cols-1 gap-px bg-border/50 p-0 md:grid-cols-2">
           {actionKeys.map((actionId) => (
-            <div key={actionId} className="flex items-center justify-between gap-4 px-4 py-2.5 text-xs">
+            <div key={actionId} className="bg-card flex items-center justify-between gap-4 px-4 py-2.5 text-xs">
               <div className="flex items-center gap-2 font-mono">
                 <Keyboard className="size-3.5 text-muted-foreground" />
                 <span>{actionId}</span>

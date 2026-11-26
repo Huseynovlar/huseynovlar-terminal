@@ -20,6 +20,7 @@ import { apiRequest } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { useI18n } from "@/framework/i18n";
 import { useTerminalStore } from "@/framework/terminal-store";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export type TreemapUniverse =
   | "sp500_top"
@@ -216,7 +217,7 @@ export function SquarifiedTreemap({ fullPage = true }: { fullPage?: boolean }) {
               ))}
             </div>
 
-            <select
+            <SearchSelect
               aria-label={t.treemap.sizeBy}
               value={sizeBy}
               onChange={(e) => updateFilters({ size_by: e.target.value as TreemapSizeBy })}
@@ -225,9 +226,9 @@ export function SquarifiedTreemap({ fullPage = true }: { fullPage?: boolean }) {
               <option value="market_cap">{t.treemap.sizeCap}</option>
               <option value="volume">{t.treemap.sizeVolume}</option>
               <option value="equal">{t.treemap.sizeEqual}</option>
-            </select>
+            </SearchSelect>
 
-            <select
+            <SearchSelect
               aria-label={t.treemap.sector}
               value={sectorFilter}
               onChange={(e) => updateFilters({ sector: e.target.value })}
@@ -239,7 +240,7 @@ export function SquarifiedTreemap({ fullPage = true }: { fullPage?: boolean }) {
                   {sec}
                 </option>
               ))}
-            </select>
+            </SearchSelect>
 
             <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
               <Search className="pointer-events-none absolute top-2 left-2.5 size-3.5 text-muted-foreground" />

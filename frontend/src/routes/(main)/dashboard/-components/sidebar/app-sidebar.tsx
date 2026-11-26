@@ -39,6 +39,7 @@ export function AppSidebar({
 }: React.ComponentProps<typeof Sidebar> & { readonly currentUser: CurrentTerminalUser }) {
   const { t } = useI18n();
   const hiddenPageIds = useTerminalStore((s) => s.hiddenPageIds);
+  const sidebarOrder = useTerminalStore((s) => s.sidebarOrder);
   const { sidebarVariant, sidebarCollapsible, isSynced } = usePreferencesStore(
     useShallow((s) => ({
       sidebarVariant: s.values.sidebar_variant,
@@ -49,7 +50,7 @@ export function AppSidebar({
 
   const variant = isSynced ? sidebarVariant : (props.variant ?? "floating");
   const collapsible = isSynced ? sidebarCollapsible : (props.collapsible ?? "icon");
-  const items = useMemo(() => buildSidebarItems(t, hiddenPageIds), [t, hiddenPageIds]);
+  const items = useMemo(() => buildSidebarItems(t, hiddenPageIds, sidebarOrder), [t, hiddenPageIds, sidebarOrder]);
 
   return (
     <Sidebar {...props} variant={variant} collapsible={collapsible}>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { BadgeCheck, Clock, Newspaper } from "lucide-react";
+import { BadgeCheck, Newspaper } from "lucide-react";
 
 import { apiRequest } from "@/framework/api-client";
 import { useTerminalStore } from "@/framework/terminal-store";
@@ -13,32 +13,10 @@ interface LiveHeadline {
   affected_assets: string[];
 }
 
-function formatClock(tz: string): string {
-  try {
-    const timeZone = tz === "Asia/Baku" ? "Asia/Baku" : "UTC";
-    return new Intl.DateTimeFormat("en-GB", {
-      timeZone,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }).format(new Date());
-  } catch {
-    return "--:--:--";
-  }
-}
-
 export function BloombergTickerTape() {
   const tickerEnabled = useTerminalStore((s) => s.tickerEnabled);
   const tickerSpeed = useTerminalStore((s) => s.tickerSpeed);
-  const timezone = useTerminalStore((s) => s.timezone);
-  const [clock, setClock] = useState(() => formatClock(timezone));
   const [headlines, setHeadlines] = useState<LiveHeadline[]>([]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setClock(formatClock(timezone)), 1000);
-    return () => window.clearInterval(id);
-  }, [timezone]);
 
   useEffect(() => {
     apiRequest<LiveHeadline[]>("/intelligence/news?verified_only=true&limit=12")
@@ -48,19 +26,11 @@ export function BloombergTickerTape() {
 
   if (!tickerEnabled) return null;
 
-  const durationSec = tickerSpeed === "slow" ? 55 : tickerSpeed === "fast" ? 22 : 36;
+  const durationSec = tickerSpeed === "slow" ? 120 : tickerSpeed === "fast" ? 30 : 60;
   const doubled = headlines.length > 0 ? [...headlines, ...headlines] : [];
 
   return (
     <div className="bg-muted/40 relative flex h-8 w-full items-center overflow-hidden border-b border-border/60 text-xs select-none">
-      {/* Live Session Clock Pill */}
-      <div className="bg-background/95 z-10 flex h-full shrink-0 items-center gap-1.5 border-r border-border/60 px-3 font-mono text-[11px] font-medium">
-        <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
-        <Clock className="text-muted-foreground size-3" />
-        <span>{clock}</span>
-        <span className="text-muted-foreground hidden sm:inline">({timezone})</span>
-      </div>
-
       {/* Only render scrolling wire when real verified news exist — zero invented quotes */}
       {doubled.length > 0 ? (
         <div className="group flex flex-1 overflow-hidden">

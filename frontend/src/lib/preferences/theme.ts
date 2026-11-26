@@ -43,6 +43,14 @@ export const THEME_PRESET_OPTIONS = [
       dark: "oklch(0.64 0.17 36.44)",
     },
   },
+  {
+    label: "Bank Blue",
+    value: "bank",
+    primary: {
+      light: "oklch(0.42 0.16 262)",
+      dark: "oklch(0.62 0.17 258)",
+    },
+  },
 ] as const;
 
 export const THEME_PRESET_VALUES = THEME_PRESET_OPTIONS.map((p) => p.value);

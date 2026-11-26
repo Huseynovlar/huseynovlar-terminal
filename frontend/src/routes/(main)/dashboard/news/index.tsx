@@ -15,6 +15,7 @@ import { AssetLogo } from "@/framework/components/AssetLogo";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useLiveEvents } from "@/framework/use-live-socket";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/news/")({
   component: NewsWirePage,
@@ -156,7 +157,7 @@ function NewsWirePage() {
                 className="h-8 pl-8 text-xs"
               />
             </div>
-            <select
+            <SearchSelect
               value={sentiment}
               onChange={(e) => setSentiment(e.target.value)}
               className="h-8 rounded-md border border-input bg-background px-2 text-xs"
@@ -165,7 +166,7 @@ function NewsWirePage() {
               <option value="bullish">Bullish</option>
               <option value="bearish">Bearish</option>
               <option value="neutral">Neutral</option>
-            </select>
+            </SearchSelect>
             <label className="flex cursor-pointer items-center gap-1.5 text-xs">
               <input
                 type="checkbox"

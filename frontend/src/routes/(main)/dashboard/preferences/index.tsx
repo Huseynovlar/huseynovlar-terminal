@@ -1,5 +1,7 @@
+import { useMemo, useState } from "react";
+
 import { createFileRoute } from "@tanstack/react-router";
-import { RotateCcw, Volume2 } from "lucide-react";
+import { ArrowDown, ArrowUp, GripVertical, RotateCcw, Volume2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +22,9 @@ import {
   SIDEBAR_VARIANT_VALUES,
 } from "@/lib/preferences/layout";
 import { THEME_MODE_VALUES, THEME_PRESET_VALUES } from "@/lib/preferences/theme";
+import { buildSidebarItems } from "@/navigation/sidebar/sidebar-items";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/preferences/")({
   component: PreferencesPage,
@@ -64,7 +68,32 @@ function PreferencesPage() {
     setTickerEnabled,
     setTickerSpeed,
     toggleHiddenPage,
+    sidebarOrder,
+    setSidebarOrder,
   } = useTerminalStore();
+
+  const [dragId, setDragId] = useState<string | null>(null);
+  const orderedGroups = useMemo(() => buildSidebarItems(t, [], sidebarOrder), [t, sidebarOrder]);
+
+  /** Move `id` to the slot of `targetId` (or by delta) inside its group, then persist the full flat order on the server. */
+  function reorder(id: string, target: { delta: number } | { beforeId: string }) {
+    const group = orderedGroups.find((g) => g.items.some((i) => i.id === id));
+    if (!group) return;
+    const ids = group.items.map((i) => i.id);
+    const from = ids.indexOf(id);
+    let to: number;
+    if ("delta" in target) {
+      to = from + target.delta;
+    } else {
+      to = ids.indexOf(target.beforeId);
+      if (to < 0) return;
+    }
+    if (to < 0 || to >= ids.length || to === from) return;
+    ids.splice(from, 1);
+    ids.splice(to, 0, id);
+    const flat = orderedGroups.flatMap((g) => (g.id === group.id ? ids : g.items.map((i) => i.id)));
+    setSidebarOrder(flat);
+  }
 
   function handleResetAll() {
     resetPreferences();
@@ -94,7 +123,7 @@ function PreferencesPage() {
           <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="pref-preset">{t.preferences.themePreset}</Label>
-              <select
+              <SearchSelect
                 id="pref-preset"
                 value={prefValues.theme_preset}
                 onChange={(e) => {
@@ -108,12 +137,12 @@ function PreferencesPage() {
                     {p}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="pref-mode">{t.preferences.themeMode}</Label>
-              <select
+              <SearchSelect
                 id="pref-mode"
                 value={prefValues.theme_mode}
                 onChange={(e) => {
@@ -127,12 +156,12 @@ function PreferencesPage() {
                     {m}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="pref-font">{t.preferences.font}</Label>
-              <select
+              <SearchSelect
                 id="pref-font"
                 value={prefValues.font}
                 onChange={(e) => {
@@ -146,12 +175,12 @@ function PreferencesPage() {
                     {fontRegistry[fk].label}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="pref-sidebar">{t.preferences.sidebarStyle}</Label>
-              <select
+              <SearchSelect
                 id="pref-sidebar"
                 value={prefValues.sidebar_variant}
                 onChange={(e) => {
@@ -165,12 +194,12 @@ function PreferencesPage() {
                     {v}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="pref-collapse">{t.preferences.sidebarCollapsible}</Label>
-              <select
+              <SearchSelect
                 id="pref-collapse"
                 value={prefValues.sidebar_collapsible}
                 onChange={(e) => {
@@ -184,12 +213,12 @@ function PreferencesPage() {
                     {v}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="pref-layout">{t.preferences.contentLayout}</Label>
-              <select
+              <SearchSelect
                 id="pref-layout"
                 value={prefValues.content_layout}
                 onChange={(e) => {
@@ -203,12 +232,12 @@ function PreferencesPage() {
                     {v}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="pref-navbar">{t.preferences.navbarStyle}</Label>
-              <select
+              <SearchSelect
                 id="pref-navbar"
                 value={prefValues.navbar_style}
                 onChange={(e) => {
@@ -222,7 +251,7 @@ function PreferencesPage() {
                     {v}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
           </CardContent>
         </Card>
@@ -235,7 +264,7 @@ function PreferencesPage() {
             <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="pref-lang">{t.preferences.language}</Label>
-                <select
+                <SearchSelect
                   id="pref-lang"
                   value={language}
                   onChange={(e) => {
@@ -247,11 +276,11 @@ function PreferencesPage() {
                   <option value="ru">Русский (RU)</option>
                   <option value="en">English (EN)</option>
                   <option value="az">Azərbaycan (AZ)</option>
-                </select>
+                </SearchSelect>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pref-tz">{t.preferences.timezone}</Label>
-                <select
+                <SearchSelect
                   id="pref-tz"
                   value={timezone}
                   onChange={(e) => {
@@ -265,7 +294,7 @@ function PreferencesPage() {
                       {tz}
                     </option>
                   ))}
-                </select>
+                </SearchSelect>
               </div>
             </CardContent>
           </Card>
@@ -323,7 +352,7 @@ function PreferencesPage() {
                   />
                   <Label htmlFor="pref-ticker">{t.preferences.tickerToggle}</Label>
                 </div>
-                <select
+                <SearchSelect
                   value={tickerSpeed}
                   onChange={(e) => setTickerSpeed(e.target.value as TickerSpeed)}
                   className="border-input bg-background h-8 rounded-md border px-2 text-xs capitalize"
@@ -331,7 +360,7 @@ function PreferencesPage() {
                   <option value="slow">slow</option>
                   <option value="normal">normal</option>
                   <option value="fast">fast</option>
-                </select>
+                </SearchSelect>
               </div>
             </CardContent>
           </Card>
@@ -356,6 +385,59 @@ function PreferencesPage() {
               </label>
             );
           })}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">{t.preferences.sidebarOrder}</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {orderedGroups.map((group) => (
+            <div key={group.id} className="space-y-1.5">
+              <div className="text-muted-foreground text-[11px] font-semibold uppercase tracking-wide">{group.label}</div>
+              <ul className="space-y-1">
+                {group.items.map((item, idx) => (
+                  <li
+                    key={item.id}
+                    draggable
+                    onDragStart={() => setDragId(item.id)}
+                    onDragEnd={() => setDragId(null)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (dragId && dragId !== item.id) reorder(dragId, { beforeId: item.id });
+                      setDragId(null);
+                    }}
+                    className="flex items-center gap-2 rounded-lg border border-border/60 bg-card px-2 py-1.5 text-xs"
+                  >
+                    <GripVertical className="text-muted-foreground size-3.5 cursor-grab" />
+                    <span className="flex-1 truncate">{item.title}</span>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-6"
+                      disabled={idx === 0}
+                      aria-label="up"
+                      onClick={() => reorder(item.id, { delta: -1 })}
+                    >
+                      <ArrowUp className="size-3" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-6"
+                      disabled={idx === group.items.length - 1}
+                      aria-label="down"
+                      onClick={() => reorder(item.id, { delta: 1 })}
+                    >
+                      <ArrowDown className="size-3" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </CardContent>
       </Card>
     </TerminalPageShell>

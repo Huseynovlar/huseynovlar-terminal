@@ -28,9 +28,9 @@ function LoginV2() {
 
   const navigate = useNavigate();
   const [initialized, setInitialized] = useState<boolean>(true);
-  const [username, setUsername] = useState("owner");
-  const [email, setEmail] = useState("owner@huseynovlar.org");
-  const [displayName, setDisplayName] = useState("Owner");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [needTotp, setNeedTotp] = useState(false);

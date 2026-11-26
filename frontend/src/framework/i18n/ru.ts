@@ -296,6 +296,7 @@ export const ru = {
     tickerToggle: "Показывать бегущую строку котировок",
     tickerSpeed: "Скорость тикера",
     sidebarVisibility: "Видимость разделов меню",
+    sidebarOrder: "Порядок разделов меню",
     resetDefaults: "Сбросить к стандарту (Tangerine / Floating)",
   },
   hotkeys: {

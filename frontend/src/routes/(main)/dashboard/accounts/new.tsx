@@ -11,6 +11,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/accounts/new")({
   component: AccountCreatePage,
@@ -96,7 +97,7 @@ function AccountCreatePage() {
             </div>
             <div className="space-y-1">
               <Label htmlFor="acc-type">Account Type</Label>
-              <select
+              <SearchSelect
                 id="acc-type"
                 value={accountType}
                 onChange={(e) => setAccountType(e.target.value)}
@@ -107,11 +108,11 @@ function AccountCreatePage() {
                 <option value="ZERO">ZERO</option>
                 <option value="STANDARD">STANDARD</option>
                 <option value="STANDARD_CENT">STANDARD CENT</option>
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1">
               <Label htmlFor="acc-curr">Currency</Label>
-              <select
+              <SearchSelect
                 id="acc-curr"
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
@@ -120,7 +121,7 @@ function AccountCreatePage() {
                 <option value="USD">USD</option>
                 <option value="USC">USC (Cent ÷100)</option>
                 <option value="EUR">EUR</option>
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1">
               <Label htmlFor="acc-lev">Leverage</Label>
@@ -128,7 +129,7 @@ function AccountCreatePage() {
             </div>
             <div className="space-y-1">
               <Label htmlFor="acc-prof">Exness Profile (optional)</Label>
-              <select
+              <SearchSelect
                 id="acc-prof"
                 value={profileId}
                 onChange={(e) => setProfileId(e.target.value)}
@@ -138,7 +139,7 @@ function AccountCreatePage() {
                 {profiles.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="flex items-center gap-2 pt-5">
               <input id="acc-demo" type="checkbox" checked={isDemo} onChange={(e) => setIsDemo(e.target.checked)} />

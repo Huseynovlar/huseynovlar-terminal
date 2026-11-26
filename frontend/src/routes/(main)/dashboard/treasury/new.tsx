@@ -12,6 +12,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/treasury/new")({
   component: TreasuryCreatePage,
@@ -79,7 +80,7 @@ function TreasuryCreatePage() {
           <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
             <div className="space-y-1">
               <Label htmlFor="t-acc">Account</Label>
-              <select
+              <SearchSelect
                 id="t-acc"
                 required
                 value={accountId}
@@ -90,12 +91,12 @@ function TreasuryCreatePage() {
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>{a.name} (#{a.mt5_login})</option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="t-kind">Operation Kind</Label>
-                <select
+                <SearchSelect
                   id="t-kind"
                   value={opKind}
                   onChange={(e) => setOpKind(e.target.value)}
@@ -106,7 +107,7 @@ function TreasuryCreatePage() {
                   <option value="INTERNAL_TRANSFER">INTERNAL_TRANSFER</option>
                   <option value="EXNESS_VAULT">EXNESS_VAULT</option>
                   <option value="REBATE">REBATE</option>
-                </select>
+                </SearchSelect>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="t-amt">Amount (signed)</Label>

@@ -25,6 +25,7 @@ import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useLiveEvents } from "@/framework/use-live-socket";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/containers/")({
   component: ContainersListPage,
@@ -285,7 +286,7 @@ function ContainersListPage() {
             <label htmlFor="kill-account-select" className="text-xs font-medium">
               {t.containers.selectAccount}
             </label>
-            <select
+            <SearchSelect
               id="kill-account-select"
               value={killAccountId}
               onChange={(e) => setKillAccountId(e.target.value)}
@@ -300,7 +301,7 @@ function ContainersListPage() {
                   </option>
                 ))
               )}
-            </select>
+            </SearchSelect>
           </div>
           <Button
             variant="destructive"

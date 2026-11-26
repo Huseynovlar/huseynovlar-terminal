@@ -12,6 +12,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/users/new")({
   component: UserCreatePage,
@@ -81,7 +82,7 @@ function UserCreatePage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="u-role">{t.users.role}</Label>
-              <select
+              <SearchSelect
                 id="u-role"
                 value={role}
                 onChange={(e) => setRole(e.target.value as "ADMIN" | "OPERATOR" | "VIEWER")}
@@ -90,7 +91,7 @@ function UserCreatePage() {
                 <option value="ADMIN">ADMIN</option>
                 <option value="OPERATOR">OPERATOR</option>
                 <option value="VIEWER">VIEWER</option>
-              </select>
+              </SearchSelect>
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" nativeButton={false} render={<Link to="/dashboard/users" />}>

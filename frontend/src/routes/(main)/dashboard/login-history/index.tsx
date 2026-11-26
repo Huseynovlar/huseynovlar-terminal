@@ -78,13 +78,14 @@ function LoginHistoryListPage() {
       </div>
 
       {loading ? (
-        <TableSkeleton rows={6} cols={4} />
+        <TableSkeleton rows={6} cols={5} />
       ) : (
         <Card>
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border/60 bg-muted/40 text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2.5 font-medium">{t.loginHistory.action}</th>
                   <th className="px-3 py-2.5 font-medium">{t.sessions.ipAddress}</th>
                   <th className="px-3 py-2.5 font-medium">{t.common.createdAt}</th>
@@ -94,13 +95,23 @@ function LoginHistoryListPage() {
               <tbody className="divide-y divide-border/50">
                 {entries.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="text-muted-foreground py-8 text-center">
+                    <td colSpan={5} className="text-muted-foreground py-8 text-center">
                       {t.common.noData}
                     </td>
                   </tr>
                 ) : (
                   entries.map((entry) => (
                     <tr key={entry.id} className="hover:bg-muted/30">
+                    <td className="px-3 py-2 font-mono text-[11px]">
+                      <Link
+                        to="/dashboard/login-history/$entryId"
+                        params={{ entryId: entry.id }}
+                        title={String(entry.id)}
+                        className="text-primary hover:underline"
+                      >
+                        {String(entry.id).slice(0, 8)}
+                      </Link>
+                    </td>
                       <td className="px-3 py-2">
                         <Badge variant={entry.action.includes("fail") ? "destructive" : "secondary"} className="font-mono text-[10px]">
                           {entry.action}

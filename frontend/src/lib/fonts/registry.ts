@@ -11,6 +11,18 @@ function googleFont(family: string, axes = "wght@400..700"): string {
 }
 
 export const fontRegistry = {
+  ibmPlexSans: {
+    label: "IBM Plex Sans",
+    family: "IBM Plex Sans",
+    fallback: "sans-serif",
+    stylesheet: googleFont("IBM Plex Sans", "wght@400;500;600;700"),
+  },
+  ibmPlexMono: {
+    label: "IBM Plex Mono",
+    family: "IBM Plex Mono",
+    fallback: "monospace",
+    stylesheet: googleFont("IBM Plex Mono", "wght@400;500;600"),
+  },
   geist: {
     label: "Geist",
     family: "Geist",

@@ -14,6 +14,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/users/$userId/edit")({
   component: UserEditPage,
@@ -103,7 +104,7 @@ function UserEditPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ue-role">{t.users.role}</Label>
-              <select
+              <SearchSelect
                 id="ue-role"
                 value={role}
                 onChange={(e) => setRole(e.target.value as "ADMIN" | "OPERATOR" | "VIEWER")}
@@ -112,7 +113,7 @@ function UserEditPage() {
                 <option value="ADMIN">ADMIN</option>
                 <option value="OPERATOR">OPERATOR</option>
                 <option value="VIEWER">VIEWER</option>
-              </select>
+              </SearchSelect>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="ue-active" checked={isActive} onCheckedChange={(v) => setIsActive(Boolean(v))} />

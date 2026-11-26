@@ -186,7 +186,11 @@ function JournalPage() {
                 ) : (
                   deals.map((d) => (
                     <tr key={d.id} className="border-b border-border/40 hover:bg-muted/20">
-                      <td className="px-3 py-2 font-mono">#{d.mt5_deal_ticket}</td>
+                      <td className="px-3 py-2 font-mono">
+                        <Link to="/dashboard/journal/deals/$dealId" params={{ dealId: d.id }} className="text-primary hover:underline">
+                          #{d.mt5_deal_ticket}
+                        </Link>
+                      </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1.5 font-mono font-semibold">
                           <AssetLogo symbol={d.symbol} size={16} />

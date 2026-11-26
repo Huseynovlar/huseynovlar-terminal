@@ -13,6 +13,7 @@ import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import type { TradingAccountItem } from "@/routes/(main)/dashboard/accounts/index";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/accounts/$accountId/edit")({
   component: AccountEditPage,
@@ -102,7 +103,7 @@ function AccountEditPage() {
             </div>
             <div className="space-y-1">
               <Label htmlFor="edit-type">Account Type</Label>
-              <select
+              <SearchSelect
                 id="edit-type"
                 value={accountType}
                 onChange={(e) => setAccountType(e.target.value)}
@@ -113,11 +114,11 @@ function AccountEditPage() {
                 <option value="ZERO">ZERO</option>
                 <option value="STANDARD">STANDARD</option>
                 <option value="STANDARD_CENT">STANDARD CENT</option>
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1">
               <Label htmlFor="edit-curr">Currency</Label>
-              <select
+              <SearchSelect
                 id="edit-curr"
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
@@ -126,7 +127,7 @@ function AccountEditPage() {
                 <option value="USD">USD</option>
                 <option value="USC">USC (Cent ÷100)</option>
                 <option value="EUR">EUR</option>
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1">
               <Label htmlFor="edit-lev">Leverage</Label>

@@ -12,6 +12,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/robots/new")({
   component: RobotCreatePage,
@@ -90,7 +91,7 @@ function RobotCreatePage() {
           <form onSubmit={(e) => void handleSubmit(e)} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="r-acc">Trading Account</Label>
-              <select
+              <SearchSelect
                 id="r-acc"
                 required
                 value={accountId}
@@ -101,7 +102,7 @@ function RobotCreatePage() {
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>{a.name} (#{a.mt5_login})</option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1">
               <Label htmlFor="r-name">Robot Name</Label>

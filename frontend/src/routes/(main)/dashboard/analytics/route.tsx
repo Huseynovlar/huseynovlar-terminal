@@ -30,6 +30,7 @@ import { apiDownload, apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useTerminalStore } from "@/framework/terminal-store";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/analytics")({
   component: AnalyticsLabPage,
@@ -192,25 +193,25 @@ function AnalyticsLabPage() {
       {/* Server-Persisted Filter Bar */}
       <Card className="border-border/70">
         <CardContent className="flex flex-wrap items-center gap-2 p-3 text-xs">
-          <select value={days} onChange={(e) => setDays(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
+          <SearchSelect value={days} onChange={(e) => setDays(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
             <option value="7">7D</option>
             <option value="30">30D</option>
             <option value="90">90D</option>
             <option value="365">365D</option>
-          </select>
-          <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
+          </SearchSelect>
+          <SearchSelect value={accountId} onChange={(e) => setAccountId(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
             <option value="">{t.analytics.allAccounts}</option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>{a.name} (#{a.mt5_login})</option>
             ))}
-          </select>
+          </SearchSelect>
           <Input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder={t.analytics.symbolFilter} className="h-8 w-28 text-xs" />
           <Input value={magicNumber} onChange={(e) => setMagicNumber(e.target.value)} placeholder={t.analytics.magicFilter} className="h-8 w-24 text-xs" />
-          <select value={side} onChange={(e) => setSide(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
+          <SearchSelect value={side} onChange={(e) => setSide(e.target.value)} className="h-8 rounded-md border border-input bg-background px-2">
             <option value="">{t.analytics.allSides}</option>
             <option value="BUY">LONG / BUY</option>
             <option value="SELL">SHORT / SELL</option>
-          </select>
+          </SearchSelect>
           <Button size="sm" onClick={applyFilters}>
             <Filter className="mr-1.5 size-3.5" />
             {t.analytics.applyFilters}

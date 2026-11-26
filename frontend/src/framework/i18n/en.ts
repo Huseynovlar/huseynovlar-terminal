@@ -298,6 +298,7 @@ export const en: { [K in keyof I18nSchema]: { [P in keyof I18nSchema[K]]: string
     tickerToggle: "Show market ticker tape",
     tickerSpeed: "Ticker speed",
     sidebarVisibility: "Sidebar Menu Visibility",
+    sidebarOrder: "Menu Order",
     resetDefaults: "Reset to Defaults (Tangerine / Floating)",
   },
   hotkeys: {

@@ -83,20 +83,28 @@ function hasSubItems(item: NavMainItem): item is NavMainParentItem {
 export function NavMain({ items }: NavMainProps) {
   const path = useRouterState({ select: (state) => state.location.pathname });
 
+  // Longest-prefix match so nested routes (view/edit/new) keep their section highlighted,
+  // while sibling routes like /news and /news/sources never both light up.
+  const urls: string[] = items.flatMap((group) =>
+    group.items.flatMap((item) => (hasSubItems(item) ? item.subItems.map((s) => s.url) : [item.url])),
+  );
+  const matches = (url: string) => path === url || path.startsWith(`${url}/`);
+  const bestUrl = urls.filter(matches).sort((a, b) => b.length - a.length)[0];
+
   const isItemActive = (item: NavMainItem) => {
     if (hasSubItems(item)) {
-      return item.subItems.some((sub) => path.startsWith(sub.url));
+      return item.subItems.some((sub) => sub.url === bestUrl);
     }
 
-    return path === item.url;
+    return item.url === bestUrl;
   };
 
   const isSubItemActive = (url: AppPath) => {
-    return path === url;
+    return url === bestUrl;
   };
 
   const isSubmenuOpen = (item: NavMainParentItem) => {
-    return item.subItems.some((sub) => path.startsWith(sub.url));
+    return item.subItems.some((sub) => sub.url === bestUrl);
   };
 
   return (

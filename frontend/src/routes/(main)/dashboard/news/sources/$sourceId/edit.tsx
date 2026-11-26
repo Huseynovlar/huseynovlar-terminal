@@ -13,6 +13,7 @@ import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import type { NewsSourceItem } from "@/routes/(main)/dashboard/news/sources/index";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/news/sources/$sourceId/edit")({
   component: NewsSourceEditPage,
@@ -100,11 +101,11 @@ function NewsSourceEditPage() {
               </div>
               <div className="space-y-1">
                 <Label htmlFor="nse-tier">{t.sources.trustTier}</Label>
-                <select id="nse-tier" value={trustTier} onChange={(e) => setTrustTier(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs">
+                <SearchSelect id="nse-tier" value={trustTier} onChange={(e) => setTrustTier(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs">
                   <option value="tier_1">tier_1</option>
                   <option value="tier_2">tier_2</option>
                   <option value="custom">custom</option>
-                </select>
+                </SearchSelect>
               </div>
             </div>
             <div className="flex items-center gap-4">

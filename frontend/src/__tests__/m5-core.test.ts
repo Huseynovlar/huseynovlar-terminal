@@ -92,3 +92,25 @@ describe("Technical Indicators & Terminal Formatters (F15, F26, F27)", () => {
     assert.equal(formatCountdown("2026-11-25T13:05:10Z", now), "01:05:10");
   });
 });
+
+import { filterOptions, moveHighlight } from "../lib/select-options.ts";
+
+describe("Searchable combobox helpers (Wave A #23)", () => {
+  const opts = [
+    { value: "usd", label: "US Dollar" },
+    { value: "eur", label: "Euro", disabled: true },
+    { value: "xau", label: "Gold" },
+  ];
+  it("filters by label or value, case-insensitively", () => {
+    assert.deepEqual(filterOptions(opts, "DOLL").map((o) => o.value), ["usd"]);
+    assert.deepEqual(filterOptions(opts, "xau").map((o) => o.value), ["xau"]);
+    assert.equal(filterOptions(opts, "  ").length, 3);
+    assert.equal(filterOptions(opts, "zzz").length, 0);
+  });
+  it("moves highlight skipping disabled options and wrapping", () => {
+    assert.equal(moveHighlight(opts, 0, 1), 2);
+    assert.equal(moveHighlight(opts, 2, 1), 0);
+    assert.equal(moveHighlight(opts, 0, -1), 2);
+    assert.equal(moveHighlight([], 0, 1), -1);
+  });
+});

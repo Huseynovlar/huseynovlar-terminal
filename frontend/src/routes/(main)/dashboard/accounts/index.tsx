@@ -204,7 +204,7 @@ function AccountsListPage() {
       ) : null}
 
       {loading ? (
-        <TableSkeleton rows={5} cols={7} />
+        <TableSkeleton rows={5} cols={8} />
       ) : accounts.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-xs text-muted-foreground">
@@ -217,6 +217,7 @@ function AccountsListPage() {
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2">Account</th>
                   <th className="px-3 py-2">MT5 Login / Server</th>
                   <th className="px-3 py-2">Type</th>
@@ -230,6 +231,16 @@ function AccountsListPage() {
               <tbody>
                 {accounts.map((acc) => (
                   <tr key={acc.id} className="border-b border-border/40 hover:bg-muted/20">
+                    <td className="px-3 py-2 font-mono text-[11px]">
+                      <Link
+                        to="/dashboard/accounts/$accountId"
+                        params={{ accountId: acc.id }}
+                        title={String(acc.id)}
+                        className="text-primary hover:underline"
+                      >
+                        {String(acc.id).slice(0, 8)}
+                      </Link>
+                    </td>
                     <td className="px-3 py-2 font-medium">
                       <Link
                         to="/dashboard/accounts/$accountId"

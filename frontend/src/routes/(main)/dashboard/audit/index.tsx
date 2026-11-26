@@ -78,13 +78,14 @@ function AuditListPage() {
       </div>
 
       {loading ? (
-        <TableSkeleton rows={6} cols={5} />
+        <TableSkeleton rows={6} cols={6} />
       ) : (
         <Card>
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border/60 bg-muted/40 text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2.5 font-medium">{t.loginHistory.action}</th>
                   <th className="px-3 py-2.5 font-medium">{t.audit.resourceType}</th>
                   <th className="px-3 py-2.5 font-medium">{t.sessions.ipAddress}</th>
@@ -95,13 +96,23 @@ function AuditListPage() {
               <tbody className="divide-y divide-border/50">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-muted-foreground py-8 text-center">
+                    <td colSpan={6} className="text-muted-foreground py-8 text-center">
                       {t.common.noData}
                     </td>
                   </tr>
                 ) : (
                   rows.map((row) => (
                     <tr key={row.id} className="hover:bg-muted/30">
+                    <td className="px-3 py-2 font-mono text-[11px]">
+                      <Link
+                        to="/dashboard/audit/$auditId"
+                        params={{ auditId: row.id }}
+                        title={String(row.id)}
+                        className="text-primary hover:underline"
+                      >
+                        {String(row.id).slice(0, 8)}
+                      </Link>
+                    </td>
                       <td className="px-3 py-2">
                         <Badge variant="outline" className="font-mono text-[10px]">
                           {row.action}

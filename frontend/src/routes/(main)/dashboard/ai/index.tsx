@@ -14,6 +14,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/ai/")({
   component: GeminiAiCopilotPage,
@@ -123,14 +124,14 @@ function GeminiAiCopilotPage() {
                   <Sparkles className="size-4 text-primary" />
                   {t.ai.title}
                 </CardTitle>
-                <select
+                <SearchSelect
                   aria-label={t.ai.modelLabel}
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                   className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs"
                 >
                   <option value="gemini-3.8-flash">gemini-3.8-flash</option>
-                </select>
+                </SearchSelect>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">

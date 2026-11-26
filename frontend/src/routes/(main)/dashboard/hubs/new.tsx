@@ -11,6 +11,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/hubs/new")({
   component: HubCreatePage,
@@ -80,14 +81,14 @@ function HubCreatePage() {
               </div>
               <div className="space-y-1">
                 <Label htmlFor="h-group">Group</Label>
-                <select id="h-group" value={group} onChange={(e) => setGroup(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs">
+                <SearchSelect id="h-group" value={group} onChange={(e) => setGroup(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs">
                   <option value="metals">Metals</option>
                   <option value="indices">Indices</option>
                   <option value="forex">Forex</option>
                   <option value="crypto">Crypto</option>
                   <option value="equities">Equities</option>
                   <option value="macro">Macro</option>
-                </select>
+                </SearchSelect>
               </div>
             </div>
             <div className="space-y-1">

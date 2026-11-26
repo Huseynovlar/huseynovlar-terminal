@@ -144,13 +144,14 @@ function ProfilesListPage() {
       </Card>
 
       {loading ? (
-        <TableSkeleton rows={4} cols={4} />
+        <TableSkeleton rows={4} cols={5} />
       ) : (
         <Card className="border-border/70">
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2">Profile</th>
                   <th className="px-3 py-2">Exness API</th>
                   <th className="px-3 py-2">Linked Accounts</th>
@@ -160,6 +161,16 @@ function ProfilesListPage() {
               <tbody>
                 {profiles.map((p) => (
                   <tr key={p.id} className="border-b border-border/40">
+                    <td className="px-3 py-2 font-mono text-[11px]">
+                      <Link
+                        to="/dashboard/profiles/$profileId"
+                        params={{ profileId: p.id }}
+                        title={String(p.id)}
+                        className="text-primary hover:underline"
+                      >
+                        {String(p.id).slice(0, 8)}
+                      </Link>
+                    </td>
                     <td className="px-3 py-2 font-medium">
                       <Link to="/dashboard/profiles/$profileId" params={{ profileId: p.id }} className="hover:underline">
                         {p.name}

@@ -113,13 +113,14 @@ function NewsSourcesListPage() {
       }
     >
       {loading ? (
-        <TableSkeleton rows={6} cols={6} />
+        <TableSkeleton rows={6} cols={7} />
       ) : (
         <Card className="border-border/70">
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
                 <tr>
+                  <th className="px-3 py-2 font-medium">ID</th>
                   <th className="px-3 py-2">Source</th>
                   <th className="px-3 py-2">Category</th>
                   <th className="px-3 py-2">{t.sources.trustTier}</th>
@@ -131,6 +132,16 @@ function NewsSourcesListPage() {
               <tbody>
                 {sources.map((src) => (
                   <tr key={src.id} className="border-b border-border/40 hover:bg-muted/20">
+                    <td className="px-3 py-2 font-mono text-[11px]">
+                      <Link
+                        to="/dashboard/news/sources/$sourceId"
+                        params={{ sourceId: src.id }}
+                        title={String(src.id)}
+                        className="text-primary hover:underline"
+                      >
+                        {String(src.id).slice(0, 8)}
+                      </Link>
+                    </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1.5 font-medium">
                         <Link to="/dashboard/news/sources/$sourceId" params={{ sourceId: src.id }} className="hover:underline">
