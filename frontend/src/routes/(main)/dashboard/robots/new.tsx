@@ -22,6 +22,7 @@ function RobotCreatePage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string; mt5_login: string }>>([]);
+  const [tickers, setTickers] = useState<Array<{ symbol: string; name: string }>>([]);
   const [accountId, setAccountId] = useState("");
   const [name, setName] = useState("");
   const [magicNumber, setMagicNumber] = useState("10001");
@@ -38,6 +39,9 @@ function RobotCreatePage() {
         setAccounts(list);
         if (list[0]) setAccountId(list[0].id);
       })
+      .catch(() => {});
+    apiRequest<Array<{ symbol: string; name: string }>>("/assets/tickers?limit=500")
+      .then((rows) => setTickers(Array.isArray(rows) ? rows : []))
       .catch(() => {});
   }, []);
 
@@ -113,8 +117,20 @@ function RobotCreatePage() {
               <Input id="r-magic" type="number" required value={magicNumber} onChange={(e) => setMagicNumber(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="r-sym">Symbol</Label>
-              <Input id="r-sym" value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="USTEC / XAUUSD" />
+              <Label htmlFor="r-sym">Symbol (из справочника тикеров)</Label>
+              <SearchSelect
+                id="r-sym"
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs"
+              >
+                <option value="">Выбери тикер...</option>
+                {tickers.map((tk) => (
+                  <option key={tk.symbol} value={tk.symbol}>
+                    {tk.symbol} — {tk.name}
+                  </option>
+                ))}
+              </SearchSelect>
             </div>
             <div className="space-y-1">
               <Label htmlFor="r-prog">{t.robots.programName}</Label>

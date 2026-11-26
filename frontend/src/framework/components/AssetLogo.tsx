@@ -89,7 +89,7 @@ export function AssetLogo({ symbol, size = 24, logoUrl, className = "" }: AssetL
 
   // 2. Same-origin backend official logo proxy (fetches & caches real PNG/SVG logos on server)
   const resolvedSrc =
-    logoUrl && (logoUrl.startsWith("/api/v1/assets/logo/") || logoUrl.startsWith("/logos/"))
+    logoUrl && logoUrl.startsWith("/api/v1/assets/logo/")
       ? logoUrl
       : `/api/v1/assets/logo/${encodeURIComponent(norm)}`;
 

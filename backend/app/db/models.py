@@ -534,6 +534,21 @@ class MarketCache(Base):
     )
 
 
+class MarketTicker(Base):
+    """Master directory of all available market tickers (Crypto, US Equities/ETFs, Forex, Metals, Indices)."""
+
+    __tablename__ = "market_tickers"
+
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    asset_class: Mapped[str] = mapped_column(String(32), nullable=False, index=True, default="equities")
+    exchange: Mapped[str] = mapped_column(String(64), nullable=False, default="GLOBAL")
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="core")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+
 Index("ix_audit_logs_action_created", AuditLog.action, AuditLog.created_at)
 Index("ix_market_bars_lookup", MarketBar.symbol, MarketBar.timeframe, MarketBar.bar_time)
 

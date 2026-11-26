@@ -47,6 +47,7 @@ import { Route as mainDashboardRobotsNewRouteImport } from './routes/(main)/dash
 import { Route as mainDashboardSecurityIndexRouteImport } from './routes/(main)/dashboard/security/index'
 import { Route as mainDashboardSessionsIndexRouteImport } from './routes/(main)/dashboard/sessions/index'
 import { Route as mainDashboardSetupIndexRouteImport } from './routes/(main)/dashboard/setup/index'
+import { Route as mainDashboardTickersIndexRouteImport } from './routes/(main)/dashboard/tickers/index'
 import { Route as mainDashboardTreasuryIndexRouteImport } from './routes/(main)/dashboard/treasury/index'
 import { Route as mainDashboardTreasuryNewRouteImport } from './routes/(main)/dashboard/treasury/new'
 import { Route as mainDashboardUsersIndexRouteImport } from './routes/(main)/dashboard/users/index'
@@ -292,6 +293,12 @@ const mainDashboardSetupIndexRoute = mainDashboardSetupIndexRouteImport.update({
   path: '/setup/',
   getParentRoute: () => mainDashboardRouteRoute,
 } as any)
+const mainDashboardTickersIndexRoute =
+  mainDashboardTickersIndexRouteImport.update({
+    id: '/tickers/',
+    path: '/tickers/',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
 const mainDashboardTreasuryIndexRoute =
   mainDashboardTreasuryIndexRouteImport.update({
     id: '/treasury/',
@@ -524,6 +531,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/security/': typeof mainDashboardSecurityIndexRoute
   '/dashboard/sessions/': typeof mainDashboardSessionsIndexRoute
   '/dashboard/setup/': typeof mainDashboardSetupIndexRoute
+  '/dashboard/tickers/': typeof mainDashboardTickersIndexRoute
   '/dashboard/treasury/': typeof mainDashboardTreasuryIndexRoute
   '/dashboard/users/': typeof mainDashboardUsersIndexRoute
   '/dashboard/wiki/': typeof mainDashboardWikiIndexRoute
@@ -595,6 +603,7 @@ export interface FileRoutesByTo {
   '/dashboard/security': typeof mainDashboardSecurityIndexRoute
   '/dashboard/sessions': typeof mainDashboardSessionsIndexRoute
   '/dashboard/setup': typeof mainDashboardSetupIndexRoute
+  '/dashboard/tickers': typeof mainDashboardTickersIndexRoute
   '/dashboard/treasury': typeof mainDashboardTreasuryIndexRoute
   '/dashboard/users': typeof mainDashboardUsersIndexRoute
   '/dashboard/wiki': typeof mainDashboardWikiIndexRoute
@@ -668,6 +677,7 @@ export interface FileRoutesById {
   '/(main)/dashboard/security/': typeof mainDashboardSecurityIndexRoute
   '/(main)/dashboard/sessions/': typeof mainDashboardSessionsIndexRoute
   '/(main)/dashboard/setup/': typeof mainDashboardSetupIndexRoute
+  '/(main)/dashboard/tickers/': typeof mainDashboardTickersIndexRoute
   '/(main)/dashboard/treasury/': typeof mainDashboardTreasuryIndexRoute
   '/(main)/dashboard/users/': typeof mainDashboardUsersIndexRoute
   '/(main)/dashboard/wiki/': typeof mainDashboardWikiIndexRoute
@@ -742,6 +752,7 @@ export interface FileRouteTypes {
     | '/dashboard/security/'
     | '/dashboard/sessions/'
     | '/dashboard/setup/'
+    | '/dashboard/tickers/'
     | '/dashboard/treasury/'
     | '/dashboard/users/'
     | '/dashboard/wiki/'
@@ -813,6 +824,7 @@ export interface FileRouteTypes {
     | '/dashboard/security'
     | '/dashboard/sessions'
     | '/dashboard/setup'
+    | '/dashboard/tickers'
     | '/dashboard/treasury'
     | '/dashboard/users'
     | '/dashboard/wiki'
@@ -885,6 +897,7 @@ export interface FileRouteTypes {
     | '/(main)/dashboard/security/'
     | '/(main)/dashboard/sessions/'
     | '/(main)/dashboard/setup/'
+    | '/(main)/dashboard/tickers/'
     | '/(main)/dashboard/treasury/'
     | '/(main)/dashboard/users/'
     | '/(main)/dashboard/wiki/'
@@ -1190,6 +1203,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof mainDashboardSetupIndexRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
+    '/(main)/dashboard/tickers/': {
+      id: '/(main)/dashboard/tickers/'
+      path: '/tickers'
+      fullPath: '/dashboard/tickers/'
+      preLoaderRoute: typeof mainDashboardTickersIndexRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
     '/(main)/dashboard/treasury/': {
       id: '/(main)/dashboard/treasury/'
       path: '/treasury'
@@ -1455,6 +1475,7 @@ interface mainDashboardRouteRouteChildren {
   mainDashboardSecurityIndexRoute: typeof mainDashboardSecurityIndexRoute
   mainDashboardSessionsIndexRoute: typeof mainDashboardSessionsIndexRoute
   mainDashboardSetupIndexRoute: typeof mainDashboardSetupIndexRoute
+  mainDashboardTickersIndexRoute: typeof mainDashboardTickersIndexRoute
   mainDashboardTreasuryIndexRoute: typeof mainDashboardTreasuryIndexRoute
   mainDashboardUsersIndexRoute: typeof mainDashboardUsersIndexRoute
   mainDashboardWikiIndexRoute: typeof mainDashboardWikiIndexRoute
@@ -1523,6 +1544,7 @@ const mainDashboardRouteRouteChildren: mainDashboardRouteRouteChildren = {
   mainDashboardSecurityIndexRoute: mainDashboardSecurityIndexRoute,
   mainDashboardSessionsIndexRoute: mainDashboardSessionsIndexRoute,
   mainDashboardSetupIndexRoute: mainDashboardSetupIndexRoute,
+  mainDashboardTickersIndexRoute: mainDashboardTickersIndexRoute,
   mainDashboardTreasuryIndexRoute: mainDashboardTreasuryIndexRoute,
   mainDashboardUsersIndexRoute: mainDashboardUsersIndexRoute,
   mainDashboardWikiIndexRoute: mainDashboardWikiIndexRoute,

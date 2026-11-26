@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -19,7 +19,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
 from app.core.pagination import Page
-from app.db.models import AssetHub, Deal, NewsItem, OpenPositionLive, Robot, TradingAccount, User
+from app.db.models import AssetHub, Deal, MarketTicker, NewsItem, OpenPositionLive, Robot, TradingAccount, User
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -449,6 +449,206 @@ async def upload_asset_logo(
     asset.logo_url = f"/api/v1/assets/logo/{clean}?v={int(time.time())}"
     await db.commit()
     return _serialize_asset(asset)
+
+
+_CORE_MARKET_TICKERS: list[tuple[str, str, str, str]] = [
+    # Metals & Commodities
+    ("XAUUSD", "Gold Spot / US Dollar", "metals", "SPOT"),
+    ("XAGUSD", "Silver Spot / US Dollar", "metals", "SPOT"),
+    ("USOIL", "WTI Crude Oil", "commodities", "NYMEX"),
+    ("UKOIL", "Brent Crude Oil", "commodities", "ICE"),
+    ("NGAS", "Natural Gas", "commodities", "NYMEX"),
+    # Indices & Macro
+    ("USTEC", "NASDAQ-100 Index (US Tech 100)", "indices", "NASDAQ"),
+    ("US500", "S&P 500 Index", "indices", "NYSE"),
+    ("US30", "Dow Jones Industrial Average 30", "indices", "NYSE"),
+    ("DXY", "US Dollar Index", "indices", "ICE"),
+    ("VIX", "CBOE Volatility Index", "indices", "CBOE"),
+    ("US10Y", "US 10-Year Treasury Yield", "indices", "UST"),
+    # Major Forex
+    ("EURUSD", "Euro / US Dollar", "forex", "FX"),
+    ("GBPUSD", "British Pound / US Dollar", "forex", "FX"),
+    ("USDJPY", "US Dollar / Japanese Yen", "forex", "FX"),
+    ("USDCHF", "US Dollar / Swiss Franc", "forex", "FX"),
+    ("USDCAD", "US Dollar / Canadian Dollar", "forex", "FX"),
+    ("AUDUSD", "Australian Dollar / US Dollar", "forex", "FX"),
+    ("NZDUSD", "New Zealand Dollar / US Dollar", "forex", "FX"),
+    ("EURGBP", "Euro / British Pound", "forex", "FX"),
+    ("EURJPY", "Euro / Japanese Yen", "forex", "FX"),
+    ("GBPJPY", "British Pound / Japanese Yen", "forex", "FX"),
+    ("AUDJPY", "Australian Dollar / Japanese Yen", "forex", "FX"),
+    ("EURAUD", "Euro / Australian Dollar", "forex", "FX"),
+    ("EURCHF", "Euro / Swiss Franc", "forex", "FX"),
+    # Major Crypto
+    ("BTCUSD", "Bitcoin / US Dollar", "crypto", "BINANCE"),
+    ("ETHUSD", "Ethereum / US Dollar", "crypto", "BINANCE"),
+    ("SOLUSD", "Solana / US Dollar", "crypto", "BINANCE"),
+    ("BNBUSD", "BNB / US Dollar", "crypto", "BINANCE"),
+    ("XRPUSD", "XRP / US Dollar", "crypto", "BINANCE"),
+    ("ADAUSD", "Cardano / US Dollar", "crypto", "BINANCE"),
+    ("DOGEUSD", "Dogecoin / US Dollar", "crypto", "BINANCE"),
+    ("TONUSD", "Toncoin / US Dollar", "crypto", "BINANCE"),
+    ("LTCUSD", "Litecoin / US Dollar", "crypto", "BINANCE"),
+    ("AVAXUSD", "Avalanche / US Dollar", "crypto", "BINANCE"),
+    ("DOTUSD", "Polkadot / US Dollar", "crypto", "BINANCE"),
+    ("LINKUSD", "Chainlink / US Dollar", "crypto", "BINANCE"),
+    ("UNIUSD", "Uniswap / US Dollar", "crypto", "BINANCE"),
+    ("NEARUSD", "NEAR Protocol / US Dollar", "crypto", "BINANCE"),
+    ("SUIUSD", "Sui / US Dollar", "crypto", "BINANCE"),
+    # Top US Equities & ETFs
+    ("NVDA", "NVIDIA Corporation", "equities", "NASDAQ"),
+    ("AAPL", "Apple Inc.", "equities", "NASDAQ"),
+    ("MSFT", "Microsoft Corporation", "equities", "NASDAQ"),
+    ("AMZN", "Amazon.com Inc.", "equities", "NASDAQ"),
+    ("GOOGL", "Alphabet Inc. (Google)", "equities", "NASDAQ"),
+    ("META", "Meta Platforms Inc.", "equities", "NASDAQ"),
+    ("TSLA", "Tesla Inc.", "equities", "NASDAQ"),
+    ("AMD", "Advanced Micro Devices Inc.", "equities", "NASDAQ"),
+    ("NFLX", "Netflix Inc.", "equities", "NASDAQ"),
+    ("COIN", "Coinbase Global Inc.", "equities", "NASDAQ"),
+    ("AVGO", "Broadcom Inc.", "equities", "NASDAQ"),
+    ("INTC", "Intel Corporation", "equities", "NASDAQ"),
+    ("ORCL", "Oracle Corporation", "equities", "NYSE"),
+    ("JPM", "JPMorgan Chase & Co.", "equities", "NYSE"),
+    ("V", "Visa Inc.", "equities", "NYSE"),
+    ("MA", "Mastercard Incorporated", "equities", "NYSE"),
+    ("PLTR", "Palantir Technologies Inc.", "equities", "NASDAQ"),
+    ("MSTR", "MicroStrategy Incorporated", "equities", "NASDAQ"),
+    ("SPY", "SPDR S&P 500 ETF Trust", "equities", "NYSE"),
+    ("QQQ", "Invesco QQQ Trust (NASDAQ-100)", "equities", "NASDAQ"),
+    ("DIA", "SPDR Dow Jones Industrial ETF", "equities", "NYSE"),
+    ("GLD", "SPDR Gold Shares ETF", "equities", "NYSE"),
+]
+
+
+async def _ensure_core_tickers(db: AsyncSession) -> None:
+    cnt = int((await db.execute(select(func.count(MarketTicker.symbol)))).scalar_one() or 0)
+    if cnt > 0:
+        return
+    for sym, name, cls, exch in _CORE_MARKET_TICKERS:
+        db.add(MarketTicker(symbol=sym, name=name, asset_class=cls, exchange=exch, source="core"))
+    await db.commit()
+
+
+@router.get("/tickers")
+async def list_market_tickers(
+    response: Response,
+    q: str | None = Query(default=None, max_length=64),
+    asset_class: str | None = Query(default=None, max_length=32),
+    page: Page = Depends(),
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """Master reference directory of all available market tickers (for Hub/Robot dropdowns & browsing)."""
+    await _ensure_core_tickers(db)
+    stmt = select(MarketTicker)
+    if asset_class and asset_class.strip().lower() not in ("", "all"):
+        stmt = stmt.where(MarketTicker.asset_class == asset_class.strip().lower())
+    if q and q.strip():
+        pat = f"%{q.strip()}%"
+        stmt = stmt.where(or_(MarketTicker.symbol.ilike(pat), MarketTicker.name.ilike(pat)))
+
+    total = int((await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one() or 0)
+    response.headers["X-Total-Count"] = str(total)
+    ordered_stmt = (
+        stmt.order_by(MarketTicker.asset_class.asc(), MarketTicker.symbol.asc())
+        .limit(page.limit)
+        .offset(page.offset)
+    )
+    rows = (await db.execute(ordered_stmt)).scalars().all()
+    return [
+        {
+            "symbol": r.symbol,
+            "name": r.name,
+            "asset_class": r.asset_class,
+            "exchange": r.exchange,
+            "source": r.source,
+            "logo_url": f"/api/v1/assets/logo/{r.symbol}",
+        }
+        for r in rows
+    ]
+
+
+@router.post("/tickers/sync")
+async def sync_market_tickers(
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Sync live master ticker directory from Binance (Crypto) + Alpaca (US Stocks/ETFs) + Core FX/Metals/Indices."""
+    await _ensure_core_tickers(db)
+    added = 0
+    sources_synced: list[str] = ["core"]
+
+    existing = set((await db.execute(select(MarketTicker.symbol))).scalars().all())
+
+    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as http:
+        # 1. Binance Spot USDT pairs (top liquid crypto)
+        try:
+            r = await http.get("https://api.binance.com/api/v3/exchangeInfo")
+            if r.status_code == 200:
+                data = r.json()
+                sources_synced.append("binance")
+                for s in data.get("symbols") or []:
+                    if s.get("status") == "TRADING" and s.get("quoteAsset") == "USDT":
+                        base = str(s.get("baseAsset") or "").upper()
+                        if not base or len(base) > 10:
+                            continue
+                        sym = f"{base}USD"
+                        if sym not in existing:
+                            db.add(
+                                MarketTicker(
+                                    symbol=sym,
+                                    name=f"{base} / US Dollar (Binance)",
+                                    asset_class="crypto",
+                                    exchange="BINANCE",
+                                    source="binance",
+                                )
+                            )
+                            existing.add(sym)
+                            added += 1
+        except Exception:
+            pass
+
+        # 2. Alpaca US Equities & ETFs (if API key configured in /opt/huseynovlar-terminal/.env)
+        if settings.alpaca_api_key and settings.alpaca_api_secret:
+            try:
+                base_url = settings.alpaca_endpoint.rstrip("/")
+                r = await http.get(
+                    f"{base_url}/assets",
+                    params={"status": "active", "asset_class": "us_equity"},
+                    headers={
+                        "APCA-API-KEY-ID": settings.alpaca_api_key,
+                        "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
+                    },
+                )
+                if r.status_code == 200:
+                    rows = r.json()
+                    sources_synced.append("alpaca")
+                    for item in rows[:2500]:
+                        if not item.get("tradable"):
+                            continue
+                        sym = str(item.get("symbol") or "").strip().upper()
+                        if not sym or "/" in sym or "." in sym or len(sym) > 10:
+                            continue
+                        if sym not in existing:
+                            db.add(
+                                MarketTicker(
+                                    symbol=sym,
+                                    name=str(item.get("name") or sym)[:160],
+                                    asset_class="equities",
+                                    exchange=str(item.get("exchange") or "US")[:64],
+                                    source="alpaca",
+                                )
+                            )
+                            existing.add(sym)
+                            added += 1
+            except Exception:
+                pass
+
+    await db.commit()
+    total = int((await db.execute(select(func.count(MarketTicker.symbol)))).scalar_one() or 0)
+    return {"added": added, "total": total, "sources": sources_synced}
 
 
 @router.post("/seed-defaults")

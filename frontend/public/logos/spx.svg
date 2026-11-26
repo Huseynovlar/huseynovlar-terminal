@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <rect width="64" height="64" rx="14" fill="#0B1E17"/>
-  <rect x="2" y="2" width="60" height="60" rx="12" stroke="#10B981" stroke-width="2.5" stroke-opacity="0.75"/>
-  <text x="32" y="34" text-anchor="middle" fill="#34D399" font-family="ui-sans-serif,system-ui,sans-serif" font-size="18" font-weight="800">500</text>
-  <text x="32" y="50" text-anchor="middle" fill="#A7F3D0" font-family="ui-monospace,monospace" font-size="9.5" font-weight="700">SPX</text>
-</svg>

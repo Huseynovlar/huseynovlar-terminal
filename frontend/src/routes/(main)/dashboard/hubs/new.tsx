@@ -24,10 +24,17 @@ interface AccountOpt {
   currency?: string;
 }
 
+interface TickerOpt {
+  symbol: string;
+  name: string;
+  asset_class: string;
+}
+
 function HubCreatePage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [accounts, setAccounts] = useState<AccountOpt[]>([]);
+  const [tickers, setTickers] = useState<TickerOpt[]>([]);
   const [linkedAccountId, setLinkedAccountId] = useState("");
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -44,7 +51,20 @@ function HubCreatePage() {
         if (list.length > 0) setLinkedAccountId(list[0].id);
       })
       .catch(() => {});
+    apiRequest<TickerOpt[]>("/assets/tickers?limit=500")
+      .then((rows) => setTickers(Array.isArray(rows) ? rows : []))
+      .catch(() => {});
   }, []);
+
+  function handleSelectTicker(sym: string) {
+    setCode(sym);
+    const found = tickers.find((tk) => tk.symbol === sym);
+    if (found) {
+      setName(found.name);
+      if (found.asset_class) setGroup(found.asset_class);
+      if (!brokerSymbols.trim()) setBrokerSymbols(sym);
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -117,8 +137,21 @@ function HubCreatePage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="h-code">Asset Code</Label>
-                <Input id="h-code" required value={code} onChange={(e) => setCode(e.target.value)} placeholder="XAUUSD" />
+                <Label htmlFor="h-code">Тикер (из справочника)</Label>
+                <SearchSelect
+                  id="h-code"
+                  required
+                  value={code}
+                  onChange={(e) => handleSelectTicker(e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs"
+                >
+                  <option value="">Выбери тикер...</option>
+                  {tickers.map((tk) => (
+                    <option key={tk.symbol} value={tk.symbol}>
+                      {tk.symbol} — {tk.name}
+                    </option>
+                  ))}
+                </SearchSelect>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="h-group">Group</Label>
@@ -127,6 +160,7 @@ function HubCreatePage() {
                   <option value="indices">Indices</option>
                   <option value="forex">Forex</option>
                   <option value="crypto">Crypto</option>
+                  <option value="commodities">Commodities</option>
                   <option value="equities">Equities</option>
                   <option value="macro">Macro</option>
                 </SearchSelect>
