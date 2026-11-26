@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useCallback, useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -120,8 +121,8 @@ function SessionsListPage() {
                     </div>
                     <div className="text-muted-foreground truncate text-xs">{s.user_agent || t.common.unknown}</div>
                     <div className="text-muted-foreground font-mono text-[10px]">
-                      {s.created_at ? new Date(s.created_at).toLocaleString() : ""}
-                      {s.expires_at ? ` • ${t.sessions.expiresAt}: ${new Date(s.expires_at).toLocaleString()}` : ""}
+                      {s.created_at ? formatTerminalDateTime(s.created_at) : ""}
+                      {s.expires_at ? ` • ${t.sessions.expiresAt}: ${formatTerminalDateTime(s.expires_at)}` : ""}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">

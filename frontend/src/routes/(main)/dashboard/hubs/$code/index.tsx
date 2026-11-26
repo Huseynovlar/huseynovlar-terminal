@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -153,7 +154,7 @@ function HubDetailPage() {
                 <div className="min-w-0">
                   <div className="font-medium">{item.title}</div>
                   <div className="mt-0.5 text-[11px] text-muted-foreground">
-                    {item.source} • {new Date(item.published_at).toLocaleString()}
+                    {item.source} • {formatTerminalDateTime(item.published_at)}
                   </div>
                 </div>
                 <Badge variant="outline" className="shrink-0 font-mono text-[10px]">

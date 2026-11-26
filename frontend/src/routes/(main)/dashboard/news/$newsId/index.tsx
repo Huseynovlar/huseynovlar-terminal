@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -42,7 +43,7 @@ function NewsDetailPage() {
   return (
     <TerminalPageShell
       title={article.title}
-      subtitle={`${article.source} • ${new Date(article.published_at).toLocaleString()}`}
+      subtitle={`${article.source} • ${formatTerminalDateTime(article.published_at)}`}
       badge={article.sentiment}
       actions={
         <>

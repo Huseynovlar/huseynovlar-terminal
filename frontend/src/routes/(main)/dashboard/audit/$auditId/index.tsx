@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -92,7 +93,7 @@ function AuditDetailPage() {
               <span className="font-mono">{entry?.ip_address || "—"}</span>
             </Field>
             <Field label={t.common.createdAt}>
-              <span className="font-mono">{entry?.created_at ? new Date(entry.created_at).toLocaleString() : "—"}</span>
+              <span className="font-mono">{entry?.created_at ? formatTerminalDateTime(entry.created_at) : "—"}</span>
             </Field>
             <Field label="ID">
               <span className="font-mono break-all">{entry?.id || auditId}</span>

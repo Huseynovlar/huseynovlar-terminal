@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useCallback, useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -186,7 +187,7 @@ function TreasuryListPage() {
                         {String(op.id).slice(0, 8)}
                       </Link>
                     </td>
-                      <td className="px-3 py-2 font-mono">{new Date(op.timestamp).toLocaleString()}</td>
+                      <td className="px-3 py-2 font-mono">{formatTerminalDateTime(op.timestamp)}</td>
                       <td className="px-3 py-2">{op.account_name || op.account_login}</td>
                       <td className="px-3 py-2"><Badge variant="outline" className="font-mono text-[10px]">{op.op_kind}</Badge></td>
                       <td className="px-3 py-2 text-muted-foreground">{op.comment || op.notes || "—"}</td>

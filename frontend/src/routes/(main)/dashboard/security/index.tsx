@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { createFileRoute } from "@tanstack/react-router";
@@ -458,7 +459,7 @@ function SecurityPage() {
                       </span>
                       {pk.last_used_at ? (
                         <span>
-                          {t.security.lastUsed}: {new Date(pk.last_used_at).toLocaleString()}
+                          {t.security.lastUsed}: {formatTerminalDateTime(pk.last_used_at)}
                         </span>
                       ) : null}
                     </div>

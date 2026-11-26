@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -42,7 +43,7 @@ function CalendarEventDetailPage() {
   return (
     <TerminalPageShell
       title={ev.title}
-      subtitle={new Date(ev.event_time).toLocaleString()}
+      subtitle={formatTerminalDateTime(ev.event_time)}
       badge={`${ev.currency} • ${ev.impact}`}
       actions={
         <Link to="/dashboard/calendar" className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent">

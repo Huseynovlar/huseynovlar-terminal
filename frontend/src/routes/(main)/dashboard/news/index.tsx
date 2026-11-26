@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useCallback, useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -217,7 +218,7 @@ function NewsWirePage() {
                       {item.sentiment}
                     </Badge>
                     <span className="font-mono text-[10px] text-muted-foreground">
-                      {new Date(item.published_at).toLocaleString()}
+                      {formatTerminalDateTime(item.published_at)}
                     </span>
                   </div>
                   <Link

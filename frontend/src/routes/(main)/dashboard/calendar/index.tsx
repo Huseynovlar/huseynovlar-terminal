@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useCallback, useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -155,7 +156,7 @@ function EconomicCalendarPage() {
                         {String(ev.id).slice(0, 8)}
                       </Link>
                     </td>
-                      <td className="px-3 py-2 font-mono">{new Date(ev.event_time).toLocaleString()}</td>
+                      <td className="px-3 py-2 font-mono">{formatTerminalDateTime(ev.event_time)}</td>
                       <td className="px-3 py-2 font-mono font-bold">{ev.currency}</td>
                       <td className="px-3 py-2">
                         <Badge

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -359,6 +359,7 @@ async def delete_exness_profile(
 
 @router.get("/accounts")
 async def list_accounts(
+    q: str | None = Query(default=None),
     profile_id: str | None = None,
     asset_id: str | None = None,
     _: User = Depends(get_current_user),
@@ -370,6 +371,15 @@ async def list_accounts(
         stmt = stmt.where(TradingAccount.profile_id == profile_id)
     if asset_id:
         stmt = stmt.where(TradingAccount.primary_asset_id == asset_id)
+    if q and q.strip():
+        pat = f"%{q.strip()}%"
+        stmt = stmt.where(
+            TradingAccount.id.ilike(pat)
+            | TradingAccount.name.ilike(pat)
+            | TradingAccount.mt5_login.ilike(pat)
+            | TradingAccount.mt5_server.ilike(pat)
+            | TradingAccount.platform.ilike(pat)
+        )
     rows = (await db.execute(stmt)).scalars().all()
     rc_q = await db.execute(select(Robot.account_id, func.count(Robot.id)).group_by(Robot.account_id))
     rc_map = {aid: int(cnt) for aid, cnt in rc_q.all()}
@@ -451,6 +461,7 @@ async def create_account(
 @router.get("/robots")
 @router.get("/accounts/robots")
 async def list_robots(
+    q: str | None = Query(default=None),
     account_id: str | None = None,
     asset_id: str | None = None,
     _: User = Depends(get_current_user),
@@ -462,6 +473,11 @@ async def list_robots(
         stmt = stmt.where(Robot.account_id == account_id)
     if asset_id:
         stmt = stmt.where(Robot.asset_id == asset_id)
+    if q and q.strip():
+        pat = f"%{q.strip()}%"
+        stmt = stmt.where(
+            Robot.id.ilike(pat) | Robot.name.ilike(pat) | Robot.symbol.ilike(pat) | Robot.strategy_label.ilike(pat)
+        )
     rows = (await db.execute(stmt)).scalars().all()
     accounts = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}
     return page.apply([_serialize_robot(r, accounts.get(r.account_id)) for r in rows])

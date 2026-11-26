@@ -296,6 +296,22 @@ function PreferencesPage() {
                   ))}
                 </SearchSelect>
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pref-time-format">Time Format (24h / 12h)</Label>
+                <SearchSelect
+                  id="pref-time-format"
+                  value={useTerminalStore.getState().timeFormat}
+                  onChange={(e) => {
+                    const fmt = e.target.value === "12h" ? "12h" : "24h";
+                    useTerminalStore.getState().setTimeFormat(fmt);
+                    notify.success(t.common.savedSuccess, fmt.toUpperCase());
+                  }}
+                  className="border-input bg-background flex h-9 w-full rounded-md border px-3 text-sm font-mono"
+                >
+                  <option value="24h">24h (14:30:00 UTC)</option>
+                  <option value="12h">12h (02:30:00 PM)</option>
+                </SearchSelect>
+              </div>
             </CardContent>
           </Card>
 

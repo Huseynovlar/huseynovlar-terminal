@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { useTerminalStore } from "@/framework/terminal-store";
+
 /**
  * Wall-clock-aligned 1000ms clock hook so every clock in Header, Login, and Robots
  * ticks smoothly on every exact second boundary without drift.
@@ -43,20 +45,77 @@ export function resolveIanaTimezone(tz: string): string {
   return VALID_TIMEZONE_MAP[tz] ?? tz ?? "UTC";
 }
 
-export function formatTerminalClock(date: Date, timezone = "UTC"): { time: string; label: string } {
+export function formatTerminalClock(
+  date: Date,
+  timezone = "UTC",
+  timeFormat: "24h" | "12h" = "24h",
+): { time: string; label: string } {
   const iana = resolveIanaTimezone(timezone);
   try {
     const time = new Intl.DateTimeFormat("en-GB", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
-      hour12: false,
+      hour12: timeFormat === "12h",
       timeZone: iana,
     }).format(date);
-    const label = timezone === "Asia/Baku" ? "AZT" : timezone === "America/New_York" ? "EST" : timezone === "Europe/London" ? "LDN" : timezone === "Asia/Tokyo" ? "TYO" : "UTC";
+    const label =
+      timezone === "Asia/Baku"
+        ? "AZT"
+        : timezone === "America/New_York"
+          ? "EST"
+          : timezone === "Europe/London"
+            ? "LDN"
+            : timezone === "Asia/Tokyo"
+              ? "TYO"
+              : "UTC";
     return { time, label };
   } catch {
     return { time: date.toISOString().slice(11, 19), label: "UTC" };
+  }
+}
+
+/**
+ * Institutional 24-hour UTC (or user-configured timezone/format) timestamp formatter (#11).
+ * Never emits browser-locale AM/PM unless the user explicitly selects `12h` in Preferences.
+ */
+export function formatTerminalDateTime(
+  value: string | number | Date | null | undefined,
+  opts?: { timezone?: string; timeFormat?: "24h" | "12h"; dateOnly?: boolean },
+): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+
+  const state = useTerminalStore.getState();
+  const tz = resolveIanaTimezone(opts?.timezone ?? state.timezone ?? "UTC");
+  const tf = opts?.timeFormat ?? state.timeFormat ?? "24h";
+
+  try {
+    if (opts?.dateOnly) {
+      return new Intl.DateTimeFormat("en-CA", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        timeZone: tz,
+      }).format(d);
+    }
+    const datePart = new Intl.DateTimeFormat("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: tz,
+    }).format(d);
+    const timePart = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: tf === "12h",
+      timeZone: tz,
+    }).format(d);
+    return `${datePart} ${timePart}`;
+  } catch {
+    return d.toISOString().replace("T", " ").slice(0, 19);
   }
 }
 

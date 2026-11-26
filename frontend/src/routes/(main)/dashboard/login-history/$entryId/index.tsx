@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -91,7 +92,7 @@ function LoginHistoryDetailPage() {
             <div>
               <div className="text-muted-foreground">{t.common.createdAt}</div>
               <div className="font-mono">
-                {entry?.created_at ? new Date(entry.created_at).toLocaleString() : "—"}
+                {entry?.created_at ? formatTerminalDateTime(entry.created_at) : "—"}
               </div>
             </div>
             <div>

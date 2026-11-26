@@ -17,6 +17,7 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 
 @router.get("")
 async def list_audit_logs(
+    q: str | None = Query(default=None),
     action: str | None = Query(default=None),
     resource_type: str | None = Query(default=None),
     user_id: str | None = Query(default=None),
@@ -29,19 +30,27 @@ async def list_audit_logs(
         .outerjoin(User, AuditLog.user_id == User.id)
         .order_by(AuditLog.created_at.desc())
     )
+    count_stmt = select(func.count()).select_from(AuditLog).outerjoin(User, AuditLog.user_id == User.id)
+    if q and q.strip():
+        pat = f"%{q.strip()}%"
+        cond = (
+            AuditLog.id.ilike(pat)
+            | AuditLog.action.ilike(pat)
+            | AuditLog.resource_type.ilike(pat)
+            | AuditLog.resource_id.ilike(pat)
+            | AuditLog.ip_address.ilike(pat)
+            | User.username.ilike(pat)
+        )
+        stmt = stmt.where(cond)
+        count_stmt = count_stmt.where(cond)
     if action:
         stmt = stmt.where(AuditLog.action.ilike(f"%{action.strip()}%"))
-    if resource_type:
-        stmt = stmt.where(AuditLog.resource_type == resource_type.strip())
-    if user_id:
-        stmt = stmt.where(AuditLog.user_id == user_id.strip())
-
-    count_stmt = select(func.count()).select_from(AuditLog)
-    if action:
         count_stmt = count_stmt.where(AuditLog.action.ilike(f"%{action.strip()}%"))
     if resource_type:
+        stmt = stmt.where(AuditLog.resource_type == resource_type.strip())
         count_stmt = count_stmt.where(AuditLog.resource_type == resource_type.strip())
     if user_id:
+        stmt = stmt.where(AuditLog.user_id == user_id.strip())
         count_stmt = count_stmt.where(AuditLog.user_id == user_id.strip())
     page.set_headers(int(await db.scalar(count_stmt) or 0))
     rows = (await db.execute(stmt.limit(page.limit).offset(page.offset))).all()

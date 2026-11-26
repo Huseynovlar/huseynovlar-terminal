@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -90,7 +91,7 @@ function TreasuryDetailPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-xs">
           <div><span className="text-muted-foreground">Amount USD:</span> <span className="font-mono font-bold">{formatSignedUsd(op.amount_usd, privacyMode)}</span></div>
-          <div><span className="text-muted-foreground">Timestamp:</span> <span className="font-mono">{new Date(op.timestamp).toLocaleString()}</span></div>
+          <div><span className="text-muted-foreground">Timestamp:</span> <span className="font-mono">{formatTerminalDateTime(op.timestamp)}</span></div>
           <div><span className="text-muted-foreground">Comment:</span> {op.comment || "—"}</div>
           <div><span className="text-muted-foreground">Notes:</span> {op.notes || "—"}</div>
         </CardContent>

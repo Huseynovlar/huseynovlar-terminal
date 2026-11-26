@@ -82,10 +82,14 @@ async def list_users(
     stmt = select(User).order_by(User.created_at.asc())
     if role and role.upper() in VALID_ROLES:
         stmt = stmt.where(User.role == role.upper())
-    if q:
+    if q and q.strip():
         pattern = f"%{q.strip()}%"
         stmt = stmt.where(
-            User.username.ilike(pattern) | User.email.ilike(pattern) | User.display_name.ilike(pattern)
+            User.id.ilike(pattern)
+            | User.username.ilike(pattern)
+            | User.email.ilike(pattern)
+            | User.display_name.ilike(pattern)
+            | User.role.ilike(pattern)
         )
     users = (await db.execute(stmt)).scalars().all()
     return page.apply([_serialize_user(u) for u in users])

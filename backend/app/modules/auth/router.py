@@ -1059,6 +1059,7 @@ async def revoke_session(
 
 @router.get("/login-history")
 async def get_login_history(
+    q: str | None = Query(default=None),
     action: str | None = Query(default=None),
     ip: str | None = Query(default=None),
     user: User = Depends(get_current_user),
@@ -1066,6 +1067,9 @@ async def get_login_history(
     page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(AuditLog).where(AuditLog.user_id == user.id, AuditLog.action.like("auth.%"))
+    if q and q.strip():
+        pat = f"%{q.strip()}%"
+        stmt = stmt.where(AuditLog.id.ilike(pat) | AuditLog.action.ilike(pat) | AuditLog.ip_address.ilike(pat))
     if action:
         stmt = stmt.where(AuditLog.action == action.strip())
     if ip:

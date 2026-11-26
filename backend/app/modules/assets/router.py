@@ -5,7 +5,7 @@ import html
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -270,6 +270,7 @@ async def seed_default_assets(
 
 @router.get("")
 async def list_assets(
+    q: str | None = Query(default=None),
     status_filter: str | None = None,
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -278,6 +279,15 @@ async def list_assets(
     stmt = select(AssetHub).order_by(AssetHub.status.asc(), AssetHub.code.asc())
     if status_filter:
         stmt = stmt.where(AssetHub.status == status_filter)
+    if q and q.strip():
+        pat = f"%{q.strip()}%"
+        stmt = stmt.where(
+            AssetHub.id.ilike(pat)
+            | AssetHub.code.ilike(pat)
+            | AssetHub.name.ilike(pat)
+            | AssetHub.category.ilike(pat)
+            | AssetHub.group.ilike(pat)
+        )
     rows = (await db.execute(stmt)).scalars().all()
     accounts = (await db.execute(select(TradingAccount))).scalars().all()
     robots = (await db.execute(select(Robot))).scalars().all()

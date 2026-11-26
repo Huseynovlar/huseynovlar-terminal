@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -114,7 +115,7 @@ function UserDetailPage() {
           <div>
             <div className="text-muted-foreground text-xs">{t.users.lastLogin}</div>
             <div className="font-mono text-xs">
-              {user?.last_login_at ? new Date(user.last_login_at).toLocaleString() : "—"}
+              {user?.last_login_at ? formatTerminalDateTime(user.last_login_at) : "—"}
             </div>
           </div>
         </CardContent>

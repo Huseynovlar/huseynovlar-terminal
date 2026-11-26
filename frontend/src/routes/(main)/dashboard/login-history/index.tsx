@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useCallback, useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -39,7 +40,7 @@ function LoginHistoryListPage() {
   const loadHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = ipFilter.trim() ? `?ip=${encodeURIComponent(ipFilter.trim())}` : "";
+      const qs = ipFilter.trim() ? `?q=${encodeURIComponent(ipFilter.trim())}` : "";
       const res = await apiRequestPaged<LoginHistoryEntry>(`/auth/login-history${qs}`, page, DEFAULT_PAGE_SIZE);
       setEntries(res.items);
       setTotal(res.total);
@@ -71,9 +72,12 @@ function LoginHistoryListPage() {
           <Search className="text-muted-foreground pointer-events-none absolute top-2.5 left-2.5 size-4" />
           <Input
             className="pl-8 font-mono text-xs"
-            placeholder="Filter by IP (e.g. 100.104...)"
+            placeholder="Search by ID, IP, or action..."
             value={ipFilter}
-            onChange={(e) => setIpFilter(e.target.value)}
+            onChange={(e) => {
+              setIpFilter(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
         <Button size="sm" variant="outline" onClick={() => void loadHistory()}>
@@ -128,7 +132,7 @@ function LoginHistoryListPage() {
                         </span>
                       </td>
                       <td className="text-muted-foreground px-3 py-2 font-mono">
-                        {entry.created_at ? new Date(entry.created_at).toLocaleString() : "—"}
+                        {entry.created_at ? formatTerminalDateTime(entry.created_at) : "—"}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <Button

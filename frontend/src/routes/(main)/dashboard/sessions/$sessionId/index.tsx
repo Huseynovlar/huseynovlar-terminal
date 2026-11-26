@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -93,13 +94,13 @@ function SessionDetailPage() {
           <div>
             <div className="text-muted-foreground text-xs">{t.common.createdAt}</div>
             <div className="font-mono text-xs">
-              {session?.created_at ? new Date(session.created_at).toLocaleString() : "—"}
+              {session?.created_at ? formatTerminalDateTime(session.created_at) : "—"}
             </div>
           </div>
           <div>
             <div className="text-muted-foreground text-xs">{t.sessions.expiresAt}</div>
             <div className="font-mono text-xs">
-              {session?.expires_at ? new Date(session.expires_at).toLocaleString() : "—"}
+              {session?.expires_at ? formatTerminalDateTime(session.expires_at) : "—"}
             </div>
           </div>
         </CardContent>

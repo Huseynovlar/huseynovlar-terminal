@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -59,7 +60,7 @@ function AiBriefingDetailPage() {
   return (
     <TerminalPageShell
       title={item.title}
-      subtitle={`${item.model} • ${new Date(item.created_at).toLocaleString()}`}
+      subtitle={`${item.model} • ${formatTerminalDateTime(item.created_at)}`}
       badge={item.kind}
       actions={
         <>

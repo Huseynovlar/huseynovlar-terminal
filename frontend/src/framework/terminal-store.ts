@@ -10,6 +10,15 @@ export type LanguageMode = "ru" | "en" | "az";
 export type DensityMode = "bloomberg";
 export type TickerSpeed = "slow" | "normal" | "fast";
 
+export type TimeFormatMode = "24h" | "12h";
+
+export interface CustomMenuLink {
+  id: string;
+  title: string;
+  url: string;
+  newTab?: boolean;
+}
+
 export interface LivePortfolioSnapshot {
   total_balance_usd: number;
   total_equity_usd: number;
@@ -23,6 +32,7 @@ export interface TerminalPreferencesState {
   currencyMode: CurrencyMode;
   privacyMode: boolean;
   timezone: TimezoneMode;
+  timeFormat: TimeFormatMode;
   language: LanguageMode;
   density: DensityMode;
   tickerEnabled: boolean;
@@ -30,6 +40,7 @@ export interface TerminalPreferencesState {
   soundEnabled: boolean;
   hiddenPageIds: string[];
   sidebarOrder: string[];
+  customMenuLinks: CustomMenuLink[];
   pinnedAssetCodes: string[];
   customHotkeys: Record<string, string>;
   vaultTargetUsd: number;
@@ -46,6 +57,7 @@ export interface TerminalPreferencesState {
   toggleSound: () => void;
   setSoundEnabled: (enabled: boolean) => void;
   setTimezone: (tz: TimezoneMode) => void;
+  setTimeFormat: (fmt: TimeFormatMode) => void;
   cycleTimezone: () => void;
   cycleLanguage: () => void;
   setLanguage: (lang: LanguageMode) => void;
@@ -54,6 +66,8 @@ export interface TerminalPreferencesState {
   setTickerSpeed: (speed: TickerSpeed) => void;
   toggleHiddenPage: (pageId: string) => void;
   setSidebarOrder: (order: string[]) => void;
+  addCustomMenuLink: (link: Omit<CustomMenuLink, "id">) => void;
+  removeCustomMenuLink: (id: string) => void;
   setHotkey: (actionId: string, combo: string) => void;
   resetHotkeys: () => void;
   setVaultTargetUsd: (amount: number) => void;
@@ -115,6 +129,7 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
       currencyMode: "USD",
       privacyMode: false,
       timezone: "UTC",
+      timeFormat: "24h",
       language: "ru",
       density: "bloomberg",
       tickerEnabled: true,
@@ -122,6 +137,7 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
       soundEnabled: true,
       hiddenPageIds: [],
       sidebarOrder: [],
+      customMenuLinks: [],
       pinnedAssetCodes: ["XAUUSD", "USTEC", "SPX", "BTCUSD"],
       customHotkeys: { ...DEFAULT_HOTKEYS },
       vaultTargetUsd: 100000,
@@ -134,6 +150,31 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
 
       setProfileAvatarUrl: (profileAvatarUrl) => set({ profileAvatarUrl }),
       setLivePortfolio: (livePortfolio) => set({ livePortfolio }),
+
+      setTimeFormat: (timeFormat) => {
+        set({ timeFormat });
+        queueServerPreferenceSync({ time_format: timeFormat });
+      },
+
+      addCustomMenuLink: (link) => {
+        const next: CustomMenuLink[] = [
+          ...get().customMenuLinks,
+          {
+            id: `custom-${Date.now().toString(36)}`,
+            title: link.title.trim(),
+            url: link.url.trim(),
+            newTab: link.newTab,
+          },
+        ];
+        set({ customMenuLinks: next });
+        queueServerPreferenceSync({ custom_menu_links: next });
+      },
+
+      removeCustomMenuLink: (id) => {
+        const next = get().customMenuLinks.filter((l) => l.id !== id);
+        set({ customMenuLinks: next });
+        queueServerPreferenceSync({ custom_menu_links: next });
+      },
 
       toggleCurrencyMode: () =>
         set((s) => ({ currencyMode: s.currencyMode === "USD" ? "USC" : "USD" })),
@@ -273,6 +314,14 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
             document.documentElement.lang = prefs.language;
           }
         }
+        if (prefs.time_format === "24h" || prefs.time_format === "12h") {
+          patch.timeFormat = prefs.time_format;
+        }
+        if (Array.isArray(prefs.custom_menu_links)) {
+          patch.customMenuLinks = (prefs.custom_menu_links as CustomMenuLink[]).filter(
+            (l) => l && typeof l.id === "string" && typeof l.title === "string" && typeof l.url === "string",
+          );
+        }
         if (typeof prefs.ticker_enabled === "boolean") patch.tickerEnabled = prefs.ticker_enabled;
         if (prefs.ticker_speed === "slow" || prefs.ticker_speed === "normal" || prefs.ticker_speed === "fast") {
           patch.tickerSpeed = prefs.ticker_speed;
@@ -311,6 +360,7 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
         currencyMode: state.currencyMode,
         privacyMode: state.privacyMode,
         timezone: state.timezone,
+        timeFormat: state.timeFormat,
         language: state.language,
         density: "bloomberg" as DensityMode,
         tickerEnabled: state.tickerEnabled,
@@ -318,6 +368,7 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
         soundEnabled: state.soundEnabled,
         hiddenPageIds: state.hiddenPageIds,
         sidebarOrder: state.sidebarOrder,
+        customMenuLinks: state.customMenuLinks,
         pinnedAssetCodes: state.pinnedAssetCodes,
         customHotkeys: state.customHotkeys,
         vaultTargetUsd: state.vaultTargetUsd,

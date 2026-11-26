@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -204,7 +205,7 @@ function GeminiAiCopilotPage() {
                     </Link>
                     <div className="mt-1 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
                       <Badge variant="outline" className="text-[10px]">{b.kind}</Badge>
-                      <span>{new Date(b.created_at).toLocaleDateString()}</span>
+                      <span>{formatTerminalDateTime(b.created_at, { dateOnly: true })}</span>
                     </div>
                   </div>
                   <div className="flex shrink-0 gap-1">

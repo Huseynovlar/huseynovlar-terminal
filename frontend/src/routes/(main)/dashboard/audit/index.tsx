@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useCallback, useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -40,7 +41,7 @@ function AuditListPage() {
   const loadAudit = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = actionFilter.trim() ? `?action=${encodeURIComponent(actionFilter.trim())}` : "";
+      const qs = actionFilter.trim() ? `?q=${encodeURIComponent(actionFilter.trim())}` : "";
       const res = await apiRequestPaged<AuditEntry>(`/audit${qs}`, page, DEFAULT_PAGE_SIZE);
       setRows(res.items);
       setTotal(res.total);
@@ -72,7 +73,7 @@ function AuditListPage() {
           <Search className="text-muted-foreground pointer-events-none absolute top-2.5 left-2.5 size-4" />
           <Input
             className="pl-8 font-mono text-xs"
-            placeholder="Filter by action..."
+            placeholder="Search by ID, action, resource, IP..."
             value={actionFilter}
             onChange={(e) => {
               setActionFilter(e.target.value);
@@ -131,7 +132,7 @@ function AuditListPage() {
                       </td>
                       <td className="px-3 py-2 font-mono">{row.ip_address || "—"}</td>
                       <td className="text-muted-foreground px-3 py-2 font-mono">
-                        {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                        {row.created_at ? formatTerminalDateTime(row.created_at) : "—"}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <Button

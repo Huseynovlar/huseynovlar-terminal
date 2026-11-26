@@ -1,3 +1,4 @@
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -61,7 +62,7 @@ function WikiDetailPage() {
   return (
     <TerminalPageShell
       title={article?.title || slug}
-      subtitle={article?.updated_at ? `${t.common.updatedAt}: ${new Date(article.updated_at).toLocaleString()}` : slug}
+      subtitle={article?.updated_at ? `${t.common.updatedAt}: ${formatTerminalDateTime(article.updated_at)}` : slug}
       badge={article?.category || "WIKI"}
       actions={
         <>

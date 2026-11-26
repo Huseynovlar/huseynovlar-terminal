@@ -2,11 +2,13 @@ import { type FormEvent, useState } from "react";
 
 import { Fingerprint, KeyRound, Lock, LogOut, ShieldAlert } from "lucide-react";
 
+import { AppLogo } from "@/components/app-logo";
 import { AsyncButton } from "@/components/ui/async-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { notify } from "@/components/ui/toast";
+import { APP_CONFIG } from "@/config/app-config";
 import { authApi, setAccessToken } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { useTerminalStore } from "@/framework/terminal-store";
@@ -20,13 +22,17 @@ export interface LockScreenUser {
   email: string;
 }
 
+/**
+ * Full-screen split-layout Lock Screen matching `/auth/v2/login` (#46).
+ */
 export function LockScreenOverlay({ user }: { user: LockScreenUser }) {
   const { t } = useI18n();
   const screenLocked = useTerminalStore((s) => s.screenLocked);
   const setScreenLocked = useTerminalStore((s) => s.setScreenLocked);
   const timezone = useTerminalStore((s) => s.timezone);
+  const timeFormat = useTerminalStore((s) => s.timeFormat);
   const now = useUtcClock(1000);
-  const clock = formatTerminalClock(now, timezone);
+  const clock = formatTerminalClock(now, timezone, timeFormat);
 
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
@@ -34,6 +40,7 @@ export function LockScreenOverlay({ user }: { user: LockScreenUser }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
 
   if (!screenLocked) return null;
 
@@ -102,85 +109,137 @@ export function LockScreenOverlay({ user }: { user: LockScreenUser }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 p-4 backdrop-blur-xl">
-      <div className="w-full max-w-md space-y-5 rounded-2xl border border-border bg-card p-6 shadow-2xl">
-        <div className="space-y-1.5 text-center">
-          <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
-            <Lock className="size-6" />
+    <div className="bg-background fixed inset-0 z-[100] grid h-dvh p-2 lg:grid-cols-2">
+      {/* Right branded panel identical to Login Screen */}
+      <div className="bg-primary relative order-2 hidden h-full flex-col justify-between overflow-hidden rounded-2xl p-10 lg:flex">
+        <div className="text-primary-foreground space-y-2">
+          <div className="flex items-center gap-2.5">
+            <AppLogo className="size-7" />
+            <span className="border-primary-foreground/25 rounded border px-2 py-0.5 font-mono text-[11px] tracking-wide">
+              {APP_CONFIG.domain}
+            </span>
           </div>
-          <div className="font-mono text-2xl font-bold tracking-tight tabular-nums">
-            {clock.time} <span className="text-muted-foreground text-xs font-normal">{clock.label}</span>
-          </div>
-          <h2 className="text-lg font-semibold">{t.auth.lockTitle}</h2>
-          <p className="text-muted-foreground text-xs">{t.auth.lockSubtitle}</p>
-          <p className="text-xs font-medium text-foreground/80">
-            {user.name} ({loginIdentifier})
-          </p>
+          <h1 className="pt-2 text-2xl font-semibold tracking-tight">{t.auth.brandTitle}</h1>
+          <p className="text-primary-foreground/80 max-w-md text-xs leading-relaxed">{t.auth.brandSubtitle}</p>
         </div>
 
-        <AsyncButton
-          type="button"
-          variant="outline"
-          className="w-full gap-2"
-          loading={passkeyLoading}
-          loadingText={t.auth.passkeyLoading}
-          onClick={() => void handlePasskeyUnlock()}
-        >
-          <Fingerprint className="size-4 text-emerald-500" />
-          {t.auth.unlockWithPasskey}
-        </AsyncButton>
+        <div className="my-6 flex flex-1 items-center justify-center">
+          {!imgFailed ? (
+            <div className="w-full overflow-hidden rounded-xl border border-primary-foreground/20 bg-black/25 shadow-2xl">
+              <img
+                src="/login-preview.png"
+                alt={APP_CONFIG.name}
+                className="h-auto max-h-[58vh] w-full object-cover object-top"
+                onError={() => setImgFailed(true)}
+              />
+            </div>
+          ) : (
+            <div className="flex h-64 w-full flex-col items-center justify-center rounded-xl border border-primary-foreground/20 bg-black/15 p-6 text-center text-primary-foreground/75">
+              <AppLogo className="mb-3 size-10 opacity-80" />
+              <div className="font-mono text-xs">{APP_CONFIG.name}</div>
+              <div className="mt-1 font-mono text-lg tabular-nums">
+                {clock.time} {clock.label}
+              </div>
+            </div>
+          )}
+        </div>
 
-        <form onSubmit={(e) => void handlePasswordUnlock(e)} className="space-y-3">
-          <div className="space-y-1">
-            <Label htmlFor="lock-password">{t.auth.password}</Label>
-            <Input
-              id="lock-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
+        <div className="text-primary-foreground/70 flex items-center justify-between border-t border-primary-foreground/15 pt-4 font-mono text-[11px]">
+          <span>{APP_CONFIG.name}</span>
+          <span className="tabular-nums">
+            {clock.time} {clock.label}
+          </span>
+        </div>
+      </div>
+
+      {/* Left unlock panel matching Login Screen */}
+      <div className="relative order-1 flex h-full items-center justify-center p-6">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Lock className="size-3.5 text-primary" />
+                <span>{t.auth.lockTitle}</span>
+              </div>
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                {clock.time} {clock.label}
+              </span>
+            </div>
+            <h2 className="text-2xl font-semibold tracking-tight">{user.name}</h2>
+            <p className="text-muted-foreground font-mono text-xs">{loginIdentifier}</p>
           </div>
 
-          {needTotp ? (
-            <div className="space-y-1">
-              <Label htmlFor="lock-totp">{t.auth.totpCode}</Label>
+          <form onSubmit={(e) => void handlePasswordUnlock(e)} className="space-y-3.5">
+            <div className="space-y-1.5">
+              <Label htmlFor="lock-password">{t.auth.password}</Label>
               <Input
-                id="lock-totp"
-                inputMode="numeric"
-                maxLength={6}
-                placeholder="000000"
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value)}
+                id="lock-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                autoFocus
                 required
               />
             </div>
-          ) : null}
 
-          {error ? (
-            <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <ShieldAlert className="size-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          ) : null}
+            {needTotp ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="lock-totp">{t.auth.totpCode}</Label>
+                <Input
+                  id="lock-totp"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
+                  required
+                />
+              </div>
+            ) : null}
+
+            {error ? (
+              <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                <ShieldAlert className="size-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            ) : null}
+
+            <AsyncButton
+              type="submit"
+              className="w-full gap-2"
+              loading={loading}
+              loadingText={t.common.authenticating}
+            >
+              <KeyRound className="size-4" />
+              {t.auth.unlock}
+            </AsyncButton>
+          </form>
 
           <AsyncButton
-            type="submit"
+            type="button"
+            variant="outline"
             className="w-full gap-2"
-            loading={loading}
-            loadingText={t.common.authenticating}
+            loading={passkeyLoading}
+            loadingText={t.auth.passkeyLoading}
+            onClick={() => void handlePasskeyUnlock()}
           >
-            <KeyRound className="size-4" />
-            {t.auth.unlock}
+            <Fingerprint className="size-4 text-emerald-500" />
+            {t.auth.unlockWithPasskey}
           </AsyncButton>
-        </form>
 
-        <div className="border-t border-border/60 pt-3 text-center">
-          <Button type="button" variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground" onClick={() => void handleSignOut()}>
-            <LogOut className="size-3.5" />
-            {t.auth.switchAccount}
-          </Button>
+          <div className="border-t border-border/60 pt-4 text-center">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-xs text-muted-foreground"
+              onClick={() => void handleSignOut()}
+            >
+              <LogOut className="size-3.5" />
+              {t.auth.switchAccount}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
