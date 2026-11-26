@@ -89,7 +89,7 @@ export function queueServerPreferenceSync(patch: Record<string, unknown>) {
     syncTimer = undefined;
     void apiRequest("/profile/preferences", {
       method: "PATCH",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ preferences: payload }),
     }).catch(() => {
       // Ignore transient offline sync errors; local persist retains state.
     });

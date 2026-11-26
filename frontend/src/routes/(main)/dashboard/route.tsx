@@ -63,7 +63,8 @@ function DashboardLayout() {
         let serverPrefs = profile.preferences;
         if (!serverPrefs) {
           try {
-            serverPrefs = await apiRequest<Record<string, unknown>>("/profile/preferences");
+            const res = await apiRequest<{ preferences?: Record<string, unknown> }>("/profile/preferences");
+            serverPrefs = res.preferences;
           } catch {
             // optional fallback
           }

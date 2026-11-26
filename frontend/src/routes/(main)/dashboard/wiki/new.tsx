@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Save } from "lucide-react";
@@ -25,6 +25,13 @@ function WikiCreatePage() {
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [category, setCategory] = useState("playbook");
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    apiRequest<{ slug: string }[]>("/wiki/categories")
+      .then((rows) => setCategoryOptions(Array.isArray(rows) ? rows.map((r) => r.slug) : []))
+      .catch(() => setCategoryOptions([]));
+  }, []);
   const [isPinned, setIsPinned] = useState(false);
   const [contentMd, setContentMd] = useState("");
   const [saving, setSaving] = useState(false);
@@ -83,7 +90,17 @@ function WikiCreatePage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="wiki-category">{t.wiki.category}</Label>
-                <Input id="wiki-category" value={category} onChange={(e) => setCategory(e.target.value)} />
+                <Input
+                  id="wiki-category"
+                  list="wiki-category-options"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                />
+                <datalist id="wiki-category-options">
+                  {categoryOptions.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
               </div>
               <div className="flex items-center gap-2 pt-6">
                 <Checkbox id="wiki-pinned" checked={isPinned} onCheckedChange={(v) => setIsPinned(Boolean(v))} />
