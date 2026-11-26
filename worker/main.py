@@ -16,6 +16,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import Settings, get_settings
 from app.core.database import build_engine, get_session_factory
 from app.core.ws_hub import ws_hub
@@ -27,8 +30,6 @@ from app.modules.intelligence.router import (
     run_calendar_refresh,
     run_news_refresh,
 )
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [worker] %(levelname)s %(message)s")
 logger = logging.getLogger("terminal.worker")
