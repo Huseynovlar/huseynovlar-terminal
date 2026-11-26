@@ -9,12 +9,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.core.crypto import encrypt_secret, generate_account_api_key
+from app.core.crypto import decrypt_secret, encrypt_secret, generate_account_api_key
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
 from app.core.pagination import Page
 from app.db.models import Deal, ExnessProfile, OpenPositionLive, Robot, TradingAccount, User
+from app.modules.brokers import ExnessApiAdapter
 
 router = APIRouter(tags=["accounts"])
 
@@ -24,6 +25,7 @@ class ExnessProfileCreate(BaseModel):
     notes: str = Field(default="", max_length=2000)
     external_api_key: str | None = None
     external_api_secret: str | None = None
+    external_gateway_url: str | None = None
 
 
 class ExnessProfileUpdate(BaseModel):
@@ -31,6 +33,15 @@ class ExnessProfileUpdate(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
     external_api_key: str | None = None
     external_api_secret: str | None = None
+    external_gateway_url: str | None = None
+
+
+class ExnessApiTestRequest(BaseModel):
+    external_api_key: str | None = None
+    external_api_secret: str | None = None
+    external_gateway_url: str | None = None
+    account_id: str | None = None
+    scope: str = Field(default="trading", pattern="^(trading|payments|partnership)$")
 
 
 class AccountCreate(BaseModel):
@@ -108,6 +119,8 @@ def _serialize_profile(p: ExnessProfile, accounts_count: int = 0) -> dict[str, A
         "name": p.name,
         "notes": p.notes,
         "has_external_api": bool(p.external_api_key_enc),
+        "has_external_secret": bool(p.external_api_secret_enc),
+        "external_gateway_url": p.external_gateway_url or "",
         "accounts_count": accounts_count,
         "created_at": p.created_at.isoformat(),
     }
@@ -223,12 +236,17 @@ async def create_exness_profile(
     profile = ExnessProfile(
         name=body.name.strip(),
         notes=body.notes.strip(),
-        external_api_key_enc=encrypt_secret(body.external_api_key, settings.vault_master_key)
-        if body.external_api_key
+        external_api_key_enc=encrypt_secret(body.external_api_key.strip(), settings.vault_master_key)
+        if body.external_api_key and body.external_api_key.strip()
         else None,
         external_api_secret_enc=(
-            encrypt_secret(body.external_api_secret, settings.vault_master_key) if body.external_api_secret else None
+            encrypt_secret(body.external_api_secret.strip(), settings.vault_master_key)
+            if body.external_api_secret and body.external_api_secret.strip()
+            else None
         ),
+        external_gateway_url=body.external_gateway_url.strip()
+        if body.external_gateway_url and body.external_gateway_url.strip()
+        else None,
     )
     db.add(profile)
     await db.flush()
@@ -243,6 +261,114 @@ async def create_exness_profile(
     )
     await db.commit()
     return _serialize_profile(profile, accounts_count=0)
+
+
+@router.post("/profiles/test-exness-api")
+async def test_exness_api_raw(
+    body: ExnessApiTestRequest,
+    _: User = Depends(require_admin),
+) -> dict[str, Any]:
+    """Live read-only verification of Exness API v1 credentials (Ed25519 signing + Discovery/Balance) before saving."""
+    api_key = (body.external_api_key or "").strip()
+    priv_key = (body.external_api_secret or "").strip()
+    gateway_url = (body.external_gateway_url or "").strip()
+    if not api_key or not priv_key or not gateway_url:
+        return {
+            "ok": False,
+            "broker": "exness",
+            "scope": body.scope,
+            "error_code": "MISSING_CREDENTIALS",
+            "error": "Заполните Gateway URL, Exness API Key и Ed25519 Private Key для проверки.",
+            "hint": (
+                "Скопируйте Gateway URL из DNS-виджета Exness API Portal, "
+                "а также ваш EXN-API-KEY и Ed25519 приватный ключ."
+            ),
+        }
+    try:
+        adapter = ExnessApiAdapter(
+            api_key=api_key,
+            private_key_raw=priv_key,
+            gateway_url=gateway_url,
+        )
+    except ValueError as exc:
+        return {
+            "ok": False,
+            "broker": "exness",
+            "scope": body.scope,
+            "error_code": "INVALID_KEY_FORMAT",
+            "error": str(exc),
+            "hint": (
+                "Убедитесь, что вставлен приватный ключ Ed25519 "
+                "(PEM -----BEGIN PRIVATE KEY----- или 32-байтовый base64/hex)."
+            ),
+        }
+    res = await adapter.test_connection(account_id=body.account_id, scope=body.scope)
+    return res.to_dict()
+
+
+@router.post("/profiles/{profile_id}/test-exness-api")
+async def test_exness_profile_api(
+    profile_id: str,
+    body: ExnessApiTestRequest,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Verify a saved ExnessProfile's stored (or overridden) Exness API v1 credentials."""
+    profile = await db.get(ExnessProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exness profile not found")
+
+    api_key = (body.external_api_key or "").strip()
+    if not api_key and profile.external_api_key_enc:
+        api_key = decrypt_secret(profile.external_api_key_enc, settings.vault_master_key)
+
+    priv_key = (body.external_api_secret or "").strip()
+    if not priv_key and profile.external_api_secret_enc:
+        priv_key = decrypt_secret(profile.external_api_secret_enc, settings.vault_master_key)
+
+    gateway_url = (body.external_gateway_url or profile.external_gateway_url or "").strip()
+
+    account_id = (body.account_id or "").strip()
+    if not account_id:
+        first_acc = (
+            await db.execute(
+                select(TradingAccount)
+                .where(TradingAccount.profile_id == profile.id)
+                .order_by(TradingAccount.created_at.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if first_acc:
+            account_id = first_acc.mt5_login
+
+    if not api_key or not priv_key or not gateway_url:
+        return {
+            "ok": False,
+            "broker": "exness",
+            "scope": body.scope,
+            "error_code": "MISSING_CREDENTIALS",
+            "error": "В профиле не заданы Gateway URL, Exness API Key или Ed25519 Private Key.",
+            "hint": "Заполните поля API-подключения и нажмите «Проверить подключение» или сохраните профиль.",
+        }
+
+    try:
+        adapter = ExnessApiAdapter(
+            api_key=api_key,
+            private_key_raw=priv_key,
+            gateway_url=gateway_url,
+        )
+    except ValueError as exc:
+        return {
+            "ok": False,
+            "broker": "exness",
+            "scope": body.scope,
+            "error_code": "INVALID_KEY_FORMAT",
+            "error": str(exc),
+            "hint": "Проверьте формат Ed25519 приватного ключа (PEM / base64 / hex).",
+        }
+    res = await adapter.test_connection(account_id=account_id or None, scope=body.scope)
+    return res.to_dict()
 
 
 @router.get("/profiles/{profile_id}")
@@ -296,13 +422,17 @@ async def update_exness_profile(
         profile.name = new_name
     if body.notes is not None:
         profile.notes = body.notes.strip()
+    if body.external_gateway_url is not None:
+        profile.external_gateway_url = body.external_gateway_url.strip() or None
     if body.external_api_key is not None:
         profile.external_api_key_enc = (
-            encrypt_secret(body.external_api_key, settings.vault_master_key) if body.external_api_key.strip() else None
+            encrypt_secret(body.external_api_key.strip(), settings.vault_master_key)
+            if body.external_api_key.strip()
+            else None
         )
     if body.external_api_secret is not None:
         profile.external_api_secret_enc = (
-            encrypt_secret(body.external_api_secret, settings.vault_master_key)
+            encrypt_secret(body.external_api_secret.strip(), settings.vault_master_key)
             if body.external_api_secret.strip()
             else None
         )

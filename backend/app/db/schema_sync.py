@@ -24,6 +24,7 @@ COLUMN_MIGRATIONS: list[tuple[str, str, str, str]] = [
     ("deals", "tags", "JSON NOT NULL DEFAULT '[]'", "JSON NOT NULL DEFAULT '[]'"),
     ("balance_operations", "is_manual", "BOOLEAN NOT NULL DEFAULT FALSE", "BOOLEAN NOT NULL DEFAULT 0"),
     ("balance_operations", "notes", "TEXT NOT NULL DEFAULT ''", "TEXT NOT NULL DEFAULT ''"),
+    ("exness_profiles", "external_gateway_url", "TEXT NULL", "TEXT NULL"),
 ]
 
 

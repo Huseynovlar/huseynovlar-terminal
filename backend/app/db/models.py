@@ -124,6 +124,7 @@ class ExnessProfile(Base):
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
     external_api_key_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_api_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    external_gateway_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     accounts: Mapped[list[TradingAccount]] = relationship(back_populates="profile", cascade="all, delete-orphan")
