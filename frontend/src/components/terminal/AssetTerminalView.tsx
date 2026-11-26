@@ -219,8 +219,8 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
   const canonSym = useMemo(() => canonicalMarketSymbol(symbol), [symbol]);
 
   // Resizable cockpit layout persisted in localStorage
-  const [rightWidth, setRightWidth] = useState<number>(() => readNumStorage(LS_RIGHT_W, 330, 280, 460));
-  const [dockHeight, setDockHeight] = useState<number>(() => readNumStorage(LS_DOCK_H, 210, 120, 420));
+  const [rightWidth, setRightWidth] = useState<number>(() => readNumStorage(LS_RIGHT_W, 290, 250, 420));
+  const [dockHeight, setDockHeight] = useState<number>(() => readNumStorage(LS_DOCK_H, 200, 120, 420));
   const [dockCollapsed, setDockCollapsed] = useState(false);
 
   // Domain state

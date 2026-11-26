@@ -313,7 +313,7 @@ export function KLineChartPro({
     chartRef.current = chart;
     chart.setTimezone("UTC");
     chart.createIndicator("VOL", false);
-    chart.createIndicator("EMA", true);
+    chart.createIndicator({ name: "EMA", paneId: "candle_pane" }, true);
 
     const ro = new ResizeObserver(() => {
       chart.resize();
@@ -482,6 +482,7 @@ export function KLineChartPro({
       chart.createIndicator(
         {
           name: "MT5_ZONES",
+          paneId: "candle_pane",
           extendData: mt5Zones,
         },
         true,
@@ -541,7 +542,7 @@ export function KLineChartPro({
       setActiveIndicators((prev) => prev.filter((x) => x !== name));
     } else {
       const isMainOverlay = name === "EMA" || name === "MA" || name === "BOLL";
-      chart.createIndicator(name, isMainOverlay);
+      chart.createIndicator(isMainOverlay ? { name, paneId: "candle_pane" } : name, isMainOverlay);
       setActiveIndicators((prev) => [...prev, name]);
     }
   };

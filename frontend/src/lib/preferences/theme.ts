@@ -12,6 +12,14 @@ export type ResolvedThemeMode = "light" | "dark";
 
 export const THEME_PRESET_OPTIONS = [
   {
+    label: "Bloomberg Pro",
+    value: "terminal-pro",
+    primary: {
+      light: "#3B82F6",
+      dark: "#3B82F6",
+    },
+  },
+  {
     label: "Default",
     value: "default",
     primary: {
