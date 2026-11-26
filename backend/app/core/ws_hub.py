@@ -290,6 +290,18 @@ class LiveWebSocketHub:
             if not ok:
                 break
 
+    def active_market_symbols(self) -> set[str]:
+        out: set[str] = set()
+        for syms in self._conn_market_symbols.values():
+            out.update(syms)
+        return out
+
+    def has_market_subscriber(self, symbol: str) -> bool:
+        sym = symbol.strip().upper()
+        if not sym:
+            return False
+        return any(sym in syms for syms in self._conn_market_symbols.values())
+
     @staticmethod
     def _event_channel(event_type: str) -> str:
         if event_type in ("tick", "orderbook", "bar_update", "liquidation", "macro_quotes"):
@@ -303,17 +315,17 @@ class LiveWebSocketHub:
         evt_ch = self._event_channel(event_type)
         if channels is not None and evt_ch not in channels:
             return False
-        if evt_ch == "market":
+        if event_type in ("tick", "orderbook", "bar_update", "liquidation"):
             # Never stream MT5 bridge ticks to dedicated /ws/market subscribers
             if channels is not None and str(data.get("source") or "") == "mt5_live":
                 return False
+            # Strictly deliver ONLY to clients explicitly subscribed to this symbol (zero all-market flood on /ws/live)
             syms = self._conn_market_symbols.get(ws)
-            if syms is not None and event_type in ("tick", "orderbook", "bar_update", "liquidation"):
-                if not syms:
-                    return False
-                ev_sym = str(data.get("symbol") or data.get("asset_code") or "").strip().upper()
-                if ev_sym and ev_sym not in syms:
-                    return False
+            if not syms:
+                return False
+            ev_sym = str(data.get("symbol") or data.get("asset_code") or "").strip().upper()
+            if not ev_sym or ev_sym not in syms:
+                return False
         return True
 
     async def _fanout_local(self, payload: dict[str, Any]) -> None:
