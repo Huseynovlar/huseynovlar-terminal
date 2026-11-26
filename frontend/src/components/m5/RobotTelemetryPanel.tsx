@@ -37,7 +37,12 @@ export function RobotTelemetryPanel({
   state,
   title = "Live Strategy Indicators (MQL5 Telemetry)",
 }: RobotTelemetryPanelProps) {
-  const raw = state && typeof state === "object" ? state : {};
+  const outer = state && typeof state === "object" ? state : {};
+  const nestedTelemetry =
+    outer.telemetry && typeof outer.telemetry === "object"
+      ? (outer.telemetry as Record<string, unknown>)
+      : {};
+  const raw: Record<string, unknown> = { ...outer, ...nestedTelemetry };
   const regime = strVal(raw, "regime");
   const signalBias = strVal(raw, "signal_bias");
   const waitReason = strVal(raw, "wait_reason");
