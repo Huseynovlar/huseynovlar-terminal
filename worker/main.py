@@ -16,9 +16,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import Settings, get_settings
 from app.core.database import build_engine, get_session_factory
 from app.core.ws_hub import ws_hub
@@ -30,6 +27,8 @@ from app.modules.intelligence.router import (
     run_calendar_refresh,
     run_news_refresh,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [worker] %(levelname)s %(message)s")
 logger = logging.getLogger("terminal.worker")
@@ -71,7 +70,7 @@ async def send_telegram_webhook(
             resp = await http.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             return True
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - worker loop must survive any failure
         logger.warning("Webhook delivery failed (%s): %s", url, exc)
         return False
 
@@ -128,7 +127,7 @@ async def sync_market_cycle(
         try:
             res = await refresh_treemap_universe(db, settings, uni, "1D")
             refreshed[uni] = int(res.get("live_tickers", 0))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - worker loop must survive any failure
             logger.warning("Treemap refresh failed for %s: %s", uni, exc)
             refreshed[uni] = 0
     return {"macro_quotes": len(quotes), "treemap_live": refreshed}
@@ -347,7 +346,7 @@ async def run_worker_loop() -> None:
                 try:
                     async with session_factory() as db:
                         await sync_news_cycle(db, settings)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - worker loop must survive any failure
                     logger.warning("News cycle error: %s", exc)
                 last_news = now_mono
 
@@ -355,7 +354,7 @@ async def run_worker_loop() -> None:
                 try:
                     async with session_factory() as db:
                         await sync_calendar_cycle(db, settings)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - worker loop must survive any failure
                     logger.warning("Calendar cycle error: %s", exc)
                 last_cal = now_mono
 
@@ -363,14 +362,14 @@ async def run_worker_loop() -> None:
                 try:
                     async with session_factory() as db:
                         await sync_market_cycle(db, settings)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - worker loop must survive any failure
                     logger.warning("Market cycle error: %s", exc)
                 last_mkt = now_mono
 
             try:
                 async with session_factory() as db:
                     await evaluate_alert_rules(db, settings, cooldown_state)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - worker loop must survive any failure
                 logger.warning("Alert evaluation error: %s", exc)
 
             await asyncio.sleep(30)
