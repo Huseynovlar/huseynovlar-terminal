@@ -280,12 +280,17 @@ def _logo_storage_dir(settings: Settings) -> Path:
     return Path("/tmp")
 
 
+_LOGO_CACHE_TTL_SEC = 14 * 86400  # 14 days local disk cache
+
+
 def _candidate_official_logo_urls(clean_sym: str) -> list[str]:
-    """Build ordered list of real official logo URLs (nvstly/icons, CoinCap, FMP) for any symbol."""
+    """Institutional Fallback Chain (trading_asset_icons.md):
+    - Crypto: logoapi.sh SVG -> Web3 Icons (jsDelivr) -> Elbstream -> nvstly/icons (jsDelivr)
+    - Stocks/ETFs/Indices: logoapi.sh SVG -> Elbstream -> nvstly/icons (jsDelivr) -> FMP
+    """
     mapped = _INDEX_ETF_LOGO_MAP.get(clean_sym, clean_sym)
     urls: list[str] = []
 
-    # Check if crypto (e.g. BTCUSD, BTCUSDT, BTC, PAXG)
     crypto_base = mapped
     for suffix in ("USDT", "USDC", "USD"):
         if crypto_base.endswith(suffix) and len(crypto_base) > len(suffix):
@@ -295,14 +300,24 @@ def _candidate_official_logo_urls(clean_sym: str) -> list[str]:
                 break
 
     if crypto_base in _KNOWN_CRYPTO_BASES or crypto_base == "PAXG":
-        urls.append(f"https://raw.githubusercontent.com/nvstly/icons/main/crypto_icons/{crypto_base}.png")
-        urls.append(f"https://assets.coincap.io/assets/icons/{crypto_base.lower()}@2x.png")
+        urls.extend(
+            [
+                f"https://logoapi.sh/crypto/{crypto_base}.svg",
+                f"https://cdn.jsdelivr.net/gh/GMWalletApp/crypto-icons@latest/assets/tokens/branded/{crypto_base.lower()}.svg",
+                f"https://api.elbstream.com/logos/crypto/{crypto_base}",
+                f"https://cdn.jsdelivr.net/gh/nvstly/icons@main/crypto_icons/{crypto_base}.png",
+            ]
+        )
     else:
-        # US Equities / ETFs / Indices (NVDA, AAPL, TSLA, MSFT, SPY, QQQ, etc.)
-        urls.append(f"https://raw.githubusercontent.com/nvstly/icons/main/ticker_icons/{mapped}.png")
-        urls.append(f"https://financialmodelingprep.com/image-stock/{mapped}.png")
-        # Fallback to crypto pack in case it's a smaller coin
-        urls.append(f"https://raw.githubusercontent.com/nvstly/icons/main/crypto_icons/{mapped}.png")
+        urls.extend(
+            [
+                f"https://logoapi.sh/ticker/{mapped}.svg",
+                f"https://api.elbstream.com/logos/symbol/{mapped}",
+                f"https://cdn.jsdelivr.net/gh/nvstly/icons@main/ticker_icons/{mapped}.png",
+                f"https://financialmodelingprep.com/image-stock/{mapped}.png",
+                f"https://cdn.jsdelivr.net/gh/nvstly/icons@main/crypto_icons/{mapped}.png",
+            ]
+        )
     return urls
 
 
@@ -317,14 +332,23 @@ async def _fetch_and_cache_official_logo(clean_sym: str, logo_dir: Path) -> tupl
         for url in urls:
             try:
                 resp = await http.get(url, headers={"User-Agent": "HuseynovlarTerminal/2.2"})
-                if resp.status_code != 200 or not resp.content or len(resp.content) < 120:
+                if resp.status_code != 200 or not resp.content or len(resp.content) < 80:
                     continue
                 ct = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
                 ext = _EXT_BY_LOGO_MIME.get(ct)
-                if not ext and url.endswith(".png"):
-                    ext = ".png"
-                    ct = "image/png"
                 if not ext:
+                    if url.endswith(".svg") or resp.content.lstrip().startswith((b"<svg", b"<?xml")):
+                        ext = ".svg"
+                        ct = "image/svg+xml; charset=utf-8"
+                    elif url.endswith(".png") or resp.content.startswith(b"\x89PNG"):
+                        ext = ".png"
+                        ct = "image/png"
+                    elif resp.content.startswith(b"RIFF"):
+                        ext = ".webp"
+                        ct = "image/webp"
+                if not ext:
+                    continue
+                if ext == ".svg" and b"<svg" not in resp.content.lower():
                     continue
                 with contextlib.suppress(OSError):
                     (logo_dir / f"{clean_sym}{ext}").write_bytes(resp.content)
@@ -341,27 +365,30 @@ async def get_asset_logo(
     symbol: str,
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    """Same-origin CSP-safe logo proxy: serves cached/official brand PNG/SVG logos, else crisp SVG fallback."""
+    """Same-origin CSP-safe logo proxy with 14-day local disk cache and official Fallback Chain."""
     clean = re.sub(r"[^A-Z0-9]", "", symbol.strip().upper())[:24]
     clean_stripped = re.sub(r"(C|M|RAW|PRO)$", "", clean) if len(clean) > 4 else clean
     lookup_key = clean_stripped or clean
 
     if lookup_key:
         logo_dir = _logo_storage_dir(settings)
-        # 1. Serve from local disk cache (custom uploads or previously cached official logos)
+        now = time.time()
+        # 1. Serve from local disk cache if fresh (< 14 days)
         for ext, mime in _LOGO_MIME_BY_EXT.items():
             candidate = logo_dir / f"{lookup_key}{ext}"
             if candidate.is_file():
-                return Response(
-                    content=candidate.read_bytes(),
-                    media_type=mime,
-                    headers={
-                        "Cache-Control": "public, max-age=86400",
-                        "X-Content-Type-Options": "nosniff",
-                    },
-                )
+                age = now - candidate.stat().st_mtime
+                if age < _LOGO_CACHE_TTL_SEC:
+                    return Response(
+                        content=candidate.read_bytes(),
+                        media_type=mime,
+                        headers={
+                            "Cache-Control": "public, max-age=86400",
+                            "X-Content-Type-Options": "nosniff",
+                        },
+                    )
 
-        # 2. Fetch real official brand logo from nvstly/icons, CoinCap, or FMP and cache locally
+        # 2. Fetch real official brand logo via Fallback Chain and cache locally
         fetched = await _fetch_and_cache_official_logo(lookup_key, logo_dir)
         if fetched is not None:
             raw_bytes, mime = fetched
