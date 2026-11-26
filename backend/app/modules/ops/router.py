@@ -24,7 +24,12 @@ from app.db.models import DockerContainer, PendingCommand, SecretVaultEntry, Tra
 
 router = APIRouter(prefix="/ops", tags=["ops"])
 
-ALLOWED_MQL5_DOWNLOADS = {"ExnessPanelBridge.mq5", "ExnessPanelHook.mqh"}
+ALLOWED_MQL5_DOWNLOADS = {
+    "ExnessPanelBridge.mq5",
+    "ExnessPanelHook.mqh",
+    "GoldPulseReversion_v8_1_0_LiveChart_M5_EA.mq5",
+    "NasdaqPulseReversion_v3_01_AllWeather_Asym_USTECm_M5_EA.mq5",
+}
 
 _LOG_REDACT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"htk_[A-Za-z0-9_-]+"), "htk_***REDACTED***"),
@@ -63,11 +68,14 @@ def _docker_base_url() -> str:
 
 
 def _resolve_mql5_path(filename: str) -> Path:
-    container_path = Path("/app/mql5") / filename
-    if container_path.is_file():
-        return container_path
-    repo_path = Path(__file__).resolve().parents[4] / "mql5" / filename
-    return repo_path
+    for base in (Path("/app/mql5"), Path(__file__).resolve().parents[4] / "mql5"):
+        direct = base / filename
+        if direct.is_file():
+            return direct
+        patched = base / "patched" / filename
+        if patched.is_file():
+            return patched
+    return Path(__file__).resolve().parents[4] / "mql5" / filename
 
 
 async def _resolve_account(db: AsyncSession, account_id_or_login: str) -> TradingAccount | None:
