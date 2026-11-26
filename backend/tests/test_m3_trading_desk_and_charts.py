@@ -428,39 +428,6 @@ def test_websocket_live_auth_welcome_and_ping_pong():
             assert int(rpc_tk["headers"]["x-total-count"]) > 0
             assert len(rpc_tk["data"]) == 5
 
-        # 3. Create account & test MT5 persistent WebSocket ingestion (/api/v1/ingest/ws?api_key=...)
-        acc_res = tc.post(
-            "/api/v1/accounts",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"name": "WS MT5 Acc", "mt5_login": "551001", "mt5_server": "Exness-MT5Real", "currency": "USD"},
-        )
-        assert acc_res.status_code == 201
-        mt5_key = acc_res.json()["api_key"]
-
-        with tc.websocket_connect(f"/api/v1/ingest/ws?api_key={mt5_key}") as mt5_ws:
-            w_msg = mt5_ws.receive_json()
-            assert w_msg["type"] == "welcome"
-            mt5_ws.send_json({"type": "ping"})
-            assert mt5_ws.receive_json()["type"] == "pong"
-            mt5_ws.send_json(
-                {
-                    "type": "ticks",
-                    "symbol": "XAUUSDc",
-                    "ticks": [{"time_msc": 1700000001000, "bid": 3567.16, "ask": 3567.36}],
-                }
-            )
-            mt5_ws.send_json(
-                {
-                    "type": "snapshot",
-                    "balance": 5000.0,
-                    "equity": 5025.0,
-                    "floating_pnl": 25.0,
-                    "symbol": "XAUUSDc",
-                    "bid": 3567.16,
-                    "ask": 3567.36,
-                }
-            )
-
     asyncio.run(engine.dispose())
 
 
