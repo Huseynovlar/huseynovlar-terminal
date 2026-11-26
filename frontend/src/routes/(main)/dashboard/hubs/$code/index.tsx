@@ -4,6 +4,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Bot, Brain, Calendar, ListOrdered, Newspaper, Pencil, Trash2 } from "lucide-react";
 
 import { InteractiveChartCanvas } from "@/components/m5/InteractiveChartCanvas";
+import { OrderBookAndTicks } from "@/components/m5/OrderBookAndTicks";
 import { formatSignedUsd, formatUsd } from "@/components/m5/chart-indicators";
 import { AsyncButton } from "@/components/ui/async-button";
 import { Badge } from "@/components/ui/badge";
@@ -314,6 +315,9 @@ function HubDetailPage() {
 
       {/* Full-width Live Chart */}
       <InteractiveChartCanvas symbol={hub.code} mode="hub" height={420} />
+
+      {/* Live WebSocket Order Book (DOM) & Tick Chart */}
+      <OrderBookAndTicks symbol={hub.code} />
 
       {/* Tabbed Bloomberg Bottom Desk */}
       <Card className="border-border/70">

@@ -35,6 +35,9 @@ string EP_SafeJsonObject(const string raw)
 
 void EP_WriteIpcEvent(const string event_type, const long magic, const string payload_json)
   {
+   // 0 ms overhead in Strategy Tester / Optimization
+   if(MQLInfoInteger(MQL_TESTER))
+      return;
    FolderCreate(EP_IPC_FOLDER);
    string filename = EP_IPC_FOLDER + "\\events_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + ".jsonl";
    int handle = FileOpen(
@@ -73,6 +76,57 @@ void EP_RegisterRobot(const long magic, const string name, const string version,
 void EP_ReportState(const long magic, const string state_json)
   {
    EP_WriteIpcEvent("robot_state", magic, EP_SafeJsonObject(state_json));
+  }
+
+// Zero-overhead throttled indicator snapshot (call from OnTimer or new M5 bar; max 1 write / min_interval_ms)
+// Compatible with GoldPulseReversion v8.x & NasdaqPulseReversion v3.x
+void EP_ReportIndicators(
+   const long magic,
+   const string regime,
+   const string signal_bias,
+   const double er_h1,
+   const double vwap,
+   const double vwap_z,
+   const double bb_upper,
+   const double bb_mid,
+   const double bb_lower,
+   const double vol_ratio,
+   const double atr5,
+   const double atr20,
+   const double work_balance,
+   const double bank_balance,
+   const double dd_pct,
+   const uint min_interval_ms = 1000
+)
+  {
+   if(MQLInfoInteger(MQL_TESTER))
+      return;
+   static ulong s_last_emit_ms = 0;
+   ulong now_ms = GetTickCount64();
+   if(now_ms - s_last_emit_ms < min_interval_ms)
+      return;
+   s_last_emit_ms = now_ms;
+
+   string payload = StringFormat(
+      "{\"regime\":\"%s\",\"signal_bias\":\"%s\",\"er_h1\":%.4f,\"vwap\":%.5f,\"vwap_z\":%.3f,"
+      "\"bb_upper\":%.5f,\"bb_mid\":%.5f,\"bb_lower\":%.5f,\"vol_ratio\":%.3f,"
+      "\"atr5\":%.5f,\"atr20\":%.5f,\"work_balance\":%.2f,\"bank_balance\":%.2f,\"dd_pct\":%.2f}",
+      EP_EscapeJson(regime),
+      EP_EscapeJson(signal_bias),
+      er_h1,
+      vwap,
+      vwap_z,
+      bb_upper,
+      bb_mid,
+      bb_lower,
+      vol_ratio,
+      atr5,
+      atr20,
+      work_balance,
+      bank_balance,
+      dd_pct
+   );
+   EP_WriteIpcEvent("robot_state", magic, payload);
   }
 
 // Call right after OrderSend() to record real execution latency (ms) and slippage

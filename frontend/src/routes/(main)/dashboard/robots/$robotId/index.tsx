@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Download, Pencil, Trash2 } from "lucide-react";
 
+import { RobotTelemetryPanel } from "@/components/m5/RobotTelemetryPanel";
 import { AsyncButton } from "@/components/ui/async-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,24 +37,27 @@ function RobotDetailPage() {
   const [busy, setBusy] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const loadRobot = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await apiRequest<RobotItem>(`/robots/${encodeURIComponent(robotId)}`);
-      setRobot(res);
-    } catch (err) {
-      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [robotId, t.common.errorTitle]);
+  const loadRobot = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const res = await apiRequest<RobotItem>(`/robots/${encodeURIComponent(robotId)}`);
+        setRobot(res);
+      } catch (err) {
+        if (!silent) notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [robotId, t.common.errorTitle],
+  );
 
   useEffect(() => {
-    void loadRobot();
+    void loadRobot(false);
   }, [loadRobot]);
 
-  useLiveEvents("robot_state", () => {
-    void loadRobot();
+  useLiveEvents(["robot_state", "robot_telemetry"], () => {
+    void loadRobot(true);
   });
 
   async function handleDownload(path: string, filename: string) {
@@ -165,16 +169,7 @@ function RobotDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <Card className="border-border/70">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">{t.robots.telemetry}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[11px]">
-              {JSON.stringify(robot.live_state_json ?? {}, null, 2)}
-            </pre>
-          </CardContent>
-        </Card>
+        <RobotTelemetryPanel state={robot.live_state_json} title={t.robots.telemetry} />
 
         <Card className="border-border/70">
           <CardHeader className="pb-2">
