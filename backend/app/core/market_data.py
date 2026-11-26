@@ -523,6 +523,54 @@ _TF_TO_BINANCE: dict[str, str] = {
     "W1": "1w",
 }
 
+_TF_TO_ALPACA: dict[str, tuple[str, int]] = {
+    "M1": ("1Min", 7),
+    "M5": ("5Min", 21),
+    "M15": ("15Min", 45),
+    "M30": ("30Min", 60),
+    "H1": ("1Hour", 120),
+    "H4": ("4Hour", 240),
+    "D1": ("1Day", 730),
+    "W1": ("1Week", 1825),
+}
+
+_TF_TO_TIINGO_FX: dict[str, tuple[str, int]] = {
+    "M1": ("1min", 3),
+    "M5": ("5min", 10),
+    "M15": ("15min", 21),
+    "M30": ("30min", 30),
+    "H1": ("1hour", 60),
+    "H4": ("4hour", 120),
+    "D1": ("1day", 365),
+    "W1": ("1day", 730),
+}
+
+_YAHOO_TO_TIINGO_FX: dict[str, str] = {
+    "GC=F": "xauusd",
+    "SI=F": "xagusd",
+    "EURUSD=X": "eurusd",
+    "GBPUSD=X": "gbpusd",
+    "JPY=X": "usdjpy",
+    "CHF=X": "usdchf",
+    "AUDUSD=X": "audusd",
+    "CAD=X": "usdcad",
+    "NZDUSD=X": "nzdusd",
+    "EURGBP=X": "eurgbp",
+    "EURJPY=X": "eurjpy",
+    "GBPJPY=X": "gbpjpy",
+    "AUDJPY=X": "audjpy",
+    "EURAUD=X": "euraud",
+    "EURCHF=X": "eurchf",
+}
+
+_INDEX_ETF_PROXY: dict[str, str] = {
+    "^NDX": "QQQ",
+    "^GSPC": "SPY",
+    "^DJI": "DIA",
+    "CL=F": "USO",
+    "NG=F": "UNG",
+}
+
 
 async def binance_bars(
     http: httpx.AsyncClient, sym: str, timeframe: str, limit: int = 500
@@ -533,28 +581,132 @@ async def binance_bars(
         return None
 
     async def _go() -> list[dict[str, Any]] | None:
+        for base in ("https://data-api.binance.vision/api/v3/klines", "https://api.binance.com/api/v3/klines"):
+            try:
+                resp = await http.get(
+                    base,
+                    params={"symbol": pair, "interval": interval, "limit": limit},
+                )
+                if resp.status_code != 200:
+                    continue
+                rows = [
+                    {
+                        "time": int(r[0]) // 1000,
+                        "open": float(r[1]),
+                        "high": float(r[2]),
+                        "low": float(r[3]),
+                        "close": float(r[4]),
+                        "volume": float(r[5]),
+                    }
+                    for r in resp.json()
+                ]
+                if rows:
+                    return rows
+            except (httpx.HTTPError, ValueError, IndexError, TypeError):
+                continue
+        return None
+
+    return await cached_call(f"b:bars:{pair}:{interval}:{limit}", CHART_TTL_SEC, _go)
+
+
+async def alpaca_stock_bars(
+    http: httpx.AsyncClient, sym: str, timeframe: str, limit: int = 500
+) -> list[dict[str, Any]] | None:
+    """Fetch historical US Equity / ETF OHLCV bars via Alpaca Market Data v2 (works 24/7 even on weekends)."""
+    from app.core.config import get_settings
+
+    clean = sym.strip().upper()
+    if not clean or not clean.isalpha() or len(clean) > 5:
+        return None
+    settings = get_settings()
+    if not settings.alpaca_api_key or not settings.alpaca_api_secret:
+        return None
+    alp_tf, lookback_days = _TF_TO_ALPACA.get(timeframe, ("1Hour", 90))
+
+    async def _go() -> list[dict[str, Any]] | None:
+        start_iso = (datetime.now(UTC) - timedelta(days=lookback_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         try:
             resp = await http.get(
-                "https://api.binance.com/api/v3/klines",
-                params={"symbol": pair, "interval": interval, "limit": limit},
+                f"https://data.alpaca.markets/v2/stocks/{clean}/bars",
+                params={"timeframe": alp_tf, "start": start_iso, "limit": limit, "feed": "iex", "sort": "asc"},
+                headers={
+                    "APCA-API-KEY-ID": settings.alpaca_api_key,
+                    "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
+                },
             )
             if resp.status_code != 200:
                 return None
-            return [
-                {
-                    "time": int(r[0]) // 1000,
-                    "open": float(r[1]),
-                    "high": float(r[2]),
-                    "low": float(r[3]),
-                    "close": float(r[4]),
-                    "volume": float(r[5]),
-                }
-                for r in resp.json()
-            ] or None
-        except (httpx.HTTPError, ValueError, IndexError, TypeError):
+            raw_bars = resp.json().get("bars") or []
+            out: list[dict[str, Any]] = []
+            for b in raw_bars:
+                ts_str = str(b.get("t") or "")
+                if not ts_str:
+                    continue
+                dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                out.append(
+                    {
+                        "time": int(dt.timestamp()),
+                        "open": float(b["o"]),
+                        "high": float(b["h"]),
+                        "low": float(b["l"]),
+                        "close": float(b["c"]),
+                        "volume": float(b.get("v") or 0.0),
+                    }
+                )
+            return out or None
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
             return None
 
-    return await cached_call(f"b:bars:{pair}:{interval}:{limit}", CHART_TTL_SEC, _go)
+    return await cached_call(f"alpaca:bars:{clean}:{alp_tf}:{limit}", CHART_TTL_SEC, _go)
+
+
+async def tiingo_fx_bars(
+    http: httpx.AsyncClient, yahoo_sym: str, timeframe: str, limit: int = 500
+) -> list[dict[str, Any]] | None:
+    """Fetch historical intraday Metals (XAUUSD, XAGUSD) & Forex OHLC bars via Tiingo FX API."""
+    from app.core.config import get_settings
+
+    tk = _YAHOO_TO_TIINGO_FX.get(yahoo_sym.strip().upper())
+    if not tk:
+        return None
+    settings = get_settings()
+    if not settings.tiingo_api_key:
+        return None
+    freq, lookback_days = _TF_TO_TIINGO_FX.get(timeframe, ("1hour", 30))
+
+    async def _go() -> list[dict[str, Any]] | None:
+        start_str = (datetime.now(UTC) - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+        try:
+            resp = await http.get(
+                f"https://api.tiingo.com/tiingo/fx/{tk}/prices",
+                params={"startDate": start_str, "resampleFreq": freq, "token": settings.tiingo_api_key},
+            )
+            if resp.status_code != 200:
+                return None
+            rows = resp.json()
+            if not isinstance(rows, list):
+                return None
+            out: list[dict[str, Any]] = []
+            for r in rows[-limit:]:
+                ts_str = str(r.get("date") or "")
+                if not ts_str:
+                    continue
+                dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                out.append(
+                    {
+                        "time": int(dt.timestamp()),
+                        "open": float(r["open"]),
+                        "high": float(r["high"]),
+                        "low": float(r["low"]),
+                        "close": float(r["close"]),
+                        "volume": 0.0,
+                    }
+                )
+            return out or None
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            return None
+
+    return await cached_call(f"tiingo:fx:{tk}:{freq}:{limit}", CHART_TTL_SEC, _go)
 
 
 async def fetch_chart_with_fallback(
@@ -564,6 +716,51 @@ async def fetch_chart_with_fallback(
     owns = http is None
     client = http or new_client()
     try:
+        # 1. Fast direct providers that never hit Yahoo 429:
+        #    - Crypto -> Binance Vision Klines
+        #    - Metals / FX -> Tiingo FX Intraday
+        #    - US Equities -> Alpaca Historical Bars
+        if to_binance_symbol(yahoo_sym):
+            b_bars = await binance_bars(client, yahoo_sym, timeframe)
+            if b_bars:
+                prev = b_bars[-2]["close"] if len(b_bars) >= 2 else None
+                return {
+                    "bars": b_bars[-500:],
+                    "price": b_bars[-1]["close"],
+                    "prev_close": prev,
+                    "name": None,
+                    "currency": "USD",
+                    "source": "binance_vision",
+                    "timeframe": timeframe,
+                }
+
+        t_bars = await tiingo_fx_bars(client, yahoo_sym, timeframe)
+        if t_bars:
+            prev = t_bars[-2]["close"] if len(t_bars) >= 2 else None
+            return {
+                "bars": t_bars[-500:],
+                "price": t_bars[-1]["close"],
+                "prev_close": prev,
+                "name": None,
+                "currency": "USD",
+                "source": "tiingo_fx",
+                "timeframe": timeframe,
+            }
+
+        a_bars = await alpaca_stock_bars(client, yahoo_sym, timeframe)
+        if a_bars:
+            prev = a_bars[-2]["close"] if len(a_bars) >= 2 else None
+            return {
+                "bars": a_bars[-500:],
+                "price": a_bars[-1]["close"],
+                "prev_close": prev,
+                "name": None,
+                "currency": "USD",
+                "source": "alpaca_iex",
+                "timeframe": timeframe,
+            }
+
+        # 2. Yahoo Finance chart (primary for Indices & Commodities)
         parsed = await yahoo_chart(client, yahoo_sym, interval, rng) if not yahoo_in_cooldown() else None
         if parsed:
             bars: list[dict[str, Any]] = []
@@ -597,22 +794,33 @@ async def fetch_chart_with_fallback(
                     "timeframe": timeframe,
                 }
 
-        bars = await binance_bars(client, yahoo_sym, timeframe)
-        source, effective_tf = "binance", timeframe
-        if not bars:
-            bars = await stooq_daily_bars(client, yahoo_sym)
+        # 3. Secondary fallbacks (Gold PAXG, Stooq Daily, Frankfurter FX, ETF proxy via Alpaca)
+        bars_fb: list[dict[str, Any]] | None = None
+        source, effective_tf = "stooq", "D1"
+        if yahoo_sym.upper() == "GC=F":
+            bars_fb = await binance_bars(client, "PAXG-USD", timeframe)
+            if bars_fb:
+                source, effective_tf = "binance_paxg", timeframe
+        if not bars_fb:
+            bars_fb = await stooq_daily_bars(client, yahoo_sym)
             source, effective_tf = "stooq", "D1"
-        if not bars:
+        if not bars_fb:
+            proxy_etf = _INDEX_ETF_PROXY.get(yahoo_sym.upper())
+            if proxy_etf:
+                bars_fb = await alpaca_stock_bars(client, proxy_etf, timeframe)
+                if bars_fb:
+                    source, effective_tf = f"alpaca_{proxy_etf.lower()}", timeframe
+        if not bars_fb:
             fx = await frankfurter_daily_series(client, yahoo_sym)
             if fx:
-                bars = [{"time": t, "open": c, "high": c, "low": c, "close": c, "volume": 0.0} for t, c in fx]
+                bars_fb = [{"time": t, "open": c, "high": c, "low": c, "close": c, "volume": 0.0} for t, c in fx]
                 source, effective_tf = "frankfurter", "D1"
-        if not bars:
+        if not bars_fb:
             return None
-        prev = bars[-2]["close"] if len(bars) >= 2 else None
+        prev = bars_fb[-2]["close"] if len(bars_fb) >= 2 else None
         return {
-            "bars": bars[-500:],
-            "price": bars[-1]["close"],
+            "bars": bars_fb[-500:],
+            "price": bars_fb[-1]["close"],
             "prev_close": prev,
             "name": None,
             "currency": None,

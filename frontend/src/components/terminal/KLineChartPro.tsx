@@ -33,6 +33,138 @@ import {
   type MarketFeedHealth,
   type MarketTickEvent,
 } from "@/framework/use-market-stream";
+import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
+
+function getSymbolPricePrecision(sym: string): number {
+  const s = sym.trim().toUpperCase();
+  const jpyPairs = new Set(["USDJPY", "EURJPY", "GBPJPY", "AUDJPY", "CADJPY", "CHFJPY", "NZDJPY"]);
+  if (jpyPairs.has(s)) return 3;
+  const fx5Pairs = new Set([
+    "EURUSD",
+    "GBPUSD",
+    "USDCHF",
+    "USDCAD",
+    "AUDUSD",
+    "NZDUSD",
+    "EURGBP",
+    "EURAUD",
+    "EURCHF",
+    "AUDCAD",
+    "AUDNZD",
+    "GBPCHF",
+  ]);
+  if (fx5Pairs.has(s)) return 5;
+  return 2;
+}
+
+function buildKLineChartStyles(isDark: boolean) {
+  const gridColor = isDark ? "#151C28" : "#E2E8F0";
+  const axisLine = isDark ? "#1E2634" : "#CBD5E1";
+  const axisText = isDark ? "#94A3B8" : "#475569";
+  const xAxisText = isDark ? "#64748B" : "#475569";
+  const bull = isDark ? "#10B981" : "#059669";
+  const bear = isDark ? "#F43F5E" : "#E11D48";
+  const crossLine = isDark ? "#3B82F6" : "#64748B";
+  const crossTextBg = isDark ? "#171E2B" : "#0F172A";
+  const crossTextColor = isDark ? "#F1F5F9" : "#FFFFFF";
+  const lastPriceText = isDark ? "#0B0E14" : "#FFFFFF";
+
+  return {
+    grid: {
+      show: true,
+      horizontal: { show: true, size: 1, color: gridColor, style: "solid" as const },
+      vertical: { show: true, size: 1, color: gridColor, style: "solid" as const },
+    },
+    candle: {
+      type: "candle_solid" as const,
+      bar: {
+        upColor: bull,
+        downColor: bear,
+        noChangeColor: "#64748B",
+        upBorderColor: bull,
+        downBorderColor: bear,
+        noChangeBorderColor: "#64748B",
+        upWickColor: bull,
+        downWickColor: bear,
+        noChangeWickColor: "#64748B",
+      },
+      priceMark: {
+        show: true,
+        high: { show: true, color: axisText, textSize: 10, textFamily: "IBM Plex Mono, monospace" },
+        low: { show: true, color: axisText, textSize: 10, textFamily: "IBM Plex Mono, monospace" },
+        last: {
+          show: true,
+          upColor: bull,
+          downColor: bear,
+          noChangeColor: "#64748B",
+          line: { show: true, style: "dashed" as const, dashedValue: [3, 3], size: 1 },
+          text: {
+            show: true,
+            size: 11,
+            family: "IBM Plex Mono, monospace",
+            color: lastPriceText,
+            paddingLeft: 4,
+            paddingRight: 4,
+            paddingTop: 2,
+            paddingBottom: 2,
+            borderRadius: 2,
+          },
+        },
+      },
+      tooltip: {
+        showRule: "always" as const,
+        showType: "standard" as const,
+        legend: {
+          size: 11,
+          family: "IBM Plex Mono, monospace",
+          color: axisText,
+        },
+      },
+    },
+    xAxis: {
+      axisLine: { show: true, color: axisLine, size: 1 },
+      tickLine: { show: true, size: 1, length: 3, color: axisLine },
+      tickText: { show: true, color: xAxisText, family: "IBM Plex Mono, monospace", size: 10 },
+    },
+    yAxis: {
+      axisLine: { show: true, color: axisLine, size: 1 },
+      tickLine: { show: true, size: 1, length: 3, color: axisLine },
+      tickText: { show: true, color: axisText, family: "IBM Plex Mono, monospace", size: 10 },
+    },
+    separator: { size: 1, color: axisLine, fill: true, activeBackgroundColor: "rgba(59,130,246,0.2)" },
+    crosshair: {
+      show: true,
+      horizontal: {
+        show: true,
+        line: { show: true, style: "dashed" as const, dashedValue: [3, 3], size: 1, color: crossLine },
+        text: {
+          show: true,
+          color: crossTextColor,
+          size: 10,
+          family: "IBM Plex Mono, monospace",
+          backgroundColor: crossTextBg,
+          borderColor: axisLine,
+          borderSize: 1,
+          borderRadius: 2,
+        },
+      },
+      vertical: {
+        show: true,
+        line: { show: true, style: "dashed" as const, dashedValue: [3, 3], size: 1, color: crossLine },
+        text: {
+          show: true,
+          color: crossTextColor,
+          size: 10,
+          family: "IBM Plex Mono, monospace",
+          backgroundColor: crossTextBg,
+          borderColor: axisLine,
+          borderSize: 1,
+          borderRadius: 2,
+        },
+      },
+    },
+  };
+}
 
 export type ChartTimeframe = "M1" | "M5" | "M15" | "M30" | "H1" | "H4" | "D1" | "W1";
 
@@ -205,6 +337,9 @@ export function KLineChartPro({
   const onBundleLoadedRef = useRef(onBundleLoaded);
   onBundleLoadedRef.current = onBundleLoaded;
 
+  const resolvedThemeMode = usePreferencesStore((s) => s.resolvedThemeMode);
+  const isDark = resolvedThemeMode !== "light";
+
   // Initialize KLineChart v10 instance once
   useEffect(() => {
     const el = containerRef.current;
@@ -212,101 +347,7 @@ export function KLineChartPro({
     ensureMt5ZonesIndicator();
 
     const chart = init(el, {
-      styles: {
-        grid: {
-          show: true,
-          horizontal: { show: true, size: 1, color: "#151C28", style: "solid" },
-          vertical: { show: true, size: 1, color: "#151C28", style: "solid" },
-        },
-        candle: {
-          type: "candle_solid",
-          bar: {
-            upColor: "#10B981",
-            downColor: "#F43F5E",
-            noChangeColor: "#64748B",
-            upBorderColor: "#10B981",
-            downBorderColor: "#F43F5E",
-            noChangeBorderColor: "#64748B",
-            upWickColor: "#10B981",
-            downWickColor: "#F43F5E",
-            noChangeWickColor: "#64748B",
-          },
-          priceMark: {
-            show: true,
-            high: { show: true, color: "#94A3B8", textSize: 10, textFamily: "IBM Plex Mono, monospace" },
-            low: { show: true, color: "#94A3B8", textSize: 10, textFamily: "IBM Plex Mono, monospace" },
-            last: {
-              show: true,
-              upColor: "#10B981",
-              downColor: "#F43F5E",
-              noChangeColor: "#64748B",
-              line: { show: true, style: "dashed", dashedValue: [3, 3], size: 1 },
-              text: {
-                show: true,
-                size: 11,
-                family: "IBM Plex Mono, monospace",
-                color: "#0B0E14",
-                paddingLeft: 4,
-                paddingRight: 4,
-                paddingTop: 2,
-                paddingBottom: 2,
-                borderRadius: 2,
-              },
-            },
-          },
-          tooltip: {
-            showRule: "always",
-            showType: "standard",
-            legend: {
-              size: 11,
-              family: "IBM Plex Mono, monospace",
-              color: "#94A3B8",
-            },
-          },
-        },
-        xAxis: {
-          axisLine: { show: true, color: "#1E2634", size: 1 },
-          tickLine: { show: true, size: 1, length: 3, color: "#1E2634" },
-          tickText: { show: true, color: "#64748B", family: "IBM Plex Mono, monospace", size: 10 },
-        },
-        yAxis: {
-          axisLine: { show: true, color: "#1E2634", size: 1 },
-          tickLine: { show: true, size: 1, length: 3, color: "#1E2634" },
-          tickText: { show: true, color: "#94A3B8", family: "IBM Plex Mono, monospace", size: 10 },
-        },
-        separator: { size: 1, color: "#1E2634", fill: true, activeBackgroundColor: "rgba(59,130,246,0.2)" },
-        crosshair: {
-          show: true,
-          horizontal: {
-            show: true,
-            line: { show: true, style: "dashed", dashedValue: [3, 3], size: 1, color: "#3B82F6" },
-            text: {
-              show: true,
-              color: "#F1F5F9",
-              size: 10,
-              family: "IBM Plex Mono, monospace",
-              backgroundColor: "#171E2B",
-              borderColor: "#2C3649",
-              borderSize: 1,
-              borderRadius: 2,
-            },
-          },
-          vertical: {
-            show: true,
-            line: { show: true, style: "dashed", dashedValue: [3, 3], size: 1, color: "#3B82F6" },
-            text: {
-              show: true,
-              color: "#F1F5F9",
-              size: 10,
-              family: "IBM Plex Mono, monospace",
-              backgroundColor: "#171E2B",
-              borderColor: "#2C3649",
-              borderSize: 1,
-              borderRadius: 2,
-            },
-          },
-        },
-      },
+      styles: buildKLineChartStyles(isDark),
     });
 
     if (!chart) return;
@@ -328,12 +369,17 @@ export function KLineChartPro({
     };
   }, []);
 
+  // Dynamically repaint KLineChart v10 whenever Light/Dark theme switches
+  useEffect(() => {
+    chartRef.current?.setStyles(buildKLineChartStyles(isDark));
+  }, [isDark]);
+
   // Configure DataLoader and reload when symbol, timeframe, or provider changes
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !symbol) return;
 
-    const precision = symbol.length === 6 && !symbol.includes("JPY") && !symbol.startsWith("XAU") ? 5 : 2;
+    const precision = getSymbolPricePrecision(symbol);
     setLoadingBars(true);
 
     chart.setDataLoader({
@@ -612,15 +658,15 @@ export function KLineChartPro({
 
   const dotColor =
     feedHealth === "live"
-      ? "bg-[#10B981]"
+      ? "bg-[var(--bull)]"
       : feedHealth === "reconnecting" || feedHealth === "connecting"
-        ? "bg-[#F59E0B]"
-        : "bg-[#F43F5E]";
+        ? "bg-[var(--accent-amber)]"
+        : "bg-[var(--bear)]";
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col bg-[#0B0E14]">
+    <div className="flex h-full min-h-0 w-full flex-col bg-[var(--bg-canvas)]">
       {/* CHART BAR (36px) */}
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#1E2634] bg-[#11161F] px-2">
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] px-2">
         <div className="flex items-center gap-1">
           {TIMEFRAMES.map((tf) => (
             <button
@@ -629,28 +675,28 @@ export function KLineChartPro({
               onClick={() => setTimeframe(tf)}
               className={`h-6 rounded-[3px] px-2 font-mono text-[11px] font-medium transition-colors duration-75 ${
                 timeframe === tf
-                  ? "bg-[#171E2B] text-[#3B82F6] border border-[#2C3649]"
-                  : "text-[#94A3B8] hover:bg-[#171E2B] hover:text-[#F1F5F9]"
+                  ? "bg-[var(--bg-elevated)] text-[var(--accent-blue)] border border-[var(--border-strong)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
               }`}
             >
               {tf}
             </button>
           ))}
 
-          <div className="mx-1.5 h-4 w-px bg-[#1E2634]" />
+          <div className="mx-1.5 h-4 w-px bg-[var(--border-subtle)]" />
 
           {/* Indicators dropdown */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setIndicatorsMenuOpen((v) => !v)}
-              className="inline-flex h-6 items-center gap-1 rounded-[3px] px-2 text-[11px] text-[#94A3B8] transition-colors duration-75 hover:bg-[#171E2B] hover:text-[#F1F5F9]"
+              className="inline-flex h-6 items-center gap-1 rounded-[3px] px-2 text-[11px] text-[var(--text-secondary)] transition-colors duration-75 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               <SlidersHorizontal className="size-3" />
               Индикаторы
             </button>
             {indicatorsMenuOpen ? (
-              <div className="absolute top-7 left-0 z-40 w-44 rounded-[4px] border border-[#2C3649] bg-[#11161F] p-1">
+              <div className="absolute top-7 left-0 z-40 w-44 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1">
                 {["EMA", "MA", "BOLL", "VOL", "RSI", "MACD"].map((ind) => {
                   const on = activeIndicators.includes(ind);
                   return (
@@ -658,10 +704,10 @@ export function KLineChartPro({
                       key={ind}
                       type="button"
                       onClick={() => toggleIndicator(ind)}
-                      className="flex w-full items-center justify-between rounded-[2px] px-2 py-1 font-mono text-[11px] text-[#F1F5F9] hover:bg-[#171E2B]"
+                      className="flex w-full items-center justify-between rounded-[2px] px-2 py-1 font-mono text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
                     >
                       <span>{ind}</span>
-                      <span className={on ? "text-[#10B981]" : "text-[#64748B]"}>{on ? "ON" : "OFF"}</span>
+                      <span className={on ? "text-[var(--bull)]" : "text-[var(--text-muted)]"}>{on ? "ON" : "OFF"}</span>
                     </button>
                   );
                 })}
@@ -669,10 +715,10 @@ export function KLineChartPro({
                   <button
                     type="button"
                     onClick={() => setShowMt5Zones((v) => !v)}
-                    className="mt-1 flex w-full items-center justify-between border-t border-[#1E2634] px-2 py-1 pt-1.5 font-mono text-[11px] text-[#F1F5F9] hover:bg-[#171E2B]"
+                    className="mt-1 flex w-full items-center justify-between border-t border-[var(--border-subtle)] px-2 py-1 pt-1.5 font-mono text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
                   >
                     <span>Зоны MT5</span>
-                    <span className={showMt5Zones ? "text-[#10B981]" : "text-[#64748B]"}>
+                    <span className={showMt5Zones ? "text-[var(--bull)]" : "text-[var(--text-muted)]"}>
                       {showMt5Zones ? "ON" : "OFF"}
                     </span>
                   </button>
@@ -687,8 +733,8 @@ export function KLineChartPro({
               onClick={() => setShowMt5Zones((v) => !v)}
               className={`ml-1 inline-flex h-6 items-center gap-1 rounded-[3px] border px-2 font-mono text-[10px] transition-colors duration-75 ${
                 showMt5Zones
-                  ? "border-[#2C3649] bg-[#171E2B] text-[#F59E0B]"
-                  : "border-transparent text-[#64748B] hover:text-[#94A3B8]"
+                  ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--accent-amber)]"
+                  : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
               }`}
               title="Зоны MT5 (SELL / FAIR / MEAN / BUY)"
             >
@@ -703,8 +749,8 @@ export function KLineChartPro({
               onClick={() => setShowDealMarkers((v) => !v)}
               className={`inline-flex h-6 items-center gap-1 rounded-[3px] border px-2 font-mono text-[10px] transition-colors duration-75 ${
                 showDealMarkers
-                  ? "border-[#2C3649] bg-[#171E2B] text-[#10B981]"
-                  : "border-transparent text-[#64748B] hover:text-[#94A3B8]"
+                  ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--bull)]"
+                  : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
               }`}
               title="Показать / скрыть маркеры сделок на графике"
             >
@@ -716,24 +762,24 @@ export function KLineChartPro({
         {/* Right side: Provider selector badge (NEVER MT5 Bridge!) */}
         <div className="relative flex items-center gap-2">
           {loadingBars ? (
-            <span className="h-2.5 w-16 rounded-[2px] bg-[#171E2B] ht-shimmer-bar" />
+            <span className="h-2.5 w-16 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
           ) : null}
           <button
             type="button"
             onClick={() => setProviderMenuOpen((v) => !v)}
-            className="inline-flex h-6 items-center gap-1.5 rounded-[3px] border border-[#1E2634] bg-[#0B0E14] px-2 font-mono text-[10px] text-[#94A3B8] transition-colors duration-75 hover:border-[#2C3649] hover:text-[#F1F5F9]"
+            className="inline-flex h-6 items-center gap-1.5 rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 font-mono text-[10px] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
             title="Источник рыночных котировок (только прямые Market WS)"
           >
             <span className={`inline-block size-1.5 rounded-full ${dotColor}`} />
             <span>{effectiveProviderLabel}</span>
             {effectiveLatency !== null ? (
-              <span className="text-[#64748B] tabular-nums">· {effectiveLatency}ms</span>
+              <span className="text-[var(--text-muted)] tabular-nums">· {effectiveLatency}ms</span>
             ) : null}
           </button>
 
           {providerMenuOpen ? (
-            <div className="absolute top-7 right-0 z-40 w-40 rounded-[4px] border border-[#2C3649] bg-[#11161F] p-1">
-              <div className="px-2 py-1 text-[10px] text-[#64748B]">Провайдер графика</div>
+            <div className="absolute top-7 right-0 z-40 w-40 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1">
+              <div className="px-2 py-1 text-[10px] text-[var(--text-muted)]">Провайдер графика</div>
               {MARKET_PROVIDERS.map((p) => (
                 <button
                   key={p.id}
@@ -742,8 +788,8 @@ export function KLineChartPro({
                     setProvider(p.id);
                     setProviderMenuOpen(false);
                   }}
-                  className={`flex w-full items-center justify-between rounded-[2px] px-2 py-1 font-mono text-[11px] hover:bg-[#171E2B] ${
-                    provider === p.id ? "text-[#3B82F6]" : "text-[#F1F5F9]"
+                  className={`flex w-full items-center justify-between rounded-[2px] px-2 py-1 font-mono text-[11px] hover:bg-[var(--bg-elevated)] ${
+                    provider === p.id ? "text-[var(--accent-blue)]" : "text-[var(--text-primary)]"
                   }`}
                 >
                   <span>{p.label}</span>
@@ -757,7 +803,7 @@ export function KLineChartPro({
 
       {/* BODY: LEFT DRAWING TOOLBAR (40px) + KLINECHART CANVAS */}
       <div className="flex min-h-0 flex-1">
-        <div className="flex w-10 shrink-0 flex-col items-center gap-1 border-r border-[#1E2634] bg-[#11161F] py-1.5">
+        <div className="flex w-10 shrink-0 flex-col items-center gap-1 border-r border-[var(--border-subtle)] bg-[var(--bg-panel)] py-1.5">
           <ToolButton
             active={activeTool === "cursor"}
             title="Курсор (Esc)"
@@ -808,7 +854,7 @@ export function KLineChartPro({
             <Type className="size-3.5" />
           </ToolButton>
 
-          <div className="my-1 h-px w-6 bg-[#1E2634]" />
+          <div className="my-1 h-px w-6 bg-[var(--border-subtle)]" />
 
           <ToolButton
             active={magnetMode !== "normal"}
@@ -832,7 +878,7 @@ export function KLineChartPro({
             {drawingsHidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
           </ToolButton>
 
-          <div className="my-1 h-px w-6 bg-[#1E2634]" />
+          <div className="my-1 h-px w-6 bg-[var(--border-subtle)]" />
 
           <ToolButton active={false} title="Отменить (Undo)" onClick={handleUndo}>
             <Undo2 className="size-3.5" />
@@ -841,12 +887,12 @@ export function KLineChartPro({
             <Redo2 className="size-3.5" />
           </ToolButton>
           <ToolButton active={false} title="Очистить все объекты" onClick={handleClearDrawings}>
-            <Trash2 className="size-3.5 text-[#F43F5E]" />
+            <Trash2 className="size-3.5 text-[var(--bear)]" />
           </ToolButton>
         </div>
 
         {/* KLineChart v10 Canvas */}
-        <div className="relative min-h-0 min-w-0 flex-1 bg-[#0B0E14]">
+        <div className="relative min-h-0 min-w-0 flex-1 bg-[var(--bg-panel)]">
           <div ref={containerRef} className="h-full w-full" />
         </div>
       </div>
@@ -872,8 +918,8 @@ function ToolButton({
       onClick={onClick}
       className={`flex size-7 items-center justify-center rounded-[3px] transition-colors duration-75 ${
         active
-          ? "border border-[#3B82F6] bg-[#171E2B] text-[#3B82F6]"
-          : "text-[#64748B] hover:bg-[#171E2B] hover:text-[#F1F5F9]"
+          ? "border border-[var(--accent-blue)] bg-[var(--bg-elevated)] text-[var(--accent-blue)]"
+          : "text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
       }`}
     >
       {children}

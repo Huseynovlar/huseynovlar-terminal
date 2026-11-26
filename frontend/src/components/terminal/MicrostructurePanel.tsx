@@ -45,7 +45,7 @@ interface TicksApiResponse {
 }
 
 /**
- * Dynamic volume formatter: NEVER renders "0.00" on non-zero quantities (e.g. 0.0042 BTC).
+ * Dynamic volume formatter: NEVER renders "0.00" or scientific notation ("9.00e-5") on non-zero quantities.
  */
 export function formatDynamicVolume(qty: number): string {
   if (!Number.isFinite(qty) || qty <= 0) return "—";
@@ -54,8 +54,14 @@ export function formatDynamicVolume(qty: number): string {
   if (qty >= 100) return qty.toFixed(2);
   if (qty >= 1) return qty.toFixed(3);
   if (qty >= 0.01) return qty.toFixed(4);
-  if (qty >= 0.0001) return qty.toFixed(5);
-  return qty.toExponential(2);
+  return qty.toFixed(5);
+}
+
+function formatSpreadUsd(usd: number): string {
+  if (!Number.isFinite(usd) || usd <= 0) return "—";
+  if (usd < 0.001) return `$${usd.toFixed(5)}`;
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
 }
 
 function formatPrice(p: number): string {
@@ -253,10 +259,10 @@ export function MicrostructurePanel({
   const badgeProvider = feedProvider !== "Market WS" ? feedProvider : resolvedProvider;
   const statusDot =
     feedHealth === "live"
-      ? "bg-[#10B981]"
+      ? "bg-[var(--bull)]"
       : feedHealth === "reconnecting" || feedHealth === "connecting"
-        ? "bg-[#F59E0B]"
-        : "bg-[#F43F5E]";
+        ? "bg-[var(--accent-amber)]"
+        : "bg-[var(--bear)]";
   const statusText =
     feedHealth === "live"
       ? `${badgeProvider}${feedLatencyMs !== null ? ` · ${feedLatencyMs}ms` : ""}`
@@ -312,12 +318,12 @@ export function MicrostructurePanel({
   }, [visibleTicks]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#11161F]">
+    <div className="flex h-full min-h-0 flex-col bg-[var(--bg-panel)]">
       {/* TOP HALF (55%): DOM / TAPE / LIQUIDATIONS */}
-      <div className="flex min-h-0 flex-[55] flex-col border-b border-[#1E2634]">
+      <div className="flex min-h-0 flex-[55] flex-col border-b border-[var(--border-subtle)]">
         {/* Header with underline tabs + live WS status */}
-        <div className="flex h-8 shrink-0 items-center justify-between border-b border-[#1E2634] px-2">
-          <div className="flex h-full items-center gap-3">
+        <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] px-2">
+          <div className="flex h-full items-center gap-2.5 overflow-x-auto">
             {(
               [
                 { id: "dom", label: "Стакан (DOM)" },
@@ -329,19 +335,19 @@ export function MicrostructurePanel({
                 key={tab.id}
                 type="button"
                 onClick={() => setTopTab(tab.id)}
-                className={`flex h-full items-center border-b-2 text-[11px] font-medium transition-colors duration-75 ${
+                className={`flex h-full shrink-0 items-center whitespace-nowrap border-b-2 text-[11px] font-medium transition-colors duration-75 ${
                   topTab === tab.id
-                    ? "border-[#3B82F6] text-[#F1F5F9]"
-                    : "border-transparent text-[#64748B] hover:text-[#94A3B8]"
+                    ? "border-[var(--accent-blue)] text-[var(--text-primary)]"
+                    : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                 }`}
               >
                 {tab.label}
               </button>
             ))}
           </div>
-          <span className="inline-flex items-center gap-1 font-mono text-[10px] text-[#94A3B8]">
+          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[10px] text-[var(--text-secondary)]">
             <span className={`inline-block size-1.5 rounded-full ${statusDot}`} />
-            <span className="max-w-[110px] truncate">{statusText}</span>
+            <span className="max-w-[100px] truncate">{statusText}</span>
           </span>
         </div>
 
@@ -349,7 +355,7 @@ export function MicrostructurePanel({
         <div className="pro-scroll min-h-0 flex-1 overflow-y-auto px-2 py-1 font-mono text-[11px] tabular-nums">
           {topTab === "dom" ? (
             <div className="flex h-full flex-col justify-between">
-              <div className="grid grid-cols-3 pb-1 text-[10px] text-[#64748B]">
+              <div className="grid grid-cols-3 pb-1 text-[10px] text-[var(--text-muted)]">
                 <span className="text-left">Цена</span>
                 <span className="text-right">Объём</span>
                 <span className="text-right">Сумм.</span>
@@ -358,19 +364,19 @@ export function MicrostructurePanel({
               {/* Asks */}
               <div className="space-y-0.5">
                 {asksWithCum.length === 0 ? (
-                  <div className="py-2 text-center text-[10px] text-[#64748B]">Ожидание Ask-уровней...</div>
+                  <div className="py-2 text-center text-[10px] text-[var(--text-muted)]">Ожидание Ask-уровней...</div>
                 ) : (
                   asksWithCum.map((row) => {
                     const pct = Math.min(100, (row.cum / maxCum) * 100);
                     return (
                       <div key={`a-${row.price}`} className="relative grid h-5 grid-cols-3 items-center px-1">
                         <div
-                          className="pointer-events-none absolute inset-y-0 right-0 bg-[#F43F5E]/15"
+                          className="pointer-events-none absolute inset-y-0 right-0 bg-[var(--bear-bg)]"
                           style={{ width: `${pct}%` }}
                         />
-                        <span className="relative text-left text-[#F43F5E]">{formatPrice(row.price)}</span>
-                        <span className="relative text-right text-[#F1F5F9]">{formatDynamicVolume(row.qty)}</span>
-                        <span className="relative text-right text-[#64748B]">{formatDynamicVolume(row.cum)}</span>
+                        <span className="relative text-left text-[var(--bear)]">{formatPrice(row.price)}</span>
+                        <span className="relative text-right text-[var(--text-primary)]">{formatDynamicVolume(row.qty)}</span>
+                        <span className="relative text-right text-[var(--text-muted)]">{formatDynamicVolume(row.cum)}</span>
                       </div>
                     );
                   })
@@ -378,12 +384,12 @@ export function MicrostructurePanel({
               </div>
 
               {/* Spread divider */}
-              <div className="my-1 flex items-center justify-between border-y border-[#1E2634] bg-[#0B0E14] px-1.5 py-1 text-[10px]">
-                <span className="text-[#64748B]">Спред</span>
-                <span className="text-[#F1F5F9]">
-                  {spreadUsd > 0 ? `$${spreadUsd < 0.01 ? spreadUsd.toFixed(5) : spreadUsd.toFixed(2)}` : "—"}{" "}
-                  <span className="text-[#94A3B8]">
-                    ({spreadBps > 0 ? `${spreadBps.toFixed(2)} bps` : "—"})
+              <div className="my-1 flex items-center justify-between whitespace-nowrap border-y border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-1.5 py-1 text-[10px]">
+                <span className="text-[var(--text-muted)]">Спред</span>
+                <span className="font-semibold text-[var(--text-primary)]">
+                  {formatSpreadUsd(spreadUsd)}{" "}
+                  <span className="font-normal text-[var(--text-secondary)]">
+                    · {spreadBps > 0 ? `${spreadBps.toFixed(1)} bps` : "0.0 bps"}
                   </span>
                 </span>
               </div>
@@ -391,19 +397,19 @@ export function MicrostructurePanel({
               {/* Bids */}
               <div className="space-y-0.5">
                 {bidsWithCum.length === 0 ? (
-                  <div className="py-2 text-center text-[10px] text-[#64748B]">Ожидание Bid-уровней...</div>
+                  <div className="py-2 text-center text-[10px] text-[var(--text-muted)]">Ожидание Bid-уровней...</div>
                 ) : (
                   bidsWithCum.map((row) => {
                     const pct = Math.min(100, (row.cum / maxCum) * 100);
                     return (
                       <div key={`b-${row.price}`} className="relative grid h-5 grid-cols-3 items-center px-1">
                         <div
-                          className="pointer-events-none absolute inset-y-0 right-0 bg-[#10B981]/15"
+                          className="pointer-events-none absolute inset-y-0 right-0 bg-[var(--bull-bg)]"
                           style={{ width: `${pct}%` }}
                         />
-                        <span className="relative text-left text-[#10B981]">{formatPrice(row.price)}</span>
-                        <span className="relative text-right text-[#F1F5F9]">{formatDynamicVolume(row.qty)}</span>
-                        <span className="relative text-right text-[#64748B]">{formatDynamicVolume(row.cum)}</span>
+                        <span className="relative text-left text-[var(--bull)]">{formatPrice(row.price)}</span>
+                        <span className="relative text-right text-[var(--text-primary)]">{formatDynamicVolume(row.qty)}</span>
+                        <span className="relative text-right text-[var(--text-muted)]">{formatDynamicVolume(row.cum)}</span>
                       </div>
                     );
                   })
@@ -412,50 +418,50 @@ export function MicrostructurePanel({
             </div>
           ) : topTab === "tape" ? (
             <div>
-              <div className="sticky top-0 grid grid-cols-3 border-b border-[#1E2634] bg-[#11161F] pb-1 text-[10px] text-[#64748B]">
+              <div className="sticky top-0 grid grid-cols-3 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] pb-1 text-[10px] text-[var(--text-muted)]">
                 <span className="text-left">Время</span>
                 <span className="text-right">Цена</span>
                 <span className="text-right">Объём</span>
               </div>
               {tapeRows.length === 0 ? (
-                <div className="py-6 text-center text-[10px] text-[#64748B]">Нет тиков в потоке</div>
+                <div className="py-6 text-center text-[10px] text-[var(--text-muted)]">Нет тиков в потоке</div>
               ) : (
                 tapeRows.map((t, idx) => (
                   <div
                     key={`${t.ts}-${idx}`}
-                    className="grid h-6 grid-cols-3 items-center border-b border-[#1E2634]/40 hover:bg-[#171E2B]"
+                    className="grid h-6 grid-cols-3 items-center border-b border-[var(--border-subtle)]/40 hover:bg-[var(--bg-elevated)]"
                   >
-                    <span className="text-left text-[#64748B]">{formatUtcTime(t.ts)}</span>
-                    <span className={`text-right ${t.side === "buy" ? "text-[#10B981]" : "text-[#F43F5E]"}`}>
+                    <span className="text-left text-[var(--text-muted)]">{formatUtcTime(t.ts)}</span>
+                    <span className={`text-right ${t.side === "buy" ? "text-[var(--bull)]" : "text-[var(--bear)]"}`}>
                       {formatPrice(t.side === "buy" ? t.ask : t.bid)}
                     </span>
-                    <span className="text-right text-[#F1F5F9]">{formatDynamicVolume(t.qty)}</span>
+                    <span className="text-right text-[var(--text-primary)]">{formatDynamicVolume(t.qty)}</span>
                   </div>
                 ))
               )}
             </div>
           ) : (
             <div>
-              <div className="sticky top-0 grid grid-cols-3 border-b border-[#1E2634] bg-[#11161F] pb-1 text-[10px] text-[#64748B]">
+              <div className="sticky top-0 grid grid-cols-3 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] pb-1 text-[10px] text-[var(--text-muted)]">
                 <span className="text-left">Сторона</span>
                 <span className="text-right">Цена</span>
                 <span className="text-right">Объём USD</span>
               </div>
               {liquidations.length === 0 ? (
-                <div className="py-6 text-center text-[10px] text-[#64748B]">
+                <div className="py-6 text-center text-[10px] text-[var(--text-muted)]">
                   Нет крупных ликвидаций по {canonSym}
                 </div>
               ) : (
                 liquidations.map((liq, idx) => (
                   <div
                     key={`${liq.ts_ms}-${idx}`}
-                    className="grid h-6 grid-cols-3 items-center border-b border-[#1E2634]/40 hover:bg-[#171E2B]"
+                    className="grid h-6 grid-cols-3 items-center border-b border-[var(--border-subtle)]/40 hover:bg-[var(--bg-elevated)]"
                   >
-                    <span className={liq.side === "BUY" ? "text-[#10B981]" : "text-[#F43F5E]"}>
+                    <span className={liq.side === "BUY" ? "text-[var(--bull)]" : "text-[var(--bear)]"}>
                       {liq.side === "BUY" ? "SHORT LIQ" : "LONG LIQ"}
                     </span>
-                    <span className="text-right text-[#F1F5F9]">{formatPrice(liq.price)}</span>
-                    <span className="text-right text-[#F59E0B]">${formatDynamicVolume(liq.usd_value)}</span>
+                    <span className="text-right text-[var(--text-primary)]">{formatPrice(liq.price)}</span>
+                    <span className="text-right text-[var(--accent-amber)]">${formatDynamicVolume(liq.usd_value)}</span>
                   </div>
                 ))
               )}
@@ -465,18 +471,14 @@ export function MicrostructurePanel({
       </div>
 
       {/* BOTTOM HALF (45%): TICK CHART (Bid green / Ask red) */}
-      <div className="flex min-h-0 flex-[45] flex-col bg-[#0B0E14]">
-        <div className="flex h-8 shrink-0 items-center justify-between border-b border-[#1E2634] bg-[#11161F] px-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-medium text-[#F1F5F9]">Тиковый график</span>
-            <span className="font-mono text-[10px] text-[#10B981]">Bid</span>
-            <span className="font-mono text-[10px] text-[#F43F5E]">Ask</span>
-            <span className="hidden items-center gap-1 font-mono text-[10px] text-[#64748B] xl:inline-flex">
-              <span className={`inline-block size-1.5 rounded-full ${statusDot}`} />
-              {badgeProvider}
-            </span>
+      <div className="flex min-h-0 flex-[45] flex-col bg-[var(--bg-panel)]">
+        <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2">
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <span className="text-[11px] font-medium text-[var(--text-primary)]">Тиковый график</span>
+            <span className="font-mono text-[10px] text-[var(--bull)]">Bid</span>
+            <span className="font-mono text-[10px] text-[var(--bear)]">Ask</span>
           </div>
-          <div className="flex items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-0.5">
             {([100, 250, 500] as const).map((w) => (
               <button
                 key={w}
@@ -484,8 +486,8 @@ export function MicrostructurePanel({
                 onClick={() => setTickWindow(w)}
                 className={`h-5 rounded-[2px] px-1.5 font-mono text-[10px] transition-colors duration-75 ${
                   tickWindow === w
-                    ? "border border-[#2C3649] bg-[#171E2B] text-[#3B82F6]"
-                    : "text-[#64748B] hover:text-[#94A3B8]"
+                    ? "border border-[var(--border-strong)] bg-[var(--bg-panel)] text-[var(--accent-blue)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                 }`}
               >
                 {w}
@@ -508,21 +510,21 @@ export function MicrostructurePanel({
                   x2={tickSvg.plotW}
                   y1={y}
                   y2={y}
-                  stroke="#1E2634"
+                  stroke="var(--border-subtle)"
                   strokeDasharray="3 3"
                   strokeWidth={1}
                 />
               ))}
               <polyline
                 fill="none"
-                stroke="#F43F5E"
+                stroke="var(--bear)"
                 strokeWidth={1.3}
                 points={tickSvg.askPoints}
                 vectorEffect="non-scaling-stroke"
               />
               <polyline
                 fill="none"
-                stroke="#10B981"
+                stroke="var(--bull)"
                 strokeWidth={1.3}
                 points={tickSvg.bidPoints}
                 vectorEffect="non-scaling-stroke"
@@ -534,13 +536,13 @@ export function MicrostructurePanel({
                 width={50}
                 height={13}
                 rx={2}
-                fill="#F43F5E"
+                fill="var(--bear)"
               />
               <text
                 x={tickSvg.plotW + 27}
                 y={Math.max(11, Math.min(tickSvg.H - 17, tickSvg.lastAskY + 2))}
                 textAnchor="middle"
-                fill="#0B0E14"
+                fill="#FFFFFF"
                 fontSize={8.5}
                 fontFamily="IBM Plex Mono, monospace"
                 fontWeight="600"
@@ -553,13 +555,13 @@ export function MicrostructurePanel({
                 width={50}
                 height={13}
                 rx={2}
-                fill="#10B981"
+                fill="var(--bull)"
               />
               <text
                 x={tickSvg.plotW + 27}
                 y={Math.max(25, Math.min(tickSvg.H - 5, tickSvg.lastBidY + 10))}
                 textAnchor="middle"
-                fill="#0B0E14"
+                fill="#FFFFFF"
                 fontSize={8.5}
                 fontFamily="IBM Plex Mono, monospace"
                 fontWeight="600"
@@ -568,7 +570,7 @@ export function MicrostructurePanel({
               </text>
             </svg>
           ) : (
-            <div className="flex h-full items-center justify-center font-mono text-[10px] text-[#64748B]">
+            <div className="flex h-full items-center justify-center font-mono text-[10px] text-[var(--text-muted)]">
               Ожидание тиков /ws/market...
             </div>
           )}

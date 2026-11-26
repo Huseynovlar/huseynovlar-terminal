@@ -219,7 +219,7 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
   const canonSym = useMemo(() => canonicalMarketSymbol(symbol), [symbol]);
 
   // Resizable cockpit layout persisted in localStorage
-  const [rightWidth, setRightWidth] = useState<number>(() => readNumStorage(LS_RIGHT_W, 290, 250, 420));
+  const [rightWidth, setRightWidth] = useState<number>(() => readNumStorage(LS_RIGHT_W, 300, 280, 460));
   const [dockHeight, setDockHeight] = useState<number>(() => readNumStorage(LS_DOCK_H, 200, 120, 420));
   const [dockCollapsed, setDockCollapsed] = useState(false);
 
@@ -689,14 +689,14 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
   return (
     <div
       data-content-padding="false"
-      className="flex h-[calc(100vh-80px)] min-h-[600px] w-full flex-col overflow-hidden bg-[#0B0E14] text-[#F1F5F9]"
+      className="flex h-[calc(100vh-80px)] min-h-[600px] w-full flex-col overflow-hidden bg-[var(--bg-canvas)] text-[var(--text-primary)]"
     >
       {/* 1. TOP BAR (48px) */}
-      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[#1E2634] bg-[#11161F] px-3">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <Link
             to={mode === "portfolio" ? "/dashboard/hubs" : "/dashboard/tickers"}
-            className="flex size-7 shrink-0 items-center justify-center rounded-[4px] border border-[#1E2634] bg-[#0B0E14] text-[#94A3B8] transition-colors duration-75 hover:border-[#2C3649] hover:text-[#F1F5F9]"
+            className="flex size-7 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
             title={mode === "portfolio" ? "К списку «Мои активы»" : "К «Справочнику рынков»"}
           >
             <ArrowLeft className="size-3.5" />
@@ -707,23 +707,23 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
             <button
               type="button"
               onClick={() => setSwitcherOpen((v) => !v)}
-              className="flex items-center gap-2 rounded-[4px] border border-transparent px-1.5 py-1 transition-colors duration-75 hover:border-[#2C3649] hover:bg-[#171E2B]"
+              className="flex items-center gap-2 rounded-[4px] border border-transparent px-1.5 py-1 transition-colors duration-75 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)]"
               title="Быстрое переключение инструмента"
             >
               <AssetLogo symbol={displayCode} size={22} />
-              <span className="font-mono text-[15px] font-semibold tracking-tight text-[#F1F5F9]">
+              <span className="font-mono text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
                 {displayCode}
               </span>
-              <ChevronDown className="size-3.5 text-[#64748B]" />
+              <ChevronDown className="size-3.5 text-[var(--text-muted)]" />
             </button>
             {switcherOpen ? (
-              <div className="absolute top-9 left-0 z-50 w-64 rounded-[4px] border border-[#2C3649] bg-[#11161F] p-1.5">
+              <div className="absolute top-9 left-0 z-50 w-64 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1.5">
                 <input
                   autoFocus
                   value={switcherQuery}
                   onChange={(e) => setSwitcherQuery(e.target.value)}
                   placeholder="Перейти к тикеру..."
-                  className="mb-1.5 h-7 w-full rounded-[3px] border border-[#1E2634] bg-[#0B0E14] px-2 text-[11px] text-[#F1F5F9] placeholder-[#64748B] outline-none focus:border-[#3B82F6]"
+                  className="mb-1.5 h-7 w-full rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent-blue)]"
                 />
                 <div className="pro-scroll max-h-56 overflow-y-auto">
                   {switcherOptions.map((opt) => (
@@ -739,48 +739,48 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                           void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: opt.code } });
                         }
                       }}
-                      className="flex w-full items-center justify-between rounded-[2px] px-2 py-1.5 text-left text-[11px] hover:bg-[#171E2B]"
+                      className="flex w-full items-center justify-between rounded-[2px] px-2 py-1.5 text-left text-[11px] hover:bg-[var(--bg-elevated)]"
                     >
                       <span className="flex items-center gap-2">
                         <AssetLogo symbol={opt.code} size={16} />
-                        <span className="font-mono font-semibold text-[#F1F5F9]">{opt.code}</span>
+                        <span className="font-mono font-semibold text-[var(--text-primary)]">{opt.code}</span>
                       </span>
-                      <span className="max-w-[110px] truncate text-[10px] text-[#64748B]">{opt.name}</span>
+                      <span className="max-w-[110px] truncate text-[10px] text-[var(--text-muted)]">{opt.name}</span>
                     </button>
                   ))}
                   {switcherOptions.length === 0 ? (
-                    <div className="px-2 py-3 text-center text-[11px] text-[#64748B]">Ничего не найдено</div>
+                    <div className="px-2 py-3 text-center text-[11px] text-[var(--text-muted)]">Ничего не найдено</div>
                   ) : null}
                 </div>
               </div>
             ) : null}
           </div>
 
-          <span className="hidden max-w-[150px] truncate text-[12px] text-[#94A3B8] xl:inline">
+          <span className="hidden max-w-[150px] truncate text-[12px] text-[var(--text-secondary)] xl:inline">
             {displayName}
           </span>
-          <span className="rounded-[3px] border border-[#2C3649] bg-[#171E2B] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[#94A3B8]">
+          <span className="rounded-[3px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[var(--text-secondary)]">
             {displayClass}
           </span>
 
-          <div className="mx-1 h-5 w-px bg-[#1E2634]" />
+          <div className="mx-1 h-5 w-px bg-[var(--border-subtle)]" />
 
           {/* Live Price + 24h % */}
           <div className="flex items-baseline gap-2 font-mono tabular-nums">
             <span
-              className={`rounded-[2px] px-1 text-[15px] font-semibold text-[#F1F5F9] ${
+              className={`rounded-[2px] px-1 text-[15px] font-semibold text-[var(--text-primary)] ${
                 priceFlash === "bull" ? "ht-flash-bull" : priceFlash === "bear" ? "ht-flash-bear" : ""
               }`}
             >
               {displayPrice !== null ? (
                 formatQuotePrice(displayPrice)
               ) : (
-                <span className="inline-block h-3.5 w-16 rounded-[2px] bg-[#171E2B] ht-shimmer-bar align-middle" />
+                <span className="inline-block h-3.5 w-16 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar align-middle" />
               )}
             </span>
             <span
               className={`text-[12px] font-medium ${
-                changePct >= 0 ? "text-[#10B981]" : "text-[#F43F5E]"
+                changePct >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"
               }`}
             >
               {changePct >= 0 ? "+" : ""}
@@ -788,7 +788,7 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
             </span>
           </div>
 
-          <div className="mx-1 hidden h-5 w-px bg-[#1E2634] lg:block" />
+          <div className="mx-1 hidden h-5 w-px bg-[var(--border-subtle)] lg:block" />
 
           {/* Mode-specific 1-line KPIs or 24h Market Stats */}
           {mode === "portfolio" ? (
@@ -832,12 +832,12 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
         </div>
 
         {/* Right Actions */}
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           <button
             type="button"
             disabled={aiLoading}
             onClick={() => void handleAiBrief()}
-            className="inline-flex h-7 items-center rounded-[4px] border border-[#2C3649] bg-[#171E2B] px-2.5 text-[11px] font-medium text-[#F1F5F9] transition-colors duration-75 hover:border-[#3B82F6] hover:text-[#3B82F6] disabled:opacity-60"
+            className="inline-flex h-7 shrink-0 items-center whitespace-nowrap rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-2.5 text-[11px] font-medium text-[var(--text-primary)] transition-colors duration-75 hover:border-[var(--accent-blue)] hover:text-[var(--accent-blue)] disabled:opacity-60"
           >
             {aiLoading ? "Анализ..." : "AI Обзор"}
           </button>
@@ -847,9 +847,9 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
               <Link
                 to="/dashboard/hubs/$code"
                 params={{ code: displayCode }}
-                className="inline-flex h-7 items-center gap-1 rounded-[4px] border border-[#10B981]/40 bg-[#10B981]/10 px-2.5 text-[11px] font-medium text-[#10B981] transition-colors duration-75 hover:bg-[#10B981]/20"
+                className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] border border-[var(--bull)]/40 bg-[var(--bull)]/10 px-2.5 text-[11px] font-medium text-[var(--bull)] transition-colors duration-75 hover:bg-[var(--bull)]/20"
               >
-                <Star className="size-3 fill-current" />
+                <Star className="size-3 shrink-0 fill-current" />
                 В Моих активах
               </Link>
             ) : (
@@ -857,31 +857,31 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                 type="button"
                 disabled={addingPortfolio}
                 onClick={() => void handleAddToPortfolio()}
-                className="inline-flex h-7 items-center gap-1 rounded-[4px] border border-[#3B82F6] bg-[#3B82F6] px-2.5 text-[11px] font-medium text-[#0B0E14] transition-colors duration-75 hover:bg-[#3B82F6]/90 disabled:opacity-60"
+                className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] border border-[var(--accent-blue)] bg-[var(--accent-blue)] px-2.5 text-[11px] font-medium text-white transition-colors duration-75 hover:bg-[var(--accent-blue)]/90 disabled:opacity-60"
               >
-                <Star className="size-3" />
+                <Star className="size-3 shrink-0" />
                 {addingPortfolio ? "Добавление..." : "Добавить в Мои активы"}
               </button>
             )
           ) : (
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 type="button"
                 onClick={() => setMenuOpen((v) => !v)}
-                className="flex size-7 items-center justify-center rounded-[4px] border border-[#1E2634] bg-[#0B0E14] text-[#94A3B8] transition-colors duration-75 hover:border-[#2C3649] hover:text-[#F1F5F9]"
+                className="flex size-7 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
                 title="Действия актива"
               >
                 <MoreVertical className="size-3.5" />
               </button>
               {menuOpen && hub ? (
-                <div className="absolute top-8 right-0 z-50 w-48 rounded-[4px] border border-[#2C3649] bg-[#11161F] p-1 text-[11px]">
+                <div className="absolute top-8 right-0 z-50 w-48 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1 text-[11px]">
                   <Link
                     to="/dashboard/hubs/$code/edit"
                     params={{ code: hub.code }}
                     onClick={() => setMenuOpen(false)}
-                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[#F1F5F9] hover:bg-[#171E2B]"
+                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
                   >
-                    <Pencil className="size-3 text-[#94A3B8]" />
+                    <Pencil className="size-3 text-[var(--text-secondary)]" />
                     Редактировать
                   </Link>
                   <button
@@ -891,20 +891,20 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                       notify.success("UUID скопирован", hub.id);
                       setMenuOpen(false);
                     }}
-                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 font-mono text-[10px] text-[#94A3B8] hover:bg-[#171E2B] hover:text-[#F1F5F9]"
+                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 font-mono text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
                     title={hub.id}
                   >
                     <Copy className="size-3" />
                     UUID: {hub.id.slice(0, 8)}...
                   </button>
-                  <div className="my-1 h-px bg-[#1E2634]" />
+                  <div className="my-1 h-px bg-[var(--border-subtle)]" />
                   <button
                     type="button"
                     onClick={() => {
                       setMenuOpen(false);
                       setDeleteOpen(true);
                     }}
-                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[#F43F5E] hover:bg-[#F43F5E]/10"
+                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[var(--bear)] hover:bg-[var(--bear)]/10"
                   >
                     <Trash2 className="size-3" />
                     Удалить актив
@@ -918,12 +918,12 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
 
       {/* AI BRIEF INLINE PANEL (plain text & bullets only — strictly no Markdown tables) */}
       {aiOpen ? (
-        <div className="shrink-0 border-b border-[#2C3649] bg-[#11161F] px-3 py-2">
+        <div className="shrink-0 border-b border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-2">
           <div className="mb-1 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-[#F1F5F9]">AI Обзор 24ч — {displayCode}</span>
+              <span className="text-[11px] font-semibold text-[var(--text-primary)]">AI Обзор 24ч — {displayCode}</span>
               {aiModel ? (
-                <span className="rounded-[2px] border border-[#2C3649] bg-[#0B0E14] px-1.5 py-0.5 font-mono text-[10px] text-[#94A3B8]">
+                <span className="rounded-[2px] border border-[var(--border-strong)] bg-[var(--bg-canvas)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">
                   {aiModel}
                 </span>
               ) : null}
@@ -931,12 +931,12 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
             <button
               type="button"
               onClick={() => setAiOpen(false)}
-              className="flex size-5 items-center justify-center rounded-[2px] text-[#64748B] hover:bg-[#171E2B] hover:text-[#F1F5F9]"
+              className="flex size-5 items-center justify-center rounded-[2px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               <X className="size-3.5" />
             </button>
           </div>
-          <div className="pro-scroll max-h-36 overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-[#CBD5E1]">
+          <div className="pro-scroll max-h-36 overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--text-secondary)]">
             {aiLoading ? "Формирование сводки по рынку и новостям..." : aiText}
           </div>
         </div>
@@ -960,12 +960,12 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
         {/* 4px horizontal resize handle */}
         <div
           onMouseDown={startRightResize}
-          className="w-1 shrink-0 cursor-col-resize bg-[#1E2634] transition-colors duration-75 hover:bg-[#3B82F6]"
+          className="w-1 shrink-0 cursor-col-resize bg-[var(--border-subtle)] transition-colors duration-75 hover:bg-[var(--accent-blue)]"
           title="Изменить ширину правой колонки"
         />
 
         {/* Right column (DOM + Tick Chart) */}
-        <div className="min-h-0 shrink-0 overflow-hidden" style={{ width: rightWidth }}>
+        <div className="min-h-0 min-w-[280px] shrink-0 overflow-hidden" style={{ width: rightWidth }}>
           <MicrostructurePanel
             symbol={displayCode}
             initialPrice={displayPrice}
@@ -981,13 +981,13 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
 
       {/* 3. ACTIVE MT5 ROBOTS COMPACT STRIP (36px) — STRICTLY ONLY IN mode="portfolio" */}
       {mode === "portfolio" ? (
-        <div className="flex h-9 shrink-0 items-center gap-2 overflow-x-auto border-t border-[#1E2634] bg-[#11161F] px-3 font-mono text-[11px] tabular-nums">
-          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[#64748B]">
+        <div className="flex h-9 shrink-0 items-center gap-2 overflow-x-auto border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 font-mono text-[11px] tabular-nums">
+          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             MT5 EA ({robots.length})
           </span>
-          <div className="h-3.5 w-px shrink-0 bg-[#1E2634]" />
+          <div className="h-3.5 w-px shrink-0 bg-[var(--border-subtle)]" />
           {robots.length === 0 ? (
-            <span className="text-[11px] text-[#64748B]">
+            <span className="text-[11px] text-[var(--text-muted)]">
               Активных роботов по {displayCode} не обнаружено (автоподключение через /ws/account)
             </span>
           ) : (
@@ -1009,27 +1009,27 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                   }}
                   className={`inline-flex h-6 shrink-0 items-center gap-2 rounded-[3px] border px-2 transition-colors duration-75 ${
                     isSelected
-                      ? "border-[#3B82F6] bg-[#171E2B] text-[#F1F5F9]"
-                      : "border-[#1E2634] bg-[#0B0E14] text-[#94A3B8] hover:border-[#2C3649] hover:text-[#F1F5F9]"
+                      ? "border-[var(--accent-blue)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+                      : "border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
                   }`}
                 >
                   <span
                     className={`inline-block size-1.5 rounded-full ${
-                      isRunning ? "bg-[#10B981]" : "bg-[#F59E0B]"
+                      isRunning ? "bg-[var(--bull)]" : "bg-[var(--accent-amber)]"
                     }`}
                   />
-                  <span className="font-semibold text-[#F1F5F9]">
+                  <span className="font-semibold text-[var(--text-primary)]">
                     {r.name} #{r.magic_number}
                   </span>
-                  <span className="text-[#64748B]">
+                  <span className="text-[var(--text-muted)]">
                     ({r.symbol || displayCode}
                     {r.account_login ? ` · MT5 ${r.account_login}` : ""} · {statusUpper}
                     {r.seq ? ` · seq #${r.seq}` : ""} · {formatRelativeAge(r.updated_at_utc || r.last_heartbeat_at)})
                   </span>
-                  {rsi !== null ? <span className="text-[#94A3B8]">RSI {rsi.toFixed(1)}</span> : null}
-                  {er !== null ? <span className="text-[#94A3B8]">ER {er.toFixed(2)}</span> : null}
+                  {rsi !== null ? <span className="text-[var(--text-secondary)]">RSI {rsi.toFixed(1)}</span> : null}
+                  {er !== null ? <span className="text-[var(--text-secondary)]">ER {er.toFixed(2)}</span> : null}
                   {dayPnl !== null ? (
-                    <span className={dayPnl >= 0 ? "text-[#10B981]" : "text-[#F43F5E]"}>
+                    <span className={dayPnl >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"}>
                       {formatSignedUsd(dayPnl, privacyMode)}
                     </span>
                   ) : null}
@@ -1043,16 +1043,16 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
       {/* 4. 4px VERTICAL RESIZE HANDLE + BOTTOM DOCK */}
       <div
         onMouseDown={startDockResize}
-        className="h-1 shrink-0 cursor-row-resize bg-[#1E2634] transition-colors duration-75 hover:bg-[#3B82F6]"
+        className="h-1 shrink-0 cursor-row-resize bg-[var(--border-subtle)] transition-colors duration-75 hover:bg-[var(--accent-blue)]"
         title="Изменить высоту нижней панели"
       />
 
       <div
-        className="flex shrink-0 flex-col bg-[#11161F]"
+        className="flex shrink-0 flex-col bg-[var(--bg-panel)]"
         style={{ height: dockCollapsed ? 36 : dockHeight }}
       >
         {/* Dock Tab Bar (36px) */}
-        <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#1E2634] px-3">
+        <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-3">
           <div className="flex h-full items-center gap-4 overflow-x-auto">
             {dockTabs.map((tab) => (
               <button
@@ -1064,8 +1064,8 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                 }}
                 className={`flex h-full shrink-0 items-center border-b-2 text-[11px] font-medium transition-colors duration-75 ${
                   dockTab === tab.id && !dockCollapsed
-                    ? "border-[#3B82F6] text-[#F1F5F9]"
-                    : "border-transparent text-[#64748B] hover:text-[#94A3B8]"
+                    ? "border-[var(--accent-blue)] text-[var(--text-primary)]"
+                    : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                 }`}
               >
                 {tab.label}
@@ -1076,7 +1076,7 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
           <button
             type="button"
             onClick={() => setDockCollapsed((v) => !v)}
-            className="flex size-6 items-center justify-center rounded-[3px] text-[#64748B] hover:bg-[#171E2B] hover:text-[#F1F5F9]"
+            className="flex size-6 items-center justify-center rounded-[3px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             title={dockCollapsed ? "Развернуть нижнюю панель" : "Свернуть нижнюю панель"}
           >
             {dockCollapsed ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
@@ -1085,10 +1085,10 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
 
         {/* Dock Content */}
         {!dockCollapsed ? (
-          <div className="pro-scroll min-h-0 flex-1 overflow-auto bg-[#0B0E14]">
+          <div className="pro-scroll min-h-0 flex-1 overflow-auto bg-[var(--bg-canvas)]">
             {dockTab === "robots" && mode === "portfolio" ? (
               <table className="w-full border-collapse text-[11px]">
-                <thead className="sticky top-0 z-10 border-b border-[#1E2634] bg-[#11161F] text-[#64748B]">
+                <thead className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)]">
                   <tr className="h-7">
                     <th className="px-3 text-left font-medium">Робот / Мост</th>
                     <th className="px-3 text-left font-medium">Символ</th>
@@ -1100,10 +1100,10 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                     <th className="px-3 text-right font-medium">Day PnL (USD)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1E2634]/60">
+                <tbody className="divide-y divide-[var(--border-subtle)]/60">
                   {robots.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-3 py-4 text-center text-[#64748B]">
+                      <td colSpan={8} className="px-3 py-4 text-center text-[var(--text-muted)]">
                         Нет подключённых роботов для {displayCode}
                       </td>
                     </tr>
@@ -1117,46 +1117,46 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                         <tr
                           key={r.id}
                           onClick={() => setSelectedRobotId(r.id)}
-                          className={`h-8 cursor-pointer transition-colors duration-75 hover:bg-[#171E2B] ${
-                            activeRobot?.id === r.id ? "bg-[#171E2B]/70" : ""
+                          className={`h-8 cursor-pointer transition-colors duration-75 hover:bg-[var(--bg-elevated)] ${
+                            activeRobot?.id === r.id ? "bg-[var(--bg-elevated)]/70" : ""
                           }`}
                         >
-                          <td className="px-3 text-left font-medium text-[#F1F5F9]">
-                            {r.name} <span className="font-mono text-[#64748B]">#{r.magic_number}</span>
+                          <td className="px-3 text-left font-medium text-[var(--text-primary)]">
+                            {r.name} <span className="font-mono text-[var(--text-muted)]">#{r.magic_number}</span>
                             {r.account_name ? (
-                              <span className="ml-1.5 text-[10px] text-[#64748B]">
+                              <span className="ml-1.5 text-[10px] text-[var(--text-muted)]">
                                 · {r.account_name} ({r.account_login})
                               </span>
                             ) : null}
                           </td>
-                          <td className="px-3 text-left font-mono text-[#94A3B8]">{r.symbol}</td>
+                          <td className="px-3 text-left font-mono text-[var(--text-secondary)]">{r.symbol}</td>
                           <td className="px-3 text-left font-mono">
                             <span
                               className={
                                 (r.live_status || "").toUpperCase().includes("RUN")
-                                  ? "text-[#10B981]"
-                                  : "text-[#F59E0B]"
+                                  ? "text-[var(--bull)]"
+                                  : "text-[var(--accent-amber)]"
                               }
                             >
                               {r.live_status || "RUNNING"}
                             </span>
                           </td>
-                          <td className="px-3 text-right font-mono tabular-nums text-[#94A3B8]">
+                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-secondary)]">
                             {r.seq ? `#${r.seq} · ` : ""}
                             {formatRelativeAge(r.updated_at_utc || r.last_heartbeat_at)}
                           </td>
-                          <td className="px-3 text-right font-mono tabular-nums text-[#F1F5F9]">
+                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-primary)]">
                             {rsi !== null ? rsi.toFixed(1) : "—"}
                           </td>
-                          <td className="px-3 text-right font-mono tabular-nums text-[#F1F5F9]">
+                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-primary)]">
                             {er !== null ? er.toFixed(3) : "—"}
                           </td>
-                          <td className="px-3 text-right font-mono tabular-nums text-[#94A3B8]">
+                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-secondary)]">
                             {vwapZ !== null ? `${vwapZ >= 0 ? "+" : ""}${vwapZ.toFixed(2)}σ` : "—"}
                           </td>
                           <td
                             className={`px-3 text-right font-mono tabular-nums ${
-                              (dayPnl ?? 0) >= 0 ? "text-[#10B981]" : "text-[#F43F5E]"
+                              (dayPnl ?? 0) >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"
                             }`}
                           >
                             {dayPnl !== null ? formatSignedUsd(dayPnl, privacyMode) : "—"}
@@ -1169,7 +1169,7 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
               </table>
             ) : dockTab === "positions" && mode === "portfolio" ? (
               <table className="w-full border-collapse text-[11px]">
-                <thead className="sticky top-0 z-10 border-b border-[#1E2634] bg-[#11161F] text-[#64748B]">
+                <thead className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)]">
                   <tr className="h-7">
                     <th className="px-3 text-left font-medium">Тикет</th>
                     <th className="px-3 text-left font-medium">Счёт</th>
@@ -1182,41 +1182,41 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                     <th className="px-3 text-right font-medium">PnL (USD)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1E2634]/60">
+                <tbody className="divide-y divide-[var(--border-subtle)]/60">
                   {openPositions.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-3 py-4 text-center text-[#64748B]">
+                      <td colSpan={9} className="px-3 py-4 text-center text-[var(--text-muted)]">
                         Нет открытых позиций по {displayCode}
                       </td>
                     </tr>
                   ) : (
                     openPositions.map((p) => (
-                      <tr key={p.position_ticket} className="h-8 hover:bg-[#171E2B]">
-                        <td className="px-3 text-left font-mono text-[#94A3B8]">#{p.position_ticket}</td>
-                        <td className="px-3 text-left text-[#F1F5F9]">{p.account_name}</td>
-                        <td className="px-3 text-left font-mono text-[#F1F5F9]">{p.symbol}</td>
+                      <tr key={p.position_ticket} className="h-8 hover:bg-[var(--bg-elevated)]">
+                        <td className="px-3 text-left font-mono text-[var(--text-secondary)]">#{p.position_ticket}</td>
+                        <td className="px-3 text-left text-[var(--text-primary)]">{p.account_name}</td>
+                        <td className="px-3 text-left font-mono text-[var(--text-primary)]">{p.symbol}</td>
                         <td
                           className={`px-3 text-left font-mono font-semibold ${
-                            p.side.toUpperCase() === "BUY" ? "text-[#10B981]" : "text-[#F43F5E]"
+                            p.side.toUpperCase() === "BUY" ? "text-[var(--bull)]" : "text-[var(--bear)]"
                           }`}
                         >
                           {p.side}
                         </td>
-                        <td className="px-3 text-right font-mono tabular-nums text-[#F1F5F9]">
+                        <td className="px-3 text-right font-mono tabular-nums text-[var(--text-primary)]">
                           {p.volume.toFixed(2)}
                         </td>
-                        <td className="px-3 text-right font-mono tabular-nums text-[#94A3B8]">
+                        <td className="px-3 text-right font-mono tabular-nums text-[var(--text-secondary)]">
                           {formatQuotePrice(p.open_price)}
                         </td>
-                        <td className="px-3 text-right font-mono tabular-nums text-[#F1F5F9]">
+                        <td className="px-3 text-right font-mono tabular-nums text-[var(--text-primary)]">
                           {formatQuotePrice(p.current_price)}
                         </td>
-                        <td className="px-3 text-right font-mono tabular-nums text-[#64748B]">
+                        <td className="px-3 text-right font-mono tabular-nums text-[var(--text-muted)]">
                           {p.sl > 0 ? formatQuotePrice(p.sl) : "—"} / {p.tp > 0 ? formatQuotePrice(p.tp) : "—"}
                         </td>
                         <td
                           className={`px-3 text-right font-mono font-semibold tabular-nums ${
-                            p.profit_usd >= 0 ? "text-[#10B981]" : "text-[#F43F5E]"
+                            p.profit_usd >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"
                           }`}
                         >
                           {formatSignedUsd(p.profit_usd, privacyMode)}
@@ -1228,7 +1228,7 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
               </table>
             ) : dockTab === "deals" && mode === "portfolio" ? (
               <table className="w-full border-collapse text-[11px]">
-                <thead className="sticky top-0 z-10 border-b border-[#1E2634] bg-[#11161F] text-[#64748B]">
+                <thead className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)]">
                   <tr className="h-7">
                     <th className="px-3 text-left font-medium">Время (UTC)</th>
                     <th className="px-3 text-left font-medium">Символ</th>
@@ -1238,36 +1238,36 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                     <th className="px-3 text-right font-medium">Net PnL (USD)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1E2634]/60">
+                <tbody className="divide-y divide-[var(--border-subtle)]/60">
                   {deals.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-3 py-4 text-center text-[#64748B]">
+                      <td colSpan={6} className="px-3 py-4 text-center text-[var(--text-muted)]">
                         История сделок по {displayCode} пуста
                       </td>
                     </tr>
                   ) : (
                     deals.map((d) => (
-                      <tr key={d.id} className="h-8 hover:bg-[#171E2B]">
-                        <td className="px-3 text-left font-mono text-[#94A3B8]">
+                      <tr key={d.id} className="h-8 hover:bg-[var(--bg-elevated)]">
+                        <td className="px-3 text-left font-mono text-[var(--text-secondary)]">
                           {formatTerminalDateTime(d.timestamp)}
                         </td>
-                        <td className="px-3 text-left font-mono text-[#F1F5F9]">{d.symbol}</td>
+                        <td className="px-3 text-left font-mono text-[var(--text-primary)]">{d.symbol}</td>
                         <td
                           className={`px-3 text-left font-mono font-semibold ${
-                            d.side.toUpperCase() === "BUY" ? "text-[#10B981]" : "text-[#F43F5E]"
+                            d.side.toUpperCase() === "BUY" ? "text-[var(--bull)]" : "text-[var(--bear)]"
                           }`}
                         >
                           {d.side} {d.entry ? `(${d.entry})` : ""}
                         </td>
-                        <td className="px-3 text-right font-mono tabular-nums text-[#F1F5F9]">
+                        <td className="px-3 text-right font-mono tabular-nums text-[var(--text-primary)]">
                           {d.volume.toFixed(2)}
                         </td>
-                        <td className="px-3 text-right font-mono tabular-nums text-[#94A3B8]">
+                        <td className="px-3 text-right font-mono tabular-nums text-[var(--text-secondary)]">
                           {formatQuotePrice(d.price)}
                         </td>
                         <td
                           className={`px-3 text-right font-mono font-semibold tabular-nums ${
-                            d.net_profit_usd >= 0 ? "text-[#10B981]" : "text-[#F43F5E]"
+                            d.net_profit_usd >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"
                           }`}
                         >
                           {formatSignedUsd(d.net_profit_usd, privacyMode)}
@@ -1279,7 +1279,7 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
               </table>
             ) : dockTab === "news" ? (
               <table className="w-full border-collapse text-[11px]">
-                <thead className="sticky top-0 z-10 border-b border-[#1E2634] bg-[#11161F] text-[#64748B]">
+                <thead className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)]">
                   <tr className="h-7">
                     <th className="px-3 text-left font-medium">Время</th>
                     <th className="px-3 text-left font-medium">Источник</th>
@@ -1287,30 +1287,30 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                     <th className="px-3 text-right font-medium">Тон</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1E2634]/60">
+                <tbody className="divide-y divide-[var(--border-subtle)]/60">
                   {marketNews.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-3 py-4 text-center text-[#64748B]">
+                      <td colSpan={4} className="px-3 py-4 text-center text-[var(--text-muted)]">
                         Нет свежих новостей по {displayCode}
                       </td>
                     </tr>
                   ) : (
                     marketNews.map((n) => (
-                      <tr key={n.id} className="h-8 hover:bg-[#171E2B]">
-                        <td className="whitespace-nowrap px-3 text-left font-mono text-[#64748B]">
+                      <tr key={n.id} className="h-8 hover:bg-[var(--bg-elevated)]">
+                        <td className="whitespace-nowrap px-3 text-left font-mono text-[var(--text-muted)]">
                           {formatTerminalDateTime(n.published_at)}
                         </td>
-                        <td className="whitespace-nowrap px-3 text-left font-mono text-[#94A3B8]">
+                        <td className="whitespace-nowrap px-3 text-left font-mono text-[var(--text-secondary)]">
                           {n.source}
                         </td>
-                        <td className="px-3 text-left text-[#F1F5F9]">{n.title}</td>
+                        <td className="px-3 text-left text-[var(--text-primary)]">{n.title}</td>
                         <td
                           className={`whitespace-nowrap px-3 text-right font-mono uppercase ${
                             n.sentiment === "bullish"
-                              ? "text-[#10B981]"
+                              ? "text-[var(--bull)]"
                               : n.sentiment === "bearish"
-                                ? "text-[#F43F5E]"
-                                : "text-[#64748B]"
+                                ? "text-[var(--bear)]"
+                                : "text-[var(--text-muted)]"
                           }`}
                         >
                           {n.sentiment}
@@ -1322,7 +1322,7 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
               </table>
             ) : dockTab === "calendar" ? (
               <table className="w-full border-collapse text-[11px]">
-                <thead className="sticky top-0 z-10 border-b border-[#1E2634] bg-[#11161F] text-[#64748B]">
+                <thead className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)]">
                   <tr className="h-7">
                     <th className="px-3 text-left font-medium">Время</th>
                     <th className="px-3 text-left font-medium">Валюта</th>
@@ -1332,30 +1332,30 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                     <th className="px-3 text-right font-medium">Пред.</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1E2634]/60">
+                <tbody className="divide-y divide-[var(--border-subtle)]/60">
                   {marketCalendar.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-3 py-4 text-center text-[#64748B]">
+                      <td colSpan={6} className="px-3 py-4 text-center text-[var(--text-muted)]">
                         Ближайших макрособытий не найдено
                       </td>
                     </tr>
                   ) : (
                     marketCalendar.map((ev) => (
-                      <tr key={ev.id} className="h-8 hover:bg-[#171E2B]">
-                        <td className="whitespace-nowrap px-3 text-left font-mono text-[#64748B]">
+                      <tr key={ev.id} className="h-8 hover:bg-[var(--bg-elevated)]">
+                        <td className="whitespace-nowrap px-3 text-left font-mono text-[var(--text-muted)]">
                           {formatTerminalDateTime(ev.event_time)}
                         </td>
-                        <td className="px-3 text-left font-mono font-semibold text-[#F59E0B]">
+                        <td className="px-3 text-left font-mono font-semibold text-[var(--accent-amber)]">
                           {ev.currency}
                         </td>
-                        <td className="px-3 text-left text-[#F1F5F9]">{ev.title}</td>
-                        <td className="px-3 text-right font-mono tabular-nums text-[#F1F5F9]">
+                        <td className="px-3 text-left text-[var(--text-primary)]">{ev.title}</td>
+                        <td className="px-3 text-right font-mono tabular-nums text-[var(--text-primary)]">
                           {ev.actual || "—"}
                         </td>
-                        <td className="px-3 text-right font-mono tabular-nums text-[#94A3B8]">
+                        <td className="px-3 text-right font-mono tabular-nums text-[var(--text-secondary)]">
                           {ev.forecast || "—"}
                         </td>
-                        <td className="px-3 text-right font-mono tabular-nums text-[#64748B]">
+                        <td className="px-3 text-right font-mono tabular-nums text-[var(--text-muted)]">
                           {ev.previous || "—"}
                         </td>
                       </tr>
@@ -1365,11 +1365,11 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
               </table>
             ) : (
               <div className="flex h-full flex-col justify-between px-3 py-2 font-mono text-[11px] tabular-nums">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1E2634] pb-1.5">
-                  <span className="font-semibold text-[#F1F5F9]">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-1.5">
+                  <span className="font-semibold text-[var(--text-primary)]">
                     Деривативы / Институциональные данные — {displayCode}
                   </span>
-                  <span className="text-[10px] text-[#64748B]">
+                  <span className="text-[10px] text-[var(--text-muted)]">
                     Источники: {derivativesData?.sources?.length ? derivativesData.sources.join(" · ") : "Загрузка..."}
                   </span>
                 </div>
@@ -1412,8 +1412,8 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-2 py-1.5 md:grid-cols-2">
-                    <div className="rounded-[3px] border border-[#1E2634] bg-[#11161F] p-2">
-                      <div className="mb-1 flex items-center justify-between text-[10px] text-[#64748B]">
+                    <div className="rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-2">
+                      <div className="mb-1 flex items-center justify-between text-[10px] text-[var(--text-muted)]">
                         <span>CFTC COT Positioning</span>
                         <span>{derivativesData?.cot?.report_date || "—"}</span>
                       </div>
@@ -1435,23 +1435,23 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                           />
                         </div>
                       ) : (
-                        <div className="text-[10px] text-[#64748B]">Нет отчёта CFTC для {displayCode}</div>
+                        <div className="text-[10px] text-[var(--text-muted)]">Нет отчёта CFTC для {displayCode}</div>
                       )}
                     </div>
 
-                    <div className="rounded-[3px] border border-[#1E2634] bg-[#11161F] p-2">
-                      <div className="mb-1 text-[10px] text-[#64748B]">U.S. Treasury Yields (Fiscal Data)</div>
+                    <div className="rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-2">
+                      <div className="mb-1 text-[10px] text-[var(--text-muted)]">U.S. Treasury Yields (Fiscal Data)</div>
                       {derivativesData?.treasury?.length ? (
                         <div className="space-y-0.5 text-[10px]">
                           {derivativesData.treasury.slice(0, 3).map((t) => (
                             <div key={t.security} className="flex items-center justify-between">
-                              <span className="truncate text-[#94A3B8]">{t.security}</span>
-                              <span className="font-semibold text-[#F1F5F9]">{t.rate_pct.toFixed(3)}%</span>
+                              <span className="truncate text-[var(--text-secondary)]">{t.security}</span>
+                              <span className="font-semibold text-[var(--text-primary)]">{t.rate_pct.toFixed(3)}%</span>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <div className="text-[10px] text-[#64748B]">Загрузка доходностей США...</div>
+                        <div className="text-[10px] text-[var(--text-muted)]">Загрузка доходностей США...</div>
                       )}
                     </div>
                   </div>
@@ -1485,10 +1485,10 @@ function KpiInline({
   tone?: "bull" | "bear" | "neutral";
 }) {
   const color =
-    tone === "bull" ? "text-[#10B981]" : tone === "bear" ? "text-[#F43F5E]" : "text-[#F1F5F9]";
+    tone === "bull" ? "text-[var(--bull)]" : tone === "bear" ? "text-[var(--bear)]" : "text-[var(--text-primary)]";
   return (
     <div className="flex flex-col leading-tight">
-      <span className="text-[10px] text-[#64748B]">{label}</span>
+      <span className="text-[10px] text-[var(--text-muted)]">{label}</span>
       <span className={`font-mono text-[12px] font-semibold tabular-nums ${color}`}>{value}</span>
     </div>
   );

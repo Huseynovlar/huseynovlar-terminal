@@ -5,37 +5,37 @@ value: terminal-pro
 
 :root[data-theme-preset="terminal-pro"] {
   --radius: 0.25rem;
-  --background: #f8fafc;
+  --background: #e2e8f0;
   --foreground: #0f172a;
   --card: #ffffff;
   --card-foreground: #0f172a;
   --popover: #ffffff;
   --popover-foreground: #0f172a;
-  --primary: #3b82f6;
+  --primary: #2563eb;
   --primary-foreground: #ffffff;
   --secondary: #f1f5f9;
   --secondary-foreground: #0f172a;
   --muted: #f1f5f9;
   --muted-foreground: #64748b;
-  --accent: #e2e8f0;
+  --accent: #f1f5f9;
   --accent-foreground: #0f172a;
-  --destructive: #f43f5e;
+  --destructive: #e11d48;
   --border: #cbd5e1;
   --input: #cbd5e1;
-  --ring: #3b82f6;
-  --chart-1: #3b82f6;
-  --chart-2: #10b981;
-  --chart-3: #f59e0b;
-  --chart-4: #f43f5e;
+  --ring: #2563eb;
+  --chart-1: #2563eb;
+  --chart-2: #059669;
+  --chart-3: #d97706;
+  --chart-4: #e11d48;
   --chart-5: #64748b;
-  --sidebar: #f1f5f9;
+  --sidebar: #ffffff;
   --sidebar-foreground: #0f172a;
-  --sidebar-primary: #3b82f6;
+  --sidebar-primary: #2563eb;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e2e8f0;
+  --sidebar-accent: #f1f5f9;
   --sidebar-accent-foreground: #0f172a;
   --sidebar-border: #cbd5e1;
-  --sidebar-ring: #3b82f6;
+  --sidebar-ring: #2563eb;
   --shadow-2xs: none;
   --shadow-xs: none;
   --shadow-sm: none;
@@ -99,7 +99,7 @@ value: terminal-pro
 
 :root[data-theme-preset="terminal-pro"] * {
   scrollbar-width: thin;
-  scrollbar-color: #2c3649 #0b0e14;
+  scrollbar-color: var(--border-strong) var(--bg-canvas);
 }
 
 :root[data-theme-preset="terminal-pro"] *::-webkit-scrollbar {
@@ -108,10 +108,10 @@ value: terminal-pro
 }
 
 :root[data-theme-preset="terminal-pro"] *::-webkit-scrollbar-track {
-  background: #0b0e14;
+  background: var(--bg-canvas);
 }
 
 :root[data-theme-preset="terminal-pro"] *::-webkit-scrollbar-thumb {
-  background: #2c3649;
+  background: var(--border-strong);
   border-radius: 3px;
 }

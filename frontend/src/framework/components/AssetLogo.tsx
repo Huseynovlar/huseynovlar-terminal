@@ -105,7 +105,7 @@ export function AssetLogo({ symbol, size = 24, logoUrl, className = "" }: AssetL
   const label = norm ? norm.slice(0, 2) : "--";
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center rounded-full border border-[#2C3649] bg-[#171E2B] font-mono font-semibold text-[#94A3B8] select-none ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-full border border-[var(--border-strong)] bg-[var(--bg-elevated)] font-mono font-semibold text-[var(--text-secondary)] select-none ${className}`}
       style={{
         width: size,
         height: size,

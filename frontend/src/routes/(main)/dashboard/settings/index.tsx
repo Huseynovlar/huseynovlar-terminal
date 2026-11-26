@@ -50,14 +50,14 @@ function SettingsHubPage() {
                   void navigate({ to: tile.url });
                 }
               }}
-              className="flex cursor-pointer items-center gap-3 rounded-[4px] border border-[#1E2634] bg-[#11161F] px-3 py-2.5 transition-colors duration-75 hover:border-[#2C3649] hover:bg-[#171E2B]"
+              className="flex cursor-pointer items-center gap-3 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 py-2.5 transition-colors duration-75 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)]"
             >
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-[4px] border border-[#1E2634] bg-[#0B0E14] text-[#94A3B8]">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)]">
                 <Icon className="size-4" />
               </div>
               <div className="min-w-0">
-                <div className="truncate text-[13px] font-medium text-[#F1F5F9]">{tile.title}</div>
-                <div className="truncate text-[11px] text-[#64748B]">{tile.meta}</div>
+                <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">{tile.title}</div>
+                <div className="truncate text-[11px] text-[var(--text-muted)]">{tile.meta}</div>
               </div>
             </div>
           );

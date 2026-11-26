@@ -9,6 +9,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { useI18n } from "@/framework/i18n";
+import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useLiveEvents } from "@/framework/use-live-socket";
 
 export const Route = createFileRoute("/(main)/dashboard/hubs/")({
@@ -119,183 +120,170 @@ function MyAssetsListPage() {
   }
 
   return (
-    <div
-      data-content-padding="false"
-      className="flex h-[calc(100vh-80px)] min-h-[540px] flex-col bg-[#0B0E14] text-[#F1F5F9]"
-    >
-      {/* Compact 44px Institutional Header */}
-      <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-[#1E2634] bg-[#11161F] px-3">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-[14px] font-semibold tracking-tight text-[#F1F5F9]">{t.hubs.title}</h1>
-          <span className="rounded-[3px] border border-[#2C3649] bg-[#171E2B] px-1.5 py-0.5 font-mono text-[10px] text-[#94A3B8] tabular-nums">
-            {total}
-          </span>
-          <div className="relative ml-2 w-64">
-            <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-[#64748B]" />
+    <TerminalPageShell
+      title={t.hubs.title}
+      badge={`${total}`}
+      actions={
+        <>
+          <div className="relative w-56">
+            <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-[var(--text-muted)]" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Фильтр: XAUUSD, BTC, USTEC..."
-              className="h-7 w-full rounded-[4px] border border-[#1E2634] bg-[#0B0E14] pr-2 pl-7 text-[11px] text-[#F1F5F9] placeholder-[#64748B] outline-none focus:border-[#3B82F6]"
+              className="h-7 w-full rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-input)] pr-2 pl-7 text-[11px] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent-blue)]"
             />
           </div>
-        </div>
-
-        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => void loadHubs(false)}
-            className="inline-flex h-7 items-center gap-1 rounded-[4px] border border-[#1E2634] bg-[#0B0E14] px-2.5 text-[11px] text-[#94A3B8] transition-colors duration-75 hover:border-[#2C3649] hover:text-[#F1F5F9]"
+            className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
           >
             <RefreshCw className="size-3" />
             {t.common.refresh}
           </button>
           <Link
             to="/dashboard/hubs/new"
-            className="inline-flex h-7 items-center gap-1 rounded-[4px] bg-[#3B82F6] px-2.5 text-[11px] font-medium text-[#0B0E14] transition-colors duration-75 hover:bg-[#3B82F6]/90"
+            className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-[4px] bg-[var(--accent-blue)] px-2.5 text-[11px] font-medium text-white transition-colors duration-75 hover:opacity-90"
           >
             <Plus className="size-3.5" />
             {t.hubs.newBtn}
           </Link>
-        </div>
-      </div>
-
-      {/* Dense Institutional Portfolio Table */}
-      <div className="pro-scroll min-h-0 flex-1 overflow-auto">
-        {loading ? (
-          <div className="space-y-1 p-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-8 rounded-[3px] bg-[#11161F] ht-shimmer-bar" />
-            ))}
-          </div>
-        ) : sortedHubs.length === 0 ? (
-          <div className="flex h-32 items-center justify-center text-[12px] text-[#64748B]">
-            Портфель пуст — добавьте актив или откройте «Справочник рынков».
-          </div>
-        ) : (
-          <table className="w-full border-collapse text-[12px]">
-            <thead className="sticky top-0 z-10 border-b border-[#1E2634] bg-[#11161F] text-[11px] text-[#64748B]">
-              <tr className="h-8">
-                <th className="px-3 text-left font-medium">
-                  <button type="button" onClick={() => toggleSort("code")} className="inline-flex items-center gap-1 hover:text-[#F1F5F9]">
-                    Тикер <ArrowUpDown className="size-3" />
-                  </button>
-                </th>
-                <th className="px-3 text-left font-medium">
-                  <button type="button" onClick={() => toggleSort("name")} className="inline-flex items-center gap-1 hover:text-[#F1F5F9]">
-                    Название <ArrowUpDown className="size-3" />
-                  </button>
-                </th>
-                <th className="px-3 text-left font-medium">
-                  <button type="button" onClick={() => toggleSort("group")} className="inline-flex items-center gap-1 hover:text-[#F1F5F9]">
-                    Класс <ArrowUpDown className="size-3" />
-                  </button>
-                </th>
-                <th className="px-3 text-left font-medium">Символы MT5</th>
-                <th className="px-3 text-right font-medium">
-                  <button type="button" onClick={() => toggleSort("accounts_count")} className="inline-flex items-center gap-1 hover:text-[#F1F5F9]">
-                    Счета <ArrowUpDown className="size-3" />
-                  </button>
-                </th>
-                <th className="px-3 text-right font-medium">
-                  <button type="button" onClick={() => toggleSort("robots_count")} className="inline-flex items-center gap-1 hover:text-[#F1F5F9]">
-                    Роботы <ArrowUpDown className="size-3" />
-                  </button>
-                </th>
-                <th className="w-24 px-3 text-right font-medium">Действия</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1E2634]/70">
-              {sortedHubs.map((hub) => (
-                <tr
-                  key={hub.id}
-                  onClick={() => void navigate({ to: "/dashboard/hubs/$code", params: { code: hub.code } })}
-                  className="h-9 cursor-pointer transition-colors duration-75 hover:bg-[#171E2B]"
-                >
-                  <td className="px-3 text-left">
-                    <div className="flex items-center gap-2">
-                      <AssetLogo symbol={hub.code} size={20} logoUrl={hub.logo_url} />
-                      <span className="font-mono font-semibold text-[#F1F5F9]">{hub.code}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 text-left text-[#CBD5E1]">{hub.name}</td>
-                  <td className="px-3 text-left">
-                    <span className="rounded-[3px] border border-[#2C3649] bg-[#11161F] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[#94A3B8]">
-                      {hub.group || hub.category}
-                    </span>
-                  </td>
-                  <td className="px-3 text-left font-mono text-[11px] text-[#64748B]">
-                    {(hub.broker_symbols ?? []).slice(0, 4).join(", ") || hub.code}
-                  </td>
-                  <td className="px-3 text-right font-mono tabular-nums text-[#F1F5F9]">
-                    {hub.accounts_count ?? 0}
-                  </td>
-                  <td className="px-3 text-right font-mono tabular-nums">
-                    <span className={(hub.robots_count ?? 0) > 0 ? "text-[#10B981] font-semibold" : "text-[#64748B]"}>
-                      {hub.robots_count ?? 0}
-                    </span>
-                  </td>
-                  <td
-                    className="relative px-3 text-right"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setOpenMenuId((cur) => (cur === hub.id ? null : hub.id))}
-                      className="inline-flex size-6 items-center justify-center rounded-[3px] border border-[#1E2634] bg-[#11161F] text-[#94A3B8] hover:border-[#2C3649] hover:text-[#F1F5F9]"
-                      title="Меню актива"
-                    >
-                      <MoreVertical className="size-3.5" />
-                    </button>
-                    {openMenuId === hub.id ? (
-                      <div className="absolute top-8 right-3 z-40 w-44 rounded-[4px] border border-[#2C3649] bg-[#11161F] p-1 text-left text-[11px]">
-                        <Link
-                          to="/dashboard/hubs/$code/edit"
-                          params={{ code: hub.code }}
-                          onClick={() => setOpenMenuId(null)}
-                          className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[#F1F5F9] hover:bg-[#171E2B]"
-                        >
-                          <Pencil className="size-3 text-[#94A3B8]" />
-                          Редактировать
-                        </Link>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void navigator.clipboard?.writeText(hub.id);
-                            notify.success("UUID скопирован", hub.id);
-                            setOpenMenuId(null);
-                          }}
-                          className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 font-mono text-[10px] text-[#94A3B8] hover:bg-[#171E2B] hover:text-[#F1F5F9]"
-                          title={hub.id}
-                        >
-                          <Copy className="size-3" />
-                          UUID: {hub.id.slice(0, 8)}...
-                        </button>
-                        <div className="my-1 h-px bg-[#1E2634]" />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenMenuId(null);
-                            setDeleteTarget(hub);
-                          }}
-                          className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[#F43F5E] hover:bg-[#F43F5E]/10"
-                        >
-                          <Trash2 className="size-3" />
-                          Удалить
-                        </button>
-                      </div>
-                    ) : null}
-                  </td>
-                </tr>
+        </>
+      }
+    >
+      <div className="overflow-hidden rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+        <div className="pro-scroll overflow-x-auto">
+          {loading ? (
+            <div className="space-y-1 p-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-8 rounded-[3px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
               ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Footer Pagination */}
-      <div className="shrink-0 border-t border-[#1E2634] bg-[#11161F] px-3 py-1">
-        <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
+            </div>
+          ) : sortedHubs.length === 0 ? (
+            <div className="flex h-32 items-center justify-center text-[12px] text-[var(--text-muted)]">
+              Портфель пуст — добавьте актив или откройте «Справочник рынков».
+            </div>
+          ) : (
+            <table className="w-full border-collapse text-[12px]">
+              <thead className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[11px] text-[var(--text-muted)]">
+                <tr className="h-8">
+                  <th className="px-3 text-left font-medium">
+                    <button type="button" onClick={() => toggleSort("code")} className="inline-flex items-center gap-1 hover:text-[var(--text-primary)]">
+                      Тикер <ArrowUpDown className="size-3" />
+                    </button>
+                  </th>
+                  <th className="px-3 text-left font-medium">
+                    <button type="button" onClick={() => toggleSort("name")} className="inline-flex items-center gap-1 hover:text-[var(--text-primary)]">
+                      Название <ArrowUpDown className="size-3" />
+                    </button>
+                  </th>
+                  <th className="px-3 text-left font-medium">
+                    <button type="button" onClick={() => toggleSort("group")} className="inline-flex items-center gap-1 hover:text-[var(--text-primary)]">
+                      Класс <ArrowUpDown className="size-3" />
+                    </button>
+                  </th>
+                  <th className="px-3 text-left font-medium">Символы MT5</th>
+                  <th className="px-3 text-right font-medium">
+                    <button type="button" onClick={() => toggleSort("accounts_count")} className="inline-flex items-center gap-1 hover:text-[var(--text-primary)]">
+                      Счета <ArrowUpDown className="size-3" />
+                    </button>
+                  </th>
+                  <th className="px-3 text-right font-medium">
+                    <button type="button" onClick={() => toggleSort("robots_count")} className="inline-flex items-center gap-1 hover:text-[var(--text-primary)]">
+                      Роботы <ArrowUpDown className="size-3" />
+                    </button>
+                  </th>
+                  <th className="w-24 px-3 text-right font-medium">Действия</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-subtle)]">
+                {sortedHubs.map((hub) => (
+                  <tr
+                    key={hub.id}
+                    onClick={() => void navigate({ to: "/dashboard/hubs/$code", params: { code: hub.code } })}
+                    className="h-9 cursor-pointer transition-colors duration-75 hover:bg-[var(--bg-elevated)]"
+                  >
+                    <td className="px-3 text-left">
+                      <div className="flex items-center gap-2">
+                        <AssetLogo symbol={hub.code} size={20} logoUrl={hub.logo_url} />
+                        <span className="font-mono font-semibold text-[var(--text-primary)]">{hub.code}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 text-left text-[var(--text-secondary)]">{hub.name}</td>
+                    <td className="px-3 text-left">
+                      <span className="rounded-[3px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[var(--text-secondary)]">
+                        {hub.group || hub.category}
+                      </span>
+                    </td>
+                    <td className="px-3 text-left font-mono text-[11px] text-[var(--text-muted)]">
+                      {(hub.broker_symbols ?? []).slice(0, 4).join(", ") || hub.code}
+                    </td>
+                    <td className="px-3 text-right font-mono tabular-nums text-[var(--text-primary)]">
+                      {hub.accounts_count ?? 0}
+                    </td>
+                    <td className="px-3 text-right font-mono tabular-nums">
+                      <span className={(hub.robots_count ?? 0) > 0 ? "font-semibold text-[var(--bull)]" : "text-[var(--text-muted)]"}>
+                        {hub.robots_count ?? 0}
+                      </span>
+                    </td>
+                    <td className="relative px-3 text-right" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenMenuId((cur) => (cur === hub.id ? null : hub.id))}
+                        className="inline-flex size-6 items-center justify-center rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+                        title="Меню актива"
+                      >
+                        <MoreVertical className="size-3.5" />
+                      </button>
+                      {openMenuId === hub.id ? (
+                        <div className="absolute top-8 right-3 z-40 w-44 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1 text-left text-[11px]">
+                          <Link
+                            to="/dashboard/hubs/$code/edit"
+                            params={{ code: hub.code }}
+                            onClick={() => setOpenMenuId(null)}
+                            className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+                          >
+                            <Pencil className="size-3 text-[var(--text-secondary)]" />
+                            Редактировать
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void navigator.clipboard?.writeText(hub.id);
+                              notify.success("UUID скопирован", hub.id);
+                              setOpenMenuId(null);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 font-mono text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                            title={hub.id}
+                          >
+                            <Copy className="size-3" />
+                            UUID: {hub.id.slice(0, 8)}...
+                          </button>
+                          <div className="my-1 h-px bg-[var(--border-subtle)]" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuId(null);
+                              setDeleteTarget(hub);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[var(--bear)] hover:bg-[var(--bear-bg)]"
+                          >
+                            <Trash2 className="size-3" />
+                            Удалить
+                          </button>
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1">
+          <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
+        </div>
       </div>
 
       <ConfirmDialog
@@ -306,6 +294,6 @@ function MyAssetsListPage() {
         loading={busy}
         onConfirm={handleDelete}
       />
-    </div>
+    </TerminalPageShell>
   );
 }

@@ -215,18 +215,39 @@ html {
   animation: ht-shimmer 1.4s ease-in-out infinite;
 }
 
-/* Anti-AI Pro UI Institutional Palette & Scrollbars */
+/* Anti-AI Pro UI Institutional Palette — Light (Day) Default + Dark Override */
 :root {
+  --bg-canvas: #e2e8f0;
+  --bg-panel: #ffffff;
+  --bg-elevated: #f1f5f9;
+  --bg-input: #f8fafc;
+  --border-subtle: #cbd5e1;
+  --border-strong: #94a3b8;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --bull: #059669;
+  --bull-bg: rgba(5, 150, 105, 0.14);
+  --bear: #e11d48;
+  --bear-bg: rgba(225, 29, 72, 0.14);
+  --accent-amber: #d97706;
+  --accent-blue: #2563eb;
+}
+
+.dark {
   --bg-canvas: #0b0e14;
   --bg-panel: #11161f;
   --bg-elevated: #171e2b;
+  --bg-input: #0b0e14;
   --border-subtle: #1e2634;
   --border-strong: #2c3649;
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
   --bull: #10b981;
+  --bull-bg: rgba(16, 185, 129, 0.15);
   --bear: #f43f5e;
+  --bear-bg: rgba(244, 63, 94, 0.15);
   --accent-amber: #f59e0b;
   --accent-blue: #3b82f6;
 }
@@ -237,27 +258,23 @@ html {
 }
 
 .pro-scroll::-webkit-scrollbar-track {
-  background: #0b0e14;
+  background: var(--bg-canvas);
 }
 
 .pro-scroll::-webkit-scrollbar-thumb {
-  background: #2c3649;
+  background: var(--border-strong);
   border-radius: 3px;
-}
-
-.pro-scroll::-webkit-scrollbar-thumb:hover {
-  background: #3b4760;
 }
 
 .pro-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #2c3649 #0b0e14;
+  scrollbar-color: var(--border-strong) var(--bg-canvas);
 }
 
 @keyframes ht-flash-bull {
   0% {
-    color: #10b981;
-    background-color: rgba(16, 185, 129, 0.18);
+    color: var(--bull);
+    background-color: var(--bull-bg);
   }
   100% {
     background-color: transparent;
@@ -266,8 +283,8 @@ html {
 
 @keyframes ht-flash-bear {
   0% {
-    color: #f43f5e;
-    background-color: rgba(244, 63, 94, 0.18);
+    color: var(--bear);
+    background-color: var(--bear-bg);
   }
   100% {
     background-color: transparent;

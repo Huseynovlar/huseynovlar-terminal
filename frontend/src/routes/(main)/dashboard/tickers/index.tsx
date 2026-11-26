@@ -8,6 +8,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { useI18n } from "@/framework/i18n";
+import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 
 export const Route = createFileRoute("/(main)/dashboard/tickers/")({
   component: MarketTickersPage,
@@ -128,153 +129,146 @@ function MarketTickersPage() {
   }
 
   return (
-    <div
-      data-content-padding="false"
-      className="flex h-[calc(100vh-80px)] min-h-[540px] flex-col bg-[#0B0E14] text-[#F1F5F9]"
-    >
-      {/* Compact 44px Header */}
-      <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-[#1E2634] bg-[#11161F] px-3">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-[14px] font-semibold tracking-tight text-[#F1F5F9]">Справочник рынков</h1>
-          <span className="rounded-[3px] border border-[#2C3649] bg-[#171E2B] px-1.5 py-0.5 font-mono text-[10px] text-[#94A3B8] tabular-nums">
-            {total}
-          </span>
-          <div className="relative ml-1 w-60">
-            <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-[#64748B]" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="XAUUSD, USTEC, BTC, NVDA..."
-              className="h-7 w-full rounded-[4px] border border-[#1E2634] bg-[#0B0E14] pr-2 pl-7 text-[11px] text-[#F1F5F9] placeholder-[#64748B] outline-none focus:border-[#3B82F6]"
-            />
-          </div>
-          <div className="hidden items-center gap-1 lg:flex">
-            {CLASSES.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => {
-                  setAssetClass(c);
-                  setPage(1);
-                }}
-                className={`h-6 rounded-[3px] border px-2 font-mono text-[10px] uppercase transition-colors duration-75 ${
-                  assetClass === c
-                    ? "border-[#3B82F6] bg-[#171E2B] text-[#3B82F6]"
-                    : "border-[#1E2634] bg-[#0B0E14] text-[#94A3B8] hover:text-[#F1F5F9]"
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-
+    <TerminalPageShell
+      title="Справочник рынков"
+      badge={`${total}`}
+      actions={
         <button
           type="button"
           disabled={syncing}
           onClick={() => void handleSync()}
-          className="inline-flex h-7 items-center gap-1.5 rounded-[4px] border border-[#2C3649] bg-[#171E2B] px-2.5 text-[11px] font-medium text-[#F1F5F9] transition-colors duration-75 hover:border-[#3B82F6] disabled:opacity-60"
+          className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] px-2.5 text-[11px] font-medium text-[var(--text-primary)] transition-colors duration-75 hover:border-[var(--accent-blue)] disabled:opacity-60"
         >
           <RefreshCw className={`size-3 ${syncing ? "animate-spin" : ""}`} />
           {syncing ? "Синхронизация..." : "Синхронизировать"}
         </button>
+      }
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="relative w-64">
+          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-[var(--text-muted)]" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="XAUUSD, USTEC, BTC, NVDA, AAPL..."
+            className="h-7 w-full rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-input)] pr-2 pl-7 text-[11px] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent-blue)]"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          {CLASSES.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => {
+                setAssetClass(c);
+                setPage(1);
+              }}
+              className={`h-6 rounded-[3px] border px-2 font-mono text-[10px] uppercase transition-colors duration-75 ${
+                assetClass === c
+                  ? "border-[var(--accent-blue)] bg-[var(--bg-elevated)] text-[var(--accent-blue)]"
+                  : "border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Dense Market Directory Table */}
-      <div className="pro-scroll min-h-0 flex-1 overflow-auto">
-        {loading ? (
-          <div className="space-y-1 p-3">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-8 rounded-[3px] bg-[#11161F] ht-shimmer-bar" />
-            ))}
-          </div>
-        ) : sortedItems.length === 0 ? (
-          <div className="flex h-32 items-center justify-center text-[12px] text-[#64748B]">{t.common.noData}</div>
-        ) : (
-          <table className="w-full border-collapse text-[12px]">
-            <thead className="sticky top-0 z-10 border-b border-[#1E2634] bg-[#11161F] text-[11px] text-[#64748B]">
-              <tr className="h-8">
-                <th className="px-3 text-left font-medium">
-                  <button type="button" onClick={() => toggleSort("symbol")} className="inline-flex items-center gap-1 hover:text-[#F1F5F9]">
-                    Тикер <ArrowUpDown className="size-3" />
-                  </button>
-                </th>
-                <th className="px-3 text-left font-medium">
-                  <button type="button" onClick={() => toggleSort("name")} className="inline-flex items-center gap-1 hover:text-[#F1F5F9]">
-                    Название <ArrowUpDown className="size-3" />
-                  </button>
-                </th>
-                <th className="px-3 text-left font-medium">
-                  <button type="button" onClick={() => toggleSort("asset_class")} className="inline-flex items-center gap-1 hover:text-[#F1F5F9]">
-                    Класс <ArrowUpDown className="size-3" />
-                  </button>
-                </th>
-                <th className="px-3 text-left font-medium">Ключевые слова</th>
-                <th className="px-3 text-left font-medium">
-                  <button type="button" onClick={() => toggleSort("exchange")} className="inline-flex items-center gap-1 hover:text-[#F1F5F9]">
-                    Биржа / Источник <ArrowUpDown className="size-3" />
-                  </button>
-                </th>
-                <th className="px-3 text-right font-medium">Действия</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1E2634]/70">
-              {sortedItems.map((tk) => (
-                <tr
-                  key={tk.symbol}
-                  onClick={() => void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: tk.symbol } })}
-                  className="h-9 cursor-pointer transition-colors duration-75 hover:bg-[#171E2B]"
-                >
-                  <td className="px-3 text-left">
-                    <div className="flex items-center gap-2">
-                      <AssetLogo symbol={tk.symbol} size={20} logoUrl={tk.logo_url} />
-                      <span className="font-mono font-semibold text-[#F1F5F9]">{tk.symbol}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 text-left text-[#CBD5E1]">{tk.name}</td>
-                  <td className="px-3 text-left">
-                    <span className="rounded-[3px] border border-[#2C3649] bg-[#11161F] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[#94A3B8]">
-                      {tk.asset_class}
-                    </span>
-                  </td>
-                  <td className="max-w-md truncate px-3 text-left font-mono text-[10px] text-[#64748B]">
-                    {(tk.news_keywords ?? []).slice(0, 6).join(", ")}
-                  </td>
-                  <td className="px-3 text-left font-mono text-[11px] text-[#94A3B8]">
-                    {tk.exchange} · {tk.source}
-                  </td>
-                  <td className="px-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: tk.symbol } })
-                        }
-                        className="h-6 rounded-[3px] border border-[#2C3649] bg-[#11161F] px-2 text-[11px] text-[#F1F5F9] transition-colors duration-75 hover:border-[#3B82F6] hover:text-[#3B82F6]"
-                      >
-                        Терминал
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleQuickAdd(tk)}
-                        className="inline-flex h-6 items-center gap-1 rounded-[3px] border border-[#1E2634] bg-[#0B0E14] px-2 text-[11px] text-[#94A3B8] transition-colors duration-75 hover:border-[#F59E0B] hover:text-[#F59E0B]"
-                        title="Добавить в Мои активы"
-                      >
-                        <Star className="size-3" />В мои активы
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+      <div className="overflow-hidden rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+        <div className="pro-scroll overflow-x-auto">
+          {loading ? (
+            <div className="space-y-1 p-3">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="h-8 rounded-[3px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
               ))}
-            </tbody>
-          </table>
-        )}
+            </div>
+          ) : sortedItems.length === 0 ? (
+            <div className="flex h-32 items-center justify-center text-[12px] text-[var(--text-muted)]">{t.common.noData}</div>
+          ) : (
+            <table className="w-full border-collapse text-[12px]">
+              <thead className="border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[11px] text-[var(--text-muted)]">
+                <tr className="h-8">
+                  <th className="px-3 text-left font-medium">
+                    <button type="button" onClick={() => toggleSort("symbol")} className="inline-flex items-center gap-1 hover:text-[var(--text-primary)]">
+                      Тикер <ArrowUpDown className="size-3" />
+                    </button>
+                  </th>
+                  <th className="px-3 text-left font-medium">
+                    <button type="button" onClick={() => toggleSort("name")} className="inline-flex items-center gap-1 hover:text-[var(--text-primary)]">
+                      Название <ArrowUpDown className="size-3" />
+                    </button>
+                  </th>
+                  <th className="px-3 text-left font-medium">
+                    <button type="button" onClick={() => toggleSort("asset_class")} className="inline-flex items-center gap-1 hover:text-[var(--text-primary)]">
+                      Класс <ArrowUpDown className="size-3" />
+                    </button>
+                  </th>
+                  <th className="px-3 text-left font-medium">Ключевые слова</th>
+                  <th className="px-3 text-left font-medium">
+                    <button type="button" onClick={() => toggleSort("exchange")} className="inline-flex items-center gap-1 hover:text-[var(--text-primary)]">
+                      Биржа / Источник <ArrowUpDown className="size-3" />
+                    </button>
+                  </th>
+                  <th className="px-3 text-right font-medium">Действия</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-subtle)]">
+                {sortedItems.map((tk) => (
+                  <tr
+                    key={tk.symbol}
+                    onClick={() => void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: tk.symbol } })}
+                    className="h-9 cursor-pointer transition-colors duration-75 hover:bg-[var(--bg-elevated)]"
+                  >
+                    <td className="px-3 text-left">
+                      <div className="flex items-center gap-2">
+                        <AssetLogo symbol={tk.symbol} size={20} logoUrl={tk.logo_url} />
+                        <span className="font-mono font-semibold text-[var(--text-primary)]">{tk.symbol}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 text-left text-[var(--text-secondary)]">{tk.name}</td>
+                    <td className="px-3 text-left">
+                      <span className="rounded-[3px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[var(--text-secondary)]">
+                        {tk.asset_class}
+                      </span>
+                    </td>
+                    <td className="max-w-md truncate px-3 text-left font-mono text-[10px] text-[var(--text-muted)]">
+                      {(tk.news_keywords ?? []).slice(0, 6).join(", ")}
+                    </td>
+                    <td className="px-3 text-left font-mono text-[11px] text-[var(--text-secondary)]">
+                      {tk.exchange} · {tk.source}
+                    </td>
+                    <td className="px-3 text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: tk.symbol } })
+                          }
+                          className="h-6 whitespace-nowrap rounded-[3px] border border-[var(--border-strong)] bg-[var(--bg-panel)] px-2 text-[11px] text-[var(--text-primary)] transition-colors duration-75 hover:border-[var(--accent-blue)] hover:text-[var(--accent-blue)]"
+                        >
+                          Терминал
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleQuickAdd(tk)}
+                          className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 text-[11px] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--accent-amber)] hover:text-[var(--accent-amber)]"
+                          title="Добавить в Мои активы"
+                        >
+                          <Star className="size-3" />В мои активы
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1">
+          <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
+        </div>
       </div>
-
-      {/* Footer Pagination */}
-      <div className="shrink-0 border-t border-[#1E2634] bg-[#11161F] px-3 py-1">
-        <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
-      </div>
-    </div>
+    </TerminalPageShell>
   );
 }
