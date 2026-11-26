@@ -4,6 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Check, Newspaper, Plus, Search } from "lucide-react";
 
 import { InteractiveChartCanvas } from "@/components/m5/InteractiveChartCanvas";
+import { OrderBookAndTicks } from "@/components/m5/OrderBookAndTicks";
 import { AsyncButton } from "@/components/ui/async-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -180,8 +181,9 @@ function AssetExplorerPage() {
       </Card>
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-        <div className="xl:col-span-2">
+        <div className="space-y-3 xl:col-span-2">
           <InteractiveChartCanvas symbol={activeSymbol} mode="explore" height={460} />
+          <OrderBookAndTicks symbol={activeSymbol} />
         </div>
 
         <Card className="border-border/70">

@@ -26,7 +26,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { useI18n } from "@/framework/i18n";
-import { DERIV_PUBLIC_WS_URL, mapSymbolToOpenWs, normalizeCleanSymbol } from "@/framework/open-market-ws";
+import { canonicalMarketSymbol } from "@/framework/open-market-ws";
 import { useLiveEvents } from "@/framework/use-live-socket";
 
 export const CHART_TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"] as const;
@@ -96,6 +96,8 @@ export function InteractiveChartCanvas({
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ReturnType<IChartApi["addSeries"]> | null>(null);
+  const lastBarRef = useRef<OhlcBar | null>(null);
 
   const [timeframe, setTimeframe] = useState<ChartTimeframe>("H1");
   const [indicators, setIndicators] = useState<IndicatorConfig>(DEFAULT_INDICATORS);
@@ -104,12 +106,14 @@ export function InteractiveChartCanvas({
   const [pendingPoint, setPendingPoint] = useState<{ time: number; price: number } | null>(null);
 
   const [bars, setBars] = useState<OhlcBar[]>([]);
+  const [livePrice, setLivePrice] = useState<number | null>(null);
   const [sourceLabel, setSourceLabel] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cleanSymbol = symbol.trim().toUpperCase();
+  const canonSymbol = canonicalMarketSymbol(cleanSymbol);
 
   // 1. Load persisted chart state from PostgreSQL (GET /api/v1/charts/state/{symbol})
   useEffect(() => {
@@ -168,34 +172,45 @@ export function InteractiveChartCanvas({
     void loadBars();
   }, [loadBars]);
 
-  // 3. Subscribe to live WebSocket bar_update & tick events from Terminal WS
+  // 3. Subscribe to live same-origin /api/v1/ws/live bar_update & tick events (Binance, Deriv, Alpaca, Finnhub, MT5)
   useLiveEvents(["bar_update", "tick"], (evt) => {
     const payload = evt.data ?? {};
-    const evtSym = normalizeCleanSymbol(String(payload.symbol ?? payload.asset_code ?? ""));
-    if (!evtSym || evtSym !== normalizeCleanSymbol(cleanSymbol)) return;
+    const evtSym = canonicalMarketSymbol(String(payload.symbol ?? payload.asset_code ?? ""));
+    if (!evtSym || evtSym !== canonSymbol) return;
 
     if (evt.type === "tick") {
-      const price = Number(payload.bid ?? payload.price ?? payload.close ?? 0);
+      const price = Number(payload.price ?? payload.bid ?? payload.close ?? 0);
       if (!(price > 0)) return;
-      setBars((prev) => {
-        if (prev.length === 0) return prev;
-        const last = prev[prev.length - 1]!;
-        return [
-          ...prev.slice(0, -1),
-          {
-            ...last,
-            close: price,
-            high: Math.max(last.high, price),
-            low: Math.min(last.low, price),
-          },
-        ];
-      });
+      setLivePrice(price);
+      const last = lastBarRef.current;
+      const series = candleSeriesRef.current;
+      if (last && series) {
+        const updated: OhlcBar = {
+          ...last,
+          close: price,
+          high: Math.max(last.high, price),
+          low: Math.min(last.low, price),
+        };
+        lastBarRef.current = updated;
+        try {
+          series.update({
+            time: updated.time as Time,
+            open: updated.open,
+            high: updated.high,
+            low: updated.low,
+            close: updated.close,
+          });
+        } catch {
+          // ignore out-of-order timestamp
+        }
+      }
       return;
     }
 
     const barTime = Number(payload.time ?? 0);
     const close = Number(payload.close ?? 0);
     if (!barTime || !close) return;
+    setLivePrice(close);
     const nextBar: OhlcBar = {
       time: barTime,
       open: Number(payload.open ?? close),
@@ -204,91 +219,23 @@ export function InteractiveChartCanvas({
       close,
       volume: Number(payload.volume ?? 0),
     };
-    setBars((prev) => {
-      if (prev.length === 0) return [nextBar];
-      const last = prev[prev.length - 1]!;
-      if (last.time === nextBar.time) {
-        return [...prev.slice(0, -1), nextBar];
+    const last = lastBarRef.current;
+    const series = candleSeriesRef.current;
+    if (last && series && nextBar.time >= last.time) {
+      lastBarRef.current = nextBar;
+      try {
+        series.update({
+          time: nextBar.time as Time,
+          open: nextBar.open,
+          high: nextBar.high,
+          low: nextBar.low,
+          close: nextBar.close,
+        });
+      } catch {
+        // ignore
       }
-      if (nextBar.time > last.time) {
-        return [...prev, nextBar];
-      }
-      return prev;
-    });
-  });
-
-  // 3b. Open Public WebSocket real-time candle tick stream (Binance for Crypto, Deriv for Gold/Forex/Indices)
-  useEffect(() => {
-    const mapped = mapSymbolToOpenWs(cleanSymbol);
-    if (!mapped) return;
-    let disposed = false;
-    let ws: WebSocket | null = null;
-    let pingTimer: number | undefined;
-    let lastApply = 0;
-
-    const applyTickPrice = (price: number) => {
-      if (!(price > 0)) return;
-      const now = Date.now();
-      if (now - lastApply < 180) return;
-      lastApply = now;
-      setBars((prev) => {
-        if (prev.length === 0) return prev;
-        const last = prev[prev.length - 1]!;
-        return [
-          ...prev.slice(0, -1),
-          {
-            ...last,
-            close: price,
-            high: Math.max(last.high, price),
-            low: Math.min(last.low, price),
-          },
-        ];
-      });
-    };
-
-    try {
-      if (mapped.provider === "binance") {
-        ws = new WebSocket(`wss://stream.binance.com:9443/ws/${mapped.streamSym}@aggTrade`);
-        ws.onmessage = (ev) => {
-          if (disposed) return;
-          try {
-            const msg = JSON.parse(ev.data) as { p?: string };
-            applyTickPrice(Number(msg.p ?? 0));
-          } catch {
-            // ignore
-          }
-        };
-      } else {
-        ws = new WebSocket(DERIV_PUBLIC_WS_URL);
-        ws.onopen = () => {
-          if (disposed || !ws) return;
-          ws.send(JSON.stringify({ ticks: mapped.streamSym, subscribe: 1 }));
-          pingTimer = window.setInterval(() => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ ping: 1 }));
-            }
-          }, 25000);
-        };
-        ws.onmessage = (ev) => {
-          if (disposed) return;
-          try {
-            const msg = JSON.parse(ev.data) as { tick?: { quote?: number; bid?: number } };
-            const price = Number(msg.tick?.quote ?? msg.tick?.bid ?? 0);
-            applyTickPrice(price);
-          } catch {
-            // ignore
-          }
-        };
-      }
-    } catch {
-      // ignore
     }
-    return () => {
-      disposed = true;
-      if (pingTimer !== undefined) window.clearInterval(pingTimer);
-      if (ws && ws.readyState < WebSocket.CLOSING) ws.close();
-    };
-  }, [cleanSymbol]);
+  });
 
   // 4. Persist chart state to server (PUT /api/v1/charts/state/{symbol})
   const persistState = useCallback(
@@ -365,6 +312,8 @@ export function InteractiveChartCanvas({
         close: b.close,
       })),
     );
+    candleSeriesRef.current = candleSeries;
+    lastBarRef.current = bars[bars.length - 1] ?? null;
 
     if (indicators.ema20) {
       const s = chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 1, title: "EMA20" });
@@ -526,9 +475,12 @@ export function InteractiveChartCanvas({
         <div className="flex flex-wrap items-center gap-2">
           <AssetLogo symbol={cleanSymbol} size={26} />
           <CardTitle className="font-mono text-base font-bold">{cleanSymbol}</CardTitle>
-          {latestBar ? (
-            <span className="font-mono text-sm font-semibold tabular-nums">
-              {latestBar.close.toLocaleString("en-US", { maximumFractionDigits: 4 })}
+          {livePrice !== null || latestBar ? (
+            <span className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold tabular-nums">
+              {livePrice !== null ? (
+                <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" title="Live WS tick" />
+              ) : null}
+              {(livePrice ?? latestBar?.close ?? 0).toLocaleString("en-US", { maximumFractionDigits: 4 })}
             </span>
           ) : null}
           {changePct !== null ? (
