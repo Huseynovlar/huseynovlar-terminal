@@ -17,6 +17,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db, get_session_factory
 from app.core.deps import get_current_user
 from app.core.security import decode_token
+from app.core.symbols import canonical_asset_code, expand_symbol_variants, sql_symbol_match
 from app.core.ws_hub import ws_hub
 from app.db.models import (
     AssetHub,
@@ -45,12 +46,16 @@ _YAHOO_SYMBOL_ALIASES: dict[str, str] = {
     "US500": "^GSPC",
     "SPX": "^GSPC",
     "US30": "^DJI",
+    "DE40": "^GDAXI",
+    "UK100": "^FTSE",
+    "JP225": "^N225",
     "DXY": "DX-Y.NYB",
     "US10Y": "^TNX",
     "VIX": "^VIX",
     "USOIL": "CL=F",
     "WTI": "CL=F",
     "UKOIL": "BZ=F",
+    "NGAS": "NG=F",
     "EURUSD": "EURUSD=X",
     "GBPUSD": "GBPUSD=X",
     "USDJPY": "JPY=X",
@@ -58,19 +63,31 @@ _YAHOO_SYMBOL_ALIASES: dict[str, str] = {
     "AUDUSD": "AUDUSD=X",
     "USDCAD": "CAD=X",
     "NZDUSD": "NZDUSD=X",
+    "EURGBP": "EURGBP=X",
+    "EURJPY": "EURJPY=X",
+    "GBPJPY": "GBPJPY=X",
+    "AUDJPY": "AUDJPY=X",
+    "EURAUD": "EURAUD=X",
+    "EURCHF": "EURCHF=X",
     "BTCUSD": "BTC-USD",
     "ETHUSD": "ETH-USD",
     "SOLUSD": "SOL-USD",
+    "BNBUSD": "BNB-USD",
+    "XRPUSD": "XRP-USD",
+    "ADAUSD": "ADA-USD",
+    "DOGEUSD": "DOGE-USD",
+    "TONUSD": "TON11419-USD",
+    "LTCUSD": "LTC-USD",
 }
 
 _TF_TO_YAHOO: dict[str, tuple[str, str]] = {
-    "M1": ("1m", "1d"),
-    "M5": ("5m", "5d"),
-    "M15": ("15m", "5d"),
+    "M1": ("1m", "5d"),
+    "M5": ("5m", "1mo"),
+    "M15": ("15m", "1mo"),
     "M30": ("30m", "1mo"),
-    "H1": ("60m", "1mo"),
-    "H4": ("60m", "3mo"),
-    "D1": ("1d", "1y"),
+    "H1": ("60m", "3mo"),
+    "H4": ("60m", "6mo"),
+    "D1": ("1d", "2y"),
     "W1": ("1wk", "5y"),
 }
 
@@ -82,7 +99,7 @@ _YAHOO_HEADERS = {
 
 
 class ChartStateUpsert(BaseModel):
-    timeframe: str = Field(default="H1", pattern="^(M1|M5|M15|M30|H1|H4|D1|W1)$")
+    timeframe: str = Field(default="M5", pattern="^(M1|M5|M15|M30|H1|H4|D1|W1)$")
     indicators_json: dict[str, Any] = Field(default_factory=dict)
     drawings_json: list[dict[str, Any]] = Field(default_factory=list)
     filters_json: dict[str, Any] = Field(default_factory=dict)
@@ -90,15 +107,37 @@ class ChartStateUpsert(BaseModel):
 
 async def fetch_yahoo_chart(symbol: str, timeframe: str = "H1") -> dict[str, Any]:
     """OHLC bars with 429-resistant caching and Binance/Frankfurter/Stooq fallbacks."""
-    clean = symbol.strip().upper().replace(" ", "")
+    clean = canonical_asset_code(symbol) or symbol.strip().upper().replace(" ", "")
     yahoo_sym = _YAHOO_SYMBOL_ALIASES.get(clean, clean)
-    interval, range_str = _TF_TO_YAHOO.get(timeframe, ("60m", "1mo"))
+    interval, range_str = _TF_TO_YAHOO.get(timeframe, ("60m", "3mo"))
 
     res = await market_data.fetch_chart_with_fallback(yahoo_sym, timeframe, interval, range_str)
     if not res:
         raise ValueError(f"Symbol '{clean}' unavailable: all market data providers failed or rate-limited")
 
     bars = res["bars"]
+    if timeframe == "H4" and interval == "60m" and bars:
+        # Aggregate 1-hour bars into genuine 4-hour UTC buckets
+        buckets: dict[int, dict[str, Any]] = {}
+        for b in bars:
+            bt = (int(b["time"]) // 14400) * 14400
+            if bt not in buckets:
+                buckets[bt] = {
+                    "time": bt,
+                    "open": float(b["open"]),
+                    "high": float(b["high"]),
+                    "low": float(b["low"]),
+                    "close": float(b["close"]),
+                    "volume": float(b.get("volume") or 0),
+                }
+            else:
+                cur = buckets[bt]
+                cur["high"] = max(cur["high"], float(b["high"]))
+                cur["low"] = min(cur["low"], float(b["low"]))
+                cur["close"] = float(b["close"])
+                cur["volume"] += float(b.get("volume") or 0)
+        bars = [buckets[k] for k in sorted(buckets.keys())]
+
     reg_price = float(res["price"])
     prev_close = float(res.get("prev_close") or (bars[-2]["close"] if len(bars) >= 2 else reg_price) or 1.0)
     change_pct = round(((reg_price - prev_close) / prev_close) * 100.0, 2) if prev_close else 0.0
@@ -110,11 +149,11 @@ async def fetch_yahoo_chart(symbol: str, timeframe: str = "H1") -> dict[str, Any
         "currency": res.get("currency") or "USD",
         "price": round(reg_price, 4),
         "change_pct": change_pct,
-        "timeframe": res.get("timeframe") or timeframe,
+        "timeframe": timeframe if timeframe == "H4" else (res.get("timeframe") or timeframe),
         "requested_timeframe": timeframe,
         "source": res.get("source", "yahoo"),
         "logo_url": f"/api/v1/assets/logo/{clean}",
-        "bars": bars[-500:],
+        "bars": bars[-1500:],
     }
 
 
@@ -372,70 +411,125 @@ async def get_asset_chart_bundle(
     timeframe: str = Query(default="M5", pattern="^(M1|M5|M15|M30|H1|H4|D1|W1)$"),
     account_id: str | None = None,
     magic_number: int | None = None,
-    limit: int = Query(default=300, ge=20, le=2000),
+    limit: int = Query(default=1000, ge=20, le=2000),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Return OHLCV candles (MT5 DB with Yahoo Finance fallback), live open positions, deals, and saved chart state."""
-    code = asset_code.strip().upper()
+    """Return multi-day OHLCV candles (MT5 DB + historical backfill), positions, deals, and chart state."""
+    raw_code = asset_code.strip().upper()
+    code = canonical_asset_code(raw_code) or raw_code
     asset = (await db.execute(select(AssetHub).where(AssetHub.code == code))).scalar_one_or_none()
-    symbols = [s.upper() for s in (asset.broker_symbols if asset and asset.broker_symbols else [code])]
+    if asset is None and raw_code != code:
+        asset = (await db.execute(select(AssetHub).where(AssetHub.code == raw_code))).scalar_one_or_none()
+    broker_syms = asset.broker_symbols if asset and asset.broker_symbols else [code]
+    symbols = expand_symbol_variants(code, broker_syms)
 
-    # 1. Candles from MT5 DB
+    # 1. Candles from MT5 DB (deduplicated strictly by bar_time across broker symbol variants)
     bars = (
         (
             await db.execute(
                 select(MarketBar)
-                .where(MarketBar.symbol.in_(symbols), MarketBar.timeframe == timeframe)
+                .where(sql_symbol_match(MarketBar.symbol, code, broker_syms), MarketBar.timeframe == timeframe)
                 .order_by(MarketBar.bar_time.desc())
-                .limit(limit)
+                .limit(limit * 2)
             )
         )
         .scalars()
         .all()
     )
-    bars_asc = list(reversed(bars))
-    bars_out = [
-        {
-            "time": b.bar_time,
-            "open": b.open,
-            "high": b.high,
-            "low": b.low,
-            "close": b.close,
-            "volume": b.volume,
-        }
-        for b in bars_asc
-    ]
-    source = "mt5_db"
-    if not bars_out:
+    mt5_by_time: dict[int, dict[str, Any]] = {}
+    for b in reversed(bars):
+        bt = int(b.bar_time)
+        prev = mt5_by_time.get(bt)
+        if prev is None or b.volume >= prev["volume"]:
+            mt5_by_time[bt] = {
+                "time": bt,
+                "open": float(b.open),
+                "high": float(b.high),
+                "low": float(b.low),
+                "close": float(b.close),
+                "volume": int(b.volume or 0),
+            }
+    mt5_bars = [mt5_by_time[t] for t in sorted(mt5_by_time.keys())][-limit:]
+
+    # 2. Always ensure multi-day / multi-week history prior to recent 24h MT5 bars
+    bars_out = mt5_bars
+    source = "mt5_live"
+    min_history_bars = min(limit, 320)
+    if len(mt5_bars) < min_history_bars:
         try:
             ydata = await fetch_yahoo_chart(code, timeframe)
-            bars_out = ydata["bars"][-limit:]
-            source = "yahoo_fallback"
+            up_raw = [
+                {
+                    "time": int(ub["time"]),
+                    "open": float(ub["open"]),
+                    "high": float(ub["high"]),
+                    "low": float(ub["low"]),
+                    "close": float(ub["close"]),
+                    "volume": float(ub.get("volume") or 0),
+                }
+                for ub in (ydata.get("bars") or [])
+                if ub.get("time") and ub.get("close")
+            ]
+            if not mt5_bars:
+                dedup_up: dict[int, dict[str, Any]] = {ub["time"]: ub for ub in up_raw}
+                bars_out = [dedup_up[t] for t in sorted(dedup_up.keys())][-limit:]
+                source = "market_history"
+            elif up_raw:
+                first_mt5 = mt5_bars[0]
+                older = [ub for ub in up_raw if ub["time"] < first_mt5["time"]]
+                if older:
+                    # Continuous futures-to-spot seam alignment so e.g. GC=F -> XAUUSDc has zero artificial gap
+                    seam_ref = older[-1]["close"]
+                    delta = first_mt5["open"] - seam_ref
+                    if seam_ref > 0 and abs(delta) / seam_ref < 0.05:
+                        older = [
+                            {
+                                "time": ub["time"],
+                                "open": round(ub["open"] + delta, 5),
+                                "high": round(ub["high"] + delta, 5),
+                                "low": round(ub["low"] + delta, 5),
+                                "close": round(ub["close"] + delta, 5),
+                                "volume": ub["volume"],
+                            }
+                            for ub in older
+                        ]
+                    merged_by_time: dict[int, dict[str, Any]] = {}
+                    for ub in older:
+                        merged_by_time[ub["time"]] = ub
+                    for mb in mt5_bars:
+                        merged_by_time[mb["time"]] = mb
+                    bars_out = [merged_by_time[t] for t in sorted(merged_by_time.keys())][-limit:]
+                    source = "mt5_merged"
         except Exception:
-            source = "mt5_db"
+            source = "mt5_live" if mt5_bars else "mt5_db"
 
-    # 2. Accounts linked to this asset
+    # 3. Accounts map
     accounts = (await db.execute(select(TradingAccount))).scalars().all()
     acc_map = {a.id: a for a in accounts}
 
-    # 3. Live open positions
-    pos_stmt = select(OpenPositionLive).where(OpenPositionLive.symbol.in_(symbols))
+    # 4. Live open positions across all broker symbol variants
+    pos_stmt = select(OpenPositionLive).where(sql_symbol_match(OpenPositionLive.symbol, code, broker_syms))
     if account_id:
         pos_stmt = pos_stmt.where(OpenPositionLive.account_id == account_id)
     if magic_number is not None:
         pos_stmt = pos_stmt.where(OpenPositionLive.magic_number == magic_number)
     open_positions = (await db.execute(pos_stmt)).scalars().all()
 
-    # 4. Historical entries & exits
-    deals_stmt = select(Deal).where(Deal.symbol.in_(symbols)).order_by(Deal.time_msc.desc()).limit(250)
+    # 5. Historical entries & exits across all broker symbol variants
+    deals_stmt = (
+        select(Deal)
+        .where(sql_symbol_match(Deal.symbol, code, broker_syms), Deal.deal_type.in_([0, 1]))
+        .order_by(Deal.time_msc.desc())
+        .limit(300)
+    )
     if account_id:
         deals_stmt = deals_stmt.where(Deal.account_id == account_id)
     if magic_number is not None:
         deals_stmt = deals_stmt.where(Deal.magic_number == magic_number)
     deals = (await db.execute(deals_stmt)).scalars().all()
 
-    # 5. Saved chart state for current user
+    # 6. Saved chart state for current user
     saved_state = (
         await db.execute(select(ChartState).where(ChartState.user_id == user.id, ChartState.symbol == code))
     ).scalar_one_or_none()
@@ -445,7 +539,7 @@ async def get_asset_chart_bundle(
         "timeframe": timeframe,
         "source": source,
         "logo_url": asset.logo_url if asset and asset.logo_url else f"/api/v1/assets/logo/{code}",
-        "symbols": symbols,
+        "symbols": symbols[:25],
         "bars": bars_out,
         "chart_state": {
             "timeframe": saved_state.timeframe,

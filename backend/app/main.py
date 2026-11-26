@@ -39,7 +39,7 @@ async def _lifespan(_app: FastAPI):
         finally:
             await engine.dispose()
         await ws_hub.start_redis_bridge(settings.redis_url)
-        await market_ws_hub.start()
+        await market_ws_hub.start(settings)
         await equity_ws_bridge.start(settings)
     try:
         yield

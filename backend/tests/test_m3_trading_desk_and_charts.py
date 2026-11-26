@@ -210,6 +210,102 @@ async def test_asset_hub_detail_news_digest_and_same_origin_logo_proxy(client: A
     assert isinstance(body["recent_news"], list)
 
 
+async def test_asset_hub_broker_symbol_alias_recognition(client: AsyncClient):
+    """Verify XAUUSDc / USTECm MT5 accounts, robots, deals, and bars automatically attach to XAUUSD / USTEC hubs."""
+    h, _ = await _bootstrap(client)
+    await client.post("/api/v1/assets", headers=h, json={"code": "XAUUSD", "name": "Gold Spot", "group": "metals"})
+
+    # Create account WITHOUT primary_asset_id (simulating standard user setup)
+    acc = (
+        await client.post(
+            "/api/v1/accounts",
+            headers=h,
+            json={
+                "name": "Exness Cent Gold",
+                "mt5_login": "991002",
+                "mt5_server": "Exness-MT5Real15",
+                "currency": "USD",
+            },
+        )
+    ).json()
+    mt5_h = {"X-Account-Api-Key": acc["api_key"]}
+
+    now_sec = int(datetime.now(UTC).timestamp())
+    await client.post(
+        "/api/v1/ingest/snapshot",
+        headers=mt5_h,
+        json={
+            "balance": 2500.0,
+            "equity": 2545.5,
+            "floating_pnl": 45.5,
+            "symbol": "XAUUSDc",
+            "bid": 3320.1,
+            "ask": 3320.3,
+            "robot_states": [
+                {
+                    "magic_number": 810001,
+                    "ea_name": "GoldPulseReversion v8.1.0",
+                    "symbol": "XAUUSDc",
+                    "status": "RUNNING",
+                    "execution_ms": 4,
+                    "state_json": {
+                        "regime": "MEAN_REVERSION",
+                        "bb_upper": 3330.0,
+                        "vwap": 3321.0,
+                        "bb_lower": 3310.0,
+                    },
+                }
+            ],
+        },
+    )
+    await client.post(
+        "/api/v1/ingest/trade-event",
+        headers=mt5_h,
+        json={
+            "mt5_deal_ticket": 70001,
+            "position_id": 50001,
+            "magic_number": 810001,
+            "symbol": "XAUUSDc",
+            "deal_type": 0,
+            "entry_type": 1,
+            "volume": 0.1,
+            "price": 3322.5,
+            "profit": 38.0,
+            "time_msc": now_sec * 1000,
+        },
+    )
+    await client.post(
+        "/api/v1/ingest/bars",
+        headers=mt5_h,
+        json={
+            "symbol": "XAUUSDc",
+            "timeframe": "M5",
+            "bars": [
+                {
+                    "time": (now_sec // 300) * 300,
+                    "open": 3318.0,
+                    "high": 3325.0,
+                    "low": 3317.0,
+                    "close": 3322.0,
+                }
+            ],
+        },
+    )
+
+    hub = (await client.get("/api/v1/assets/XAUUSD", headers=h)).json()
+    assert hub["stats"]["accounts_count"] == 1
+    assert hub["stats"]["robots_count"] == 1
+    assert hub["stats"]["total_equity_usd"] == 2545.5
+    assert hub["stats"]["pnl_24h_usd"] == 38.0
+    assert hub["stats"]["net_pnl_usd"] == 38.0
+    assert len(hub["robots"]) == 1
+    assert hub["robots"][0]["live_state_json"]["bb_upper"] == 3330.0
+
+    deals = (await client.get("/api/v1/journal/deals?symbol=XAUUSD", headers=h)).json()
+    assert len(deals) == 1
+    assert deals[0]["symbol"] == "XAUUSDC"
+
+
 async def test_chart_state_persistence_and_macro_search(client: AsyncClient):
     h, _ = await _bootstrap(client)
 

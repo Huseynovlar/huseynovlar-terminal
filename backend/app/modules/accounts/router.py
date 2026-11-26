@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
 from app.core.pagination import Page
+from app.core.symbols import sql_symbol_match
 from app.db.models import Deal, ExnessProfile, OpenPositionLive, Robot, TradingAccount, User
 from app.modules.brokers import ExnessApiAdapter
 
@@ -606,7 +607,13 @@ async def list_robots(
     if q and q.strip():
         pat = f"%{q.strip()}%"
         stmt = stmt.where(
-            Robot.id.ilike(pat) | Robot.name.ilike(pat) | Robot.symbol.ilike(pat) | Robot.strategy_label.ilike(pat)
+            or_(
+                Robot.id.ilike(pat),
+                Robot.name.ilike(pat),
+                Robot.symbol.ilike(pat),
+                Robot.strategy_label.ilike(pat),
+                sql_symbol_match(Robot.symbol, q.strip()),
+            )
         )
     rows = (await db.execute(stmt)).scalars().all()
     accounts = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}

@@ -5,6 +5,7 @@ import hashlib
 import html
 import re
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,24 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
 from app.core.pagination import Page
-from app.db.models import AssetHub, Deal, MarketTicker, NewsItem, OpenPositionLive, Robot, TradingAccount, User
+from app.core.symbols import (
+    asset_related_currencies,
+    canonical_asset_code,
+    expand_symbol_variants,
+    sql_symbol_match,
+    symbol_matches_asset,
+)
+from app.db.models import (
+    AssetHub,
+    Deal,
+    EconomicEvent,
+    MarketTicker,
+    NewsItem,
+    OpenPositionLive,
+    Robot,
+    TradingAccount,
+    User,
+)
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -58,7 +76,13 @@ async def _resolve_asset(db: AsyncSession, id_or_code: str) -> AssetHub | None:
     if asset:
         return asset
     code = id_or_code.strip().upper()
-    return (await db.execute(select(AssetHub).where(AssetHub.code == code))).scalar_one_or_none()
+    found = (await db.execute(select(AssetHub).where(AssetHub.code == code))).scalar_one_or_none()
+    if found:
+        return found
+    canon = canonical_asset_code(code)
+    if canon and canon != code:
+        return (await db.execute(select(AssetHub).where(AssetHub.code == canon))).scalar_one_or_none()
+    return None
 
 
 def _serialize_asset(a: AssetHub, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -707,26 +731,38 @@ async def list_assets(
     rows = (await db.execute(stmt)).scalars().all()
     accounts = (await db.execute(select(TradingAccount))).scalars().all()
     robots = (await db.execute(select(Robot))).scalars().all()
+    open_positions = (await db.execute(select(OpenPositionLive))).scalars().all()
+    deal_pairs = (
+        await db.execute(select(Deal.account_id, Deal.symbol).where(Deal.deal_type.in_([0, 1])).distinct())
+    ).all()
 
-    acc_by_asset: dict[str, int] = {}
-    for a in accounts:
-        if a.primary_asset_id:
-            acc_by_asset[a.primary_asset_id] = acc_by_asset.get(a.primary_asset_id, 0) + 1
-    rob_by_asset: dict[str, int] = {}
-    for r in robots:
-        if r.asset_id:
-            rob_by_asset[r.asset_id] = rob_by_asset.get(r.asset_id, 0) + 1
+    out_items: list[dict[str, Any]] = []
+    for hub in rows:
+        matched_robots = [
+            rb
+            for rb in robots
+            if rb.asset_id == hub.id or symbol_matches_asset(rb.symbol, hub.code, hub.broker_symbols)
+        ]
+        matched_acc_ids: set[str] = {a.id for a in accounts if a.primary_asset_id == hub.id}
+        matched_acc_ids.update(rb.account_id for rb in matched_robots)
+        for pos in open_positions:
+            if symbol_matches_asset(pos.symbol, hub.code, hub.broker_symbols):
+                matched_acc_ids.add(pos.account_id)
+        for acc_id, sym in deal_pairs:
+            if symbol_matches_asset(sym, hub.code, hub.broker_symbols):
+                matched_acc_ids.add(acc_id)
 
-    return page.apply([
-        _serialize_asset(
-            r,
-            extra={
-                "accounts_count": acc_by_asset.get(r.id, 0),
-                "robots_count": rob_by_asset.get(r.id, 0),
-            },
+        out_items.append(
+            _serialize_asset(
+                hub,
+                extra={
+                    "accounts_count": len(matched_acc_ids),
+                    "robots_count": len(matched_robots),
+                },
+            )
         )
-        for r in rows
-    ])
+
+    return page.apply(out_items)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -736,7 +772,7 @@ async def create_asset(
     user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    code = body.code.strip().upper()
+    code = canonical_asset_code(body.code) or body.code.strip().upper()
     existing = (await db.execute(select(AssetHub).where(AssetHub.code == code))).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Asset {code} already exists")
@@ -770,47 +806,90 @@ async def create_asset(
     return _serialize_asset(asset)
 
 
+def _deal_usd_normalized(d: Deal, acc_map: dict[str, TradingAccount]) -> float:
+    acc = acc_map.get(d.account_id)
+    div = acc.currency_divisor if acc and acc.currency_divisor else 1.0
+    if div != 1.0 and abs(d.net_profit - d.net_profit_usd) < 1e-6 and abs(d.net_profit) > 0:
+        return round(d.net_profit / div, 4)
+    return float(d.net_profit_usd)
+
+
 @router.get("/{id_or_code}")
 async def get_asset_detail(
     id_or_code: str,
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Detailed Asset Hub view: metadata + multi-account stats + real News Digest & matching news."""
+    """Detailed Asset Hub bundle: metadata, alias-matched accounts/robots (live HUD), stats, news & calendar."""
     asset = await _resolve_asset(db, id_or_code)
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
-    symbols = [s.upper() for s in (asset.broker_symbols or [asset.code])]
-    if asset.code not in symbols:
-        symbols.append(asset.code)
+    symbols = expand_symbol_variants(asset.code, asset.broker_symbols)
+    all_accounts = (await db.execute(select(TradingAccount))).scalars().all()
+    acc_map = {a.id: a for a in all_accounts}
 
-    linked_accounts = (
-        (await db.execute(select(TradingAccount).where(TradingAccount.primary_asset_id == asset.id))).scalars().all()
-    )
-    linked_robots = (await db.execute(select(Robot).where(Robot.asset_id == asset.id))).scalars().all()
+    all_robots = (await db.execute(select(Robot).order_by(Robot.created_at.asc()))).scalars().all()
+    linked_robots: list[Robot] = []
+    healed = False
+    for r in all_robots:
+        if r.asset_id == asset.id or symbol_matches_asset(r.symbol, asset.code, asset.broker_symbols):
+            if r.asset_id is None:
+                r.asset_id = asset.id
+                healed = True
+            linked_robots.append(r)
+
     open_positions = (
-        (await db.execute(select(OpenPositionLive).where(OpenPositionLive.symbol.in_(symbols)))).scalars().all()
+        (
+            await db.execute(
+                select(OpenPositionLive)
+                .where(sql_symbol_match(OpenPositionLive.symbol, asset.code, asset.broker_symbols))
+                .order_by(OpenPositionLive.open_time.desc())
+            )
+        )
+        .scalars()
+        .all()
     )
     closed_deals = (
         (
             await db.execute(
                 select(Deal)
-                .where(Deal.symbol.in_(symbols), Deal.entry_type.in_([1, 2]))
+                .where(
+                    sql_symbol_match(Deal.symbol, asset.code, asset.broker_symbols),
+                    Deal.entry_type.in_([1, 2]),
+                    Deal.deal_type.in_([0, 1]),
+                )
                 .order_by(Deal.time_msc.desc())
-                .limit(200)
             )
         )
         .scalars()
         .all()
     )
 
+    matched_acc_ids: set[str] = {a.id for a in all_accounts if a.primary_asset_id == asset.id}
+    matched_acc_ids.update(r.account_id for r in linked_robots)
+    matched_acc_ids.update(p.account_id for p in open_positions)
+    matched_acc_ids.update(d.account_id for d in closed_deals)
+    linked_accounts = [a for a in all_accounts if a.id in matched_acc_ids]
+
+    if healed:
+        await db.commit()
+
+    now_msc = int(datetime.now(UTC).timestamp() * 1000)
+    day_msc = 86_400_000
+
     total_balance_usd = round(sum(a.last_balance / (a.currency_divisor or 1.0) for a in linked_accounts), 2)
     total_equity_usd = round(sum(a.last_equity / (a.currency_divisor or 1.0) for a in linked_accounts), 2)
     total_floating_usd = round(sum(a.last_floating_pnl / (a.currency_divisor or 1.0) for a in linked_accounts), 2)
-    total_trades = len(closed_deals)
-    wins = sum(1 for d in closed_deals if d.net_profit_usd > 0)
-    net_pnl_usd = round(sum(d.net_profit_usd for d in closed_deals), 2)
+    asset_floating_usd = round(sum(p.profit_usd for p in open_positions), 2)
+
+    deal_pnls = [(d.time_msc, _deal_usd_normalized(d, acc_map)) for d in closed_deals]
+    total_trades = len(deal_pnls)
+    wins = sum(1 for _, pnl in deal_pnls if pnl > 0)
+    net_pnl_usd = round(sum(pnl for _, pnl in deal_pnls), 2)
+    pnl_24h_usd = round(sum(pnl for ts, pnl in deal_pnls if now_msc - ts <= day_msc), 2)
+    pnl_7d_usd = round(sum(pnl for ts, pnl in deal_pnls if now_msc - ts <= 7 * day_msc), 2)
+    pnl_30d_usd = round(sum(pnl for ts, pnl in deal_pnls if now_msc - ts <= 30 * day_msc), 2)
     win_rate_pct = round((wins / total_trades) * 100.0, 2) if total_trades else 0.0
 
     # Real News Digest computed from DB NewsItem rows matching asset code or news_tags
@@ -820,7 +899,9 @@ async def get_asset_detail(
     tags_lower = {asset.code.lower()} | {str(t).lower() for t in (asset.news_tags or []) if str(t).strip()}
     matched_news: list[NewsItem] = []
     for item in all_recent_news:
-        affected_upper = {str(x).upper() for x in (item.affected_assets or [])}
+        affected_upper = {canonical_asset_code(str(x)) for x in (item.affected_assets or [])} | {
+            str(x).upper() for x in (item.affected_assets or [])
+        }
         haystack = f"{item.title} {item.summary}".lower()
         if asset.code in affected_upper or any(tag in haystack for tag in tags_lower):
             matched_news.append(item)
@@ -882,8 +963,23 @@ async def get_asset_detail(
         for n in matched_news[:15]
     ]
 
+    rel_currencies = asset_related_currencies(asset.code)
+    cal_rows = (
+        (
+            await db.execute(
+                select(EconomicEvent)
+                .where(func.upper(EconomicEvent.currency).in_(rel_currencies))
+                .order_by(EconomicEvent.event_time.desc())
+                .limit(15)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     return {
         **_serialize_asset(asset),
+        "resolved_symbols": symbols[:25],
         "stats": {
             "accounts_count": len(linked_accounts),
             "robots_count": len(linked_robots),
@@ -891,6 +987,10 @@ async def get_asset_detail(
             "total_balance_usd": total_balance_usd,
             "total_equity_usd": total_equity_usd,
             "total_floating_pnl_usd": total_floating_usd,
+            "asset_floating_pnl_usd": asset_floating_usd,
+            "pnl_24h_usd": pnl_24h_usd,
+            "pnl_7d_usd": pnl_7d_usd,
+            "pnl_30d_usd": pnl_30d_usd,
             "total_trades": total_trades,
             "win_rate_pct": win_rate_pct,
             "net_pnl_usd": net_pnl_usd,
@@ -903,6 +1003,7 @@ async def get_asset_detail(
                 "currency": a.currency,
                 "last_balance_usd": round(a.last_balance / (a.currency_divisor or 1.0), 2),
                 "last_equity_usd": round(a.last_equity / (a.currency_divisor or 1.0), 2),
+                "last_floating_pnl_usd": round(a.last_floating_pnl / (a.currency_divisor or 1.0), 2),
                 "terminal_connected": a.terminal_connected,
             }
             for a in linked_accounts
@@ -910,13 +1011,52 @@ async def get_asset_detail(
         "robots": [
             {
                 "id": r.id,
+                "account_id": r.account_id,
+                "account_name": acc_map[r.account_id].name if r.account_id in acc_map else "",
+                "account_login": acc_map[r.account_id].mt5_login if r.account_id in acc_map else "",
                 "name": r.name,
+                "program_name": r.program_name,
+                "version": r.version,
                 "magic_number": r.magic_number,
                 "symbol": r.symbol,
                 "live_status": r.live_status,
+                "live_state_json": r.live_state_json or {},
+                "last_execution_ms": r.last_execution_ms,
+                "last_heartbeat_at": r.last_heartbeat_at.isoformat() if r.last_heartbeat_at else None,
                 "is_active": r.is_active,
             }
             for r in linked_robots
+        ],
+        "open_positions": [
+            {
+                "position_ticket": p.position_ticket,
+                "account_id": p.account_id,
+                "account_name": acc_map[p.account_id].name if p.account_id in acc_map else "",
+                "magic_number": p.magic_number,
+                "symbol": p.symbol,
+                "side": p.side,
+                "volume": p.volume,
+                "open_price": p.open_price,
+                "current_price": p.current_price,
+                "sl": p.sl,
+                "tp": p.tp,
+                "profit_usd": round(p.profit_usd, 2),
+                "open_time": p.open_time,
+            }
+            for p in open_positions
+        ],
+        "calendar_events": [
+            {
+                "id": ev.id,
+                "title": ev.title,
+                "currency": ev.currency,
+                "impact": ev.impact,
+                "actual": ev.actual,
+                "forecast": ev.forecast,
+                "previous": ev.previous,
+                "event_time": ev.event_time.isoformat(),
+            }
+            for ev in cal_rows
         ],
         "news_digest": news_digest,
         "recent_news": recent_news_out,

@@ -30,6 +30,7 @@ export const Route = createFileRoute("/(main)/dashboard")({
 
 function DashboardLayout() {
   const { defaultOpen, variant, collapsible } = Route.useLoaderData();
+  const [tokenReady, setTokenReady] = useState<boolean>(() => Boolean(getAccessToken()));
   const [currentUser, setCurrentUser] = useState<CurrentTerminalUser | null>(null);
   const hydrateTerminal = useTerminalStore((s) => s.hydrateFromServer);
   const hydratePreferences = usePreferencesStore((s) => s.hydrateFromServer);
@@ -44,12 +45,35 @@ function DashboardLayout() {
   }, []);
 
   useEffect(() => {
+    if (tokenReady) return;
+    let cancelled = false;
+    authApi
+      .refresh()
+      .then((tok) => {
+        if (cancelled) return;
+        if (!tok) {
+          clearAccessToken();
+          window.location.replace("/auth/v2/login");
+          return;
+        }
+        setTokenReady(true);
+      })
+      .catch(() => {
+        clearAccessToken();
+        if (!cancelled) {
+          window.location.replace("/auth/v2/login");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tokenReady]);
+
+  useEffect(() => {
+    if (!tokenReady) return;
     let cancelled = false;
     async function verifySession() {
       try {
-        if (!getAccessToken()) {
-          await authApi.refresh();
-        }
         const profile = await apiRequest<{
           id: string;
           username: string;
@@ -95,9 +119,9 @@ function DashboardLayout() {
     return () => {
       cancelled = true;
     };
-  }, [hydrateTerminal, hydratePreferences]);
+  }, [tokenReady, hydrateTerminal, hydratePreferences]);
 
-  if (!currentUser) {
+  if (!tokenReady) {
     return (
       <div className="bg-background min-h-dvh w-full p-6">
         <PageSkeleton />
@@ -107,6 +131,11 @@ function DashboardLayout() {
 
   return (
     <LiveSocketProvider>
+      {!currentUser ? (
+        <div className="bg-background min-h-dvh w-full p-6">
+          <PageSkeleton />
+        </div>
+      ) : (
       <SidebarProvider
         defaultOpen={defaultOpen}
         style={
@@ -161,6 +190,7 @@ function DashboardLayout() {
           </div>
         </SidebarInset>
       </SidebarProvider>
+      )}
     </LiveSocketProvider>
   );
 }

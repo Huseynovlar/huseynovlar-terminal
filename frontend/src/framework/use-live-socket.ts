@@ -1,6 +1,6 @@
 import { createContext, createElement, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-import { getAccessToken, handleWsRpcResponse, registerWsRpcSocket } from "@/framework/api-client";
+import { getAccessToken, handleWsRpcResponse, markWsRpcConnecting, registerWsRpcSocket } from "@/framework/api-client";
 import { soundEngine } from "@/framework/sound-engine";
 import { useTerminalStore } from "@/framework/terminal-store";
 
@@ -57,6 +57,10 @@ export function LiveSocketProvider({ children }: { children: ReactNode }) {
   const listenersRef = useRef<Set<EventListener>>(new Set());
   const pingSentAtRef = useRef<number | null>(null);
 
+  if (typeof window !== "undefined" && !connected) {
+    markWsRpcConnecting();
+  }
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -75,6 +79,7 @@ export function LiveSocketProvider({ children }: { children: ReactNode }) {
 
     const connect = () => {
       if (disposed) return;
+      markWsRpcConnecting();
       setStatus(attempt === 0 ? "connecting" : "reconnecting");
       try {
         const socket = new WebSocket(buildWsUrl());

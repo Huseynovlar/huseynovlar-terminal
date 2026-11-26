@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import verify_account_api_key
+from app.core.symbols import canonical_asset_code
 from app.core.ws_hub import ws_hub
 from app.db.models import (
+    AssetHub,
     BalanceOperation,
     Deal,
     EquitySnapshot,
@@ -39,6 +41,14 @@ def _classify_balance_op(amount: float, comment: str) -> str:
     return "DEPOSIT" if amount >= 0 else "WITHDRAWAL"
 
 
+async def _resolve_asset_id_for_symbol(db: AsyncSession, raw_symbol: str) -> str | None:
+    canon = canonical_asset_code(raw_symbol)
+    if not canon:
+        return None
+    hub = (await db.execute(select(AssetHub).where(AssetHub.code == canon))).scalar_one_or_none()
+    return hub.id if hub else None
+
+
 async def _upsert_robot_telemetry(
     db: AsyncSession,
     account: TradingAccount,
@@ -57,10 +67,14 @@ async def _upsert_robot_telemetry(
     ).scalar_one_or_none()
     clean_ea = ea_name.strip()
     clean_sym = symbol.strip().upper()
+    matched_asset_id = await _resolve_asset_id_for_symbol(db, clean_sym) if clean_sym else None
+    if account.primary_asset_id is None and matched_asset_id is not None:
+        account.primary_asset_id = matched_asset_id
+
     if robot is None:
         robot = Robot(
             account_id=account.id,
-            asset_id=account.primary_asset_id,
+            asset_id=matched_asset_id or account.primary_asset_id,
             magic_number=magic_number,
             name=clean_ea or f"EA #{magic_number}",
             symbol=clean_sym,
@@ -85,6 +99,8 @@ async def _upsert_robot_telemetry(
             robot.program_name = clean_ea
         if clean_sym and not robot.symbol:
             robot.symbol = clean_sym
+        if robot.asset_id is None and matched_asset_id is not None:
+            robot.asset_id = matched_asset_id
         if version.strip() and robot.version in ("", "1.0", "auto"):
             robot.version = version.strip()
         if execution_ms > 0:
@@ -386,6 +402,22 @@ async def ingest_snapshot(
         },
     )
 
+    if body.symbol.strip() and body.bid > 0:
+        canon_sym = canonical_asset_code(body.symbol) or body.symbol.strip().upper()
+        eff_ask = body.ask if body.ask > 0 else body.bid
+        await ws_hub.broadcast(
+            "tick",
+            {
+                "symbol": canon_sym,
+                "raw_symbol": body.symbol.strip().upper(),
+                "bid": body.bid,
+                "ask": eff_ask,
+                "price": round((body.bid + eff_ask) / 2.0, 5),
+                "spread_pts": body.spread_pts,
+                "source": "mt5_live",
+            },
+        )
+
     for robot in updated_robots:
         await ws_hub.broadcast(
             "robot_state",
@@ -567,19 +599,22 @@ async def ingest_bars(
     await db.commit()
 
     if latest_bar is not None:
+        bar_dict = {
+            "time": latest_bar.time,
+            "open": latest_bar.open,
+            "high": latest_bar.high,
+            "low": latest_bar.low,
+            "close": latest_bar.close,
+            "volume": latest_bar.volume,
+        }
         await ws_hub.broadcast(
             "bar_update",
             {
-                "symbol": sym,
+                "symbol": canonical_asset_code(sym) or sym,
+                "raw_symbol": sym,
                 "timeframe": body.timeframe,
-                "bar": {
-                    "time": latest_bar.time,
-                    "open": latest_bar.open,
-                    "high": latest_bar.high,
-                    "low": latest_bar.low,
-                    "close": latest_bar.close,
-                    "volume": latest_bar.volume,
-                },
+                **bar_dict,
+                "bar": bar_dict,
             },
         )
     return {"status": "ok", "upserted": upserted}

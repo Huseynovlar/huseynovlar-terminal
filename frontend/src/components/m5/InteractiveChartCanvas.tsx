@@ -4,8 +4,10 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  createSeriesMarkers,
   type IChartApi,
   LineSeries,
+  type SeriesMarker,
   type Time,
 } from "lightweight-charts";
 import { Minus, MousePointer2, Percent, RefreshCw, Save, Trash2, TrendingUp } from "lucide-react";
@@ -33,7 +35,19 @@ export const CHART_TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1
 export type ChartTimeframe = (typeof CHART_TIMEFRAMES)[number];
 type DrawingTool = "cursor" | "hline" | "trendline" | "fib";
 
+const TF_SECONDS: Record<ChartTimeframe, number> = {
+  M1: 60,
+  M5: 300,
+  M15: 900,
+  M30: 1800,
+  H1: 3600,
+  H4: 14400,
+  D1: 86400,
+  W1: 604800,
+};
+
 interface IndicatorConfig {
+  zones: boolean;
   ema20: boolean;
   ema50: boolean;
   ema200: boolean;
@@ -53,12 +67,34 @@ interface DrawingRecord {
   low?: number;
 }
 
-interface ChartStateResponse {
-  symbol: string;
-  timeframe: string;
-  indicators_json: Partial<IndicatorConfig>;
-  drawings_json: DrawingRecord[];
-  filters_json: Record<string, unknown>;
+interface ChartStatePayload {
+  timeframe?: string;
+  indicators_json?: Partial<IndicatorConfig>;
+  drawings_json?: DrawingRecord[];
+  filters_json?: Record<string, unknown>;
+  updated_at?: string | null;
+}
+
+export interface ChartOpenPosition {
+  position_ticket?: number;
+  symbol?: string;
+  side?: string;
+  volume?: number;
+  open_price?: number;
+  current_price?: number;
+  sl?: number;
+  tp?: number;
+  profit_usd?: number;
+}
+
+export interface ChartDealMarkerItem {
+  id?: string;
+  side?: string;
+  entry?: string;
+  volume?: number;
+  price?: number;
+  net_profit_usd?: number;
+  time_sec?: number;
 }
 
 export interface ChartBundleData {
@@ -67,8 +103,9 @@ export interface ChartBundleData {
   timeframe: string;
   source?: string;
   bars: OhlcBar[];
-  open_positions?: Array<Record<string, unknown>>;
-  deals?: Array<Record<string, unknown>>;
+  chart_state?: ChartStatePayload | null;
+  open_positions?: ChartOpenPosition[];
+  deals?: ChartDealMarkerItem[];
 }
 
 export interface RobotZoneLevels {
@@ -88,6 +125,7 @@ interface InteractiveChartCanvasProps {
 }
 
 const DEFAULT_INDICATORS: IndicatorConfig = {
+  zones: true,
   ema20: false,
   ema50: false,
   ema200: false,
@@ -96,10 +134,19 @@ const DEFAULT_INDICATORS: IndicatorConfig = {
   rsi: false,
 };
 
+function formatSourceBadge(rawSource: string): string {
+  if (rawSource === "mt5_merged") return "MT5 + История";
+  if (rawSource === "mt5_live" || rawSource === "mt5_db") return "MT5 Поток";
+  if (rawSource === "market_history" || rawSource === "yahoo_fallback" || rawSource === "yahoo") {
+    return "История + Live WS";
+  }
+  return rawSource || "Live WS";
+}
+
 export function InteractiveChartCanvas({
   symbol,
   mode = "hub",
-  height = 420,
+  height = 460,
   robotZones,
   onDataLoaded,
 }: InteractiveChartCanvasProps) {
@@ -108,14 +155,17 @@ export function InteractiveChartCanvas({
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ReturnType<IChartApi["addSeries"]> | null>(null);
   const lastBarRef = useRef<OhlcBar | null>(null);
+  const stateHydratedSymbolRef = useRef<string>("");
 
-  const [timeframe, setTimeframe] = useState<ChartTimeframe>("H1");
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>(mode === "hub" ? "M5" : "H1");
   const [indicators, setIndicators] = useState<IndicatorConfig>(DEFAULT_INDICATORS);
   const [drawings, setDrawings] = useState<DrawingRecord[]>([]);
   const [activeTool, setActiveTool] = useState<DrawingTool>("cursor");
   const [pendingPoint, setPendingPoint] = useState<{ time: number; price: number } | null>(null);
 
   const [bars, setBars] = useState<OhlcBar[]>([]);
+  const [openPositions, setOpenPositions] = useState<ChartOpenPosition[]>([]);
+  const [dealItems, setDealItems] = useState<ChartDealMarkerItem[]>([]);
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [sourceLabel, setSourceLabel] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -125,13 +175,19 @@ export function InteractiveChartCanvas({
   const cleanSymbol = symbol.trim().toUpperCase();
   const canonSymbol = canonicalMarketSymbol(cleanSymbol);
 
-  // 1. Load persisted chart state from PostgreSQL (GET /api/v1/charts/state/{symbol})
+  // Reset per-symbol state cleanly when switching hubs
   useEffect(() => {
-    if (!cleanSymbol) return;
+    setLivePrice(null);
+    stateHydratedSymbolRef.current = "";
+  }, [cleanSymbol]);
+
+  // 1. In explore mode only, hydrate saved chart state separately (hub mode receives chart_state inside /charts/{code})
+  useEffect(() => {
+    if (!cleanSymbol || mode === "hub") return;
     let active = true;
-    apiRequest<ChartStateResponse>(`/charts/state/${encodeURIComponent(cleanSymbol)}`)
+    apiRequest<ChartStatePayload>(`/charts/state/${encodeURIComponent(cleanSymbol)}`)
       .then((state) => {
-        if (!active) return;
+        if (!active || !state?.updated_at) return;
         if (state.timeframe && (CHART_TIMEFRAMES as readonly string[]).includes(state.timeframe)) {
           setTimeframe(state.timeframe as ChartTimeframe);
         }
@@ -143,14 +199,14 @@ export function InteractiveChartCanvas({
         }
       })
       .catch(() => {
-        // Keep defaults if state does not exist yet
+        // Keep defaults
       });
     return () => {
       active = false;
     };
-  }, [cleanSymbol]);
+  }, [cleanSymbol, mode]);
 
-  // 2. Fetch real OHLC bars from backend
+  // 2. Fetch multi-day OHLC bars + open positions + deals over WebSocket RPC
   const loadBars = useCallback(async () => {
     if (!cleanSymbol) return;
     setLoading(true);
@@ -159,15 +215,59 @@ export function InteractiveChartCanvas({
       const endpoint =
         mode === "explore"
           ? `/charts/explore?symbol=${encodeURIComponent(cleanSymbol)}&timeframe=${timeframe}`
-          : `/charts/${encodeURIComponent(cleanSymbol)}?timeframe=${timeframe}`;
+          : `/charts/${encodeURIComponent(cleanSymbol)}?timeframe=${timeframe}&limit=1000`;
       const res = await apiRequest<ChartBundleData>(endpoint);
-      const validBars = Array.isArray(res.bars)
-        ? res.bars
-            .filter((b) => Number.isFinite(b.time) && Number.isFinite(b.close))
-            .sort((a, b) => a.time - b.time)
-        : [];
+
+      // Hydrate saved state once per symbol from bundle (if user previously saved drawings/indicators)
+      if (mode === "hub" && stateHydratedSymbolRef.current !== cleanSymbol) {
+        stateHydratedSymbolRef.current = cleanSymbol;
+        const st = res.chart_state;
+        if (st && st.updated_at) {
+          if (st.indicators_json && typeof st.indicators_json === "object") {
+            setIndicators({
+              ...DEFAULT_INDICATORS,
+              ...st.indicators_json,
+              // Ensure MT5 zones remain visible unless explicitly toggled off
+              zones: st.indicators_json.zones ?? true,
+            });
+          }
+          if (Array.isArray(st.drawings_json)) {
+            setDrawings(st.drawings_json);
+          }
+          if (
+            st.timeframe &&
+            (CHART_TIMEFRAMES as readonly string[]).includes(st.timeframe) &&
+            st.timeframe !== timeframe
+          ) {
+            setTimeframe(st.timeframe as ChartTimeframe);
+            return;
+          }
+        }
+      }
+
+      // Deduplicate timestamps strictly so Lightweight Charts never receives duplicate bar times
+      const byTime = new Map<number, OhlcBar>();
+      if (Array.isArray(res.bars)) {
+        for (const b of res.bars) {
+          const bt = Number(b.time);
+          const cl = Number(b.close);
+          if (Number.isFinite(bt) && bt > 0 && Number.isFinite(cl) && cl > 0) {
+            byTime.set(bt, {
+              time: bt,
+              open: Number(b.open ?? cl),
+              high: Number(b.high ?? cl),
+              low: Number(b.low ?? cl),
+              close: cl,
+              volume: Number(b.volume ?? 0),
+            });
+          }
+        }
+      }
+      const validBars = Array.from(byTime.values()).sort((a, b) => a.time - b.time);
       setBars(validBars);
-      setSourceLabel(res.source ?? (mode === "explore" ? "Yahoo Finance" : "MT5 / Market"));
+      setOpenPositions(Array.isArray(res.open_positions) ? res.open_positions : []);
+      setDealItems(Array.isArray(res.deals) ? res.deals : []);
+      setSourceLabel(formatSourceBadge(res.source ?? ""));
       onDataLoaded?.(res);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -182,33 +282,53 @@ export function InteractiveChartCanvas({
     void loadBars();
   }, [loadBars]);
 
-  // 3. Subscribe to live same-origin /api/v1/ws/live bar_update & tick events (Binance, Deriv, Alpaca, Finnhub, MT5)
-  useLiveEvents(["bar_update", "tick"], (evt) => {
-    const payload = evt.data ?? {};
+  // 3. Real-time live candle updates via /api/v1/ws/live (Tiingo FX, Binance Vision, Alpaca IEX, MT5 Bridge)
+  useLiveEvents(["tick", "bar_update", "snapshot"], (evt) => {
+    const payload = (evt.data ?? {}) as Record<string, unknown>;
     const evtSym = canonicalMarketSymbol(String(payload.symbol ?? payload.asset_code ?? ""));
     if (!evtSym || evtSym !== canonSymbol) return;
 
-    if (evt.type === "tick") {
-      const price = Number(payload.price ?? payload.bid ?? payload.close ?? 0);
+    if (evt.type === "tick" || evt.type === "snapshot") {
+      const bid = Number(payload.bid ?? 0);
+      const ask = Number(payload.ask ?? 0);
+      const price = Number(payload.price ?? (bid > 0 && ask > 0 ? (bid + ask) / 2 : bid) ?? payload.close ?? 0);
       if (!(price > 0)) return;
       setLivePrice(price);
+
       const last = lastBarRef.current;
       const series = candleSeriesRef.current;
       if (last && series) {
-        const updated: OhlcBar = {
-          ...last,
-          close: price,
-          high: Math.max(last.high, price),
-          low: Math.min(last.low, price),
-        };
-        lastBarRef.current = updated;
+        // Avoid splicing spot tick onto an unaligned futures price if basis > 5%
+        if (Math.abs(price - last.close) / Math.max(last.close, 1e-6) > 0.05) {
+          return;
+        }
+        const tfSec = TF_SECONDS[timeframe] ?? 300;
+        const nowBucket = Math.floor(Date.now() / 1000 / tfSec) * tfSec;
+        const nextCandle: OhlcBar =
+          nowBucket > last.time
+            ? {
+                time: nowBucket,
+                open: last.close,
+                high: Math.max(last.close, price),
+                low: Math.min(last.close, price),
+                close: price,
+                volume: 1,
+              }
+            : {
+                ...last,
+                close: price,
+                high: Math.max(last.high, price),
+                low: Math.min(last.low, price),
+                volume: (last.volume ?? 0) + 1,
+              };
+        lastBarRef.current = nextCandle;
         try {
           series.update({
-            time: updated.time as Time,
-            open: updated.open,
-            high: updated.high,
-            low: updated.low,
-            close: updated.close,
+            time: nextCandle.time as Time,
+            open: nextCandle.open,
+            high: nextCandle.high,
+            low: nextCandle.low,
+            close: nextCandle.close,
           });
         } catch {
           // ignore out-of-order timestamp
@@ -217,17 +337,23 @@ export function InteractiveChartCanvas({
       return;
     }
 
-    const barTime = Number(payload.time ?? 0);
-    const close = Number(payload.close ?? 0);
+    // Handle bar_update (both top-level and nested payload.bar formats)
+    if (payload.timeframe && String(payload.timeframe) !== timeframe) return;
+    const barObj =
+      payload.bar && typeof payload.bar === "object"
+        ? (payload.bar as Record<string, unknown>)
+        : payload;
+    const barTime = Number(barObj.time ?? 0);
+    const close = Number(barObj.close ?? 0);
     if (!barTime || !close) return;
     setLivePrice(close);
     const nextBar: OhlcBar = {
       time: barTime,
-      open: Number(payload.open ?? close),
-      high: Number(payload.high ?? close),
-      low: Number(payload.low ?? close),
+      open: Number(barObj.open ?? close),
+      high: Number(barObj.high ?? close),
+      low: Number(barObj.low ?? close),
       close,
-      volume: Number(payload.volume ?? 0),
+      volume: Number(barObj.volume ?? 0),
     };
     const last = lastBarRef.current;
     const series = candleSeriesRef.current;
@@ -247,7 +373,7 @@ export function InteractiveChartCanvas({
     }
   });
 
-  // 4. Persist chart state to server (PUT /api/v1/charts/state/{symbol})
+  // 4. Persist chart state to server over WebSocket RPC
   const persistState = useCallback(
     async (
       nextTf: ChartTimeframe,
@@ -281,7 +407,7 @@ export function InteractiveChartCanvas({
     [cleanSymbol, t.charts.stateSaved, t.common.errorTitle],
   );
 
-  // 5. Render Lightweight Charts v5 canvas
+  // 5. Render institutional candlestick canvas (attributionLogo: false — zero TradingView branding!)
   useEffect(() => {
     const el = containerRef.current;
     if (!el || loading || bars.length === 0) return;
@@ -294,16 +420,29 @@ export function InteractiveChartCanvas({
         textColor: "#a1a1aa",
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
         fontSize: 11,
+        attributionLogo: false,
       },
       grid: {
         vertLines: { color: "rgba(148, 163, 184, 0.08)" },
         horzLines: { color: "rgba(148, 163, 184, 0.08)" },
       },
-      rightPriceScale: { borderColor: "rgba(148, 163, 184, 0.16)" },
-      timeScale: { borderColor: "rgba(148, 163, 184, 0.16)", timeVisible: true },
+      rightPriceScale: {
+        borderColor: "rgba(148, 163, 184, 0.18)",
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+      },
+      timeScale: {
+        borderColor: "rgba(148, 163, 184, 0.18)",
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 6,
+      },
       crosshair: { mode: 0 },
     });
     chartRef.current = chart;
+
+    const refClose = bars[bars.length - 1]?.close ?? 100;
+    const pricePrecision = refClose < 10 ? 5 : refClose < 100 ? 3 : 2;
+    const minMove = Number((10 ** -pricePrecision).toFixed(pricePrecision));
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#10b981",
@@ -312,6 +451,7 @@ export function InteractiveChartCanvas({
       borderDownColor: "#f43f5e",
       wickUpColor: "#10b981",
       wickDownColor: "#f43f5e",
+      priceFormat: { type: "price", precision: pricePrecision, minMove },
     });
     candleSeries.setData(
       bars.map((b) => ({
@@ -325,42 +465,73 @@ export function InteractiveChartCanvas({
     candleSeriesRef.current = candleSeries;
     lastBarRef.current = bars[bars.length - 1] ?? null;
 
-    if (indicators.ema20) {
-      const s = chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 1, title: "EMA20" });
-      s.setData(calcEMA(bars, 20).map((p) => ({ time: p.time as Time, value: p.value })));
-    }
-    if (indicators.ema50) {
-      const s = chart.addSeries(LineSeries, { color: "#38bdf8", lineWidth: 1, title: "EMA50" });
-      s.setData(calcEMA(bars, 50).map((p) => ({ time: p.time as Time, value: p.value })));
-    }
-    if (indicators.ema200) {
-      const s = chart.addSeries(LineSeries, { color: "#a855f7", lineWidth: 2, title: "EMA200" });
-      s.setData(calcEMA(bars, 200).map((p) => ({ time: p.time as Time, value: p.value })));
-    }
-    if (indicators.bb) {
+    // Plot MT5 Strategy Zones (SELL ZONE / FAIR / MEAN / BUY ZONE)
+    const showBands = indicators.zones || indicators.bb;
+    const showFair = indicators.zones || indicators.vwap;
+
+    if (showBands) {
       const bb = calcBollinger(bars, 20, 2);
-      const u = chart.addSeries(LineSeries, { color: "#f43f5e", lineWidth: 2, title: "SELL ZONE" });
-      const m = chart.addSeries(LineSeries, { color: "rgba(148, 163, 184, 0.7)", lineWidth: 1, lineStyle: 3, title: "MEAN" });
-      const l = chart.addSeries(LineSeries, { color: "#10b981", lineWidth: 2, title: "BUY ZONE" });
+      const u = chart.addSeries(LineSeries, {
+        color: "#f43f5e",
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: "SELL ZONE",
+      });
+      const m = chart.addSeries(LineSeries, {
+        color: "rgba(148, 163, 184, 0.8)",
+        lineWidth: 1,
+        lineStyle: 3,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: "MEAN",
+      });
+      const l = chart.addSeries(LineSeries, {
+        color: "#10b981",
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: "BUY ZONE",
+      });
       u.setData(bb.upper.map((p) => ({ time: p.time as Time, value: p.value })));
       m.setData(bb.middle.map((p) => ({ time: p.time as Time, value: p.value })));
       l.setData(bb.lower.map((p) => ({ time: p.time as Time, value: p.value })));
     }
-    if (indicators.vwap) {
-      const s = chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 1, lineStyle: 2, title: "FAIR" });
+    if (showFair) {
+      const s = chart.addSeries(LineSeries, {
+        color: "#f59e0b",
+        lineWidth: 1,
+        lineStyle: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: "FAIR",
+      });
       s.setData(calcVWAP(bars).map((p) => ({ time: p.time as Time, value: p.value })));
     }
 
-    // Live Robot Strategy Zone Price Lines from MT5 EA Telemetry (SELL ZONE / FAIR / MEAN / BUY ZONE)
-    if (robotZones) {
+    if (indicators.ema20) {
+      const s = chart.addSeries(LineSeries, { color: "#eab308", lineWidth: 1, priceLineVisible: false, title: "EMA20" });
+      s.setData(calcEMA(bars, 20).map((p) => ({ time: p.time as Time, value: p.value })));
+    }
+    if (indicators.ema50) {
+      const s = chart.addSeries(LineSeries, { color: "#38bdf8", lineWidth: 1, priceLineVisible: false, title: "EMA50" });
+      s.setData(calcEMA(bars, 50).map((p) => ({ time: p.time as Time, value: p.value })));
+    }
+    if (indicators.ema200) {
+      const s = chart.addSeries(LineSeries, { color: "#a855f7", lineWidth: 2, priceLineVisible: false, title: "EMA200" });
+      s.setData(calcEMA(bars, 200).map((p) => ({ time: p.time as Time, value: p.value })));
+    }
+
+    // Live Robot EA Telemetry Exact Price Levels (SELL ZONE / FAIR / MEAN / BUY ZONE)
+    if (robotZones && indicators.zones) {
       if (robotZones.sellZone && robotZones.sellZone > 0) {
         candleSeries.createPriceLine({
           price: robotZones.sellZone,
           color: "#f43f5e",
           lineWidth: 1,
-          lineStyle: 0,
+          lineStyle: 2,
           axisLabelVisible: true,
-          title: "SELL ZONE",
+          title: "EA SELL",
         });
       }
       if (robotZones.fair && robotZones.fair > 0) {
@@ -370,7 +541,7 @@ export function InteractiveChartCanvas({
           lineWidth: 1,
           lineStyle: 2,
           axisLabelVisible: true,
-          title: "FAIR",
+          title: "EA FAIR",
         });
       }
       if (robotZones.mean && robotZones.mean > 0) {
@@ -380,7 +551,7 @@ export function InteractiveChartCanvas({
           lineWidth: 1,
           lineStyle: 3,
           axisLabelVisible: true,
-          title: "MEAN",
+          title: "EA MEAN",
         });
       }
       if (robotZones.buyZone && robotZones.buyZone > 0) {
@@ -388,14 +559,94 @@ export function InteractiveChartCanvas({
           price: robotZones.buyZone,
           color: "#10b981",
           lineWidth: 1,
-          lineStyle: 0,
+          lineStyle: 2,
           axisLabelVisible: true,
-          title: "BUY ZONE",
+          title: "EA BUY",
         });
       }
     }
 
-    // Apply saved drawings (hlines, trendlines, fib retracements)
+    // MT5 Live Open Position Lines (ENTRY / SL / TP)
+    for (const pos of openPositions) {
+      const side = String(pos.side ?? "BUY").toUpperCase();
+      const vol = Number(pos.volume ?? 0);
+      const entryPrice = Number(pos.open_price ?? 0);
+      const sl = Number(pos.sl ?? 0);
+      const tp = Number(pos.tp ?? 0);
+      if (entryPrice > 0) {
+        candleSeries.createPriceLine({
+          price: entryPrice,
+          color: side === "BUY" ? "#22c55e" : "#ef4444",
+          lineWidth: 2,
+          lineStyle: 0,
+          axisLabelVisible: true,
+          title: `${side} ${vol > 0 ? vol.toFixed(2) : ""}`.trim(),
+        });
+      }
+      if (sl > 0) {
+        candleSeries.createPriceLine({
+          price: sl,
+          color: "#f43f5e",
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: "SL",
+        });
+      }
+      if (tp > 0) {
+        candleSeries.createPriceLine({
+          price: tp,
+          color: "#10b981",
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: "TP",
+        });
+      }
+    }
+
+    // MT5 Historical Deal Markers (BUY / SELL Entry & Exit Arrows aligned to bars)
+    if (dealItems.length > 0 && bars.length > 1) {
+      const tfSec = TF_SECONDS[timeframe] ?? 300;
+      const firstT = bars[0]!.time;
+      const lastT = bars[bars.length - 1]!.time + tfSec;
+      const rawMarkers: Array<SeriesMarker<Time> & { sortTime: number }> = [];
+      for (const d of dealItems.slice(0, 80)) {
+        const tSec = Number(d.time_sec ?? 0);
+        if (!tSec || tSec < firstT || tSec > lastT) continue;
+        // Snap deal timestamp to nearest candle bar <= tSec
+        let snapped = bars[0]!.time;
+        for (let i = bars.length - 1; i >= 0; i--) {
+          if (bars[i]!.time <= tSec) {
+            snapped = bars[i]!.time;
+            break;
+          }
+        }
+        const isBuy = String(d.side ?? "BUY").toUpperCase() === "BUY";
+        const pnl = Number(d.net_profit_usd ?? 0);
+        const entryTag = String(d.entry ?? "IN");
+        const label =
+          entryTag === "OUT" && pnl !== 0
+            ? `${isBuy ? "B" : "S"} ${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}$`
+            : isBuy
+              ? "BUY"
+              : "SELL";
+        rawMarkers.push({
+          sortTime: snapped,
+          time: snapped as Time,
+          position: isBuy ? "belowBar" : "aboveBar",
+          color: isBuy ? "#10b981" : "#f43f5e",
+          shape: isBuy ? "arrowUp" : "arrowDown",
+          text: label,
+        });
+      }
+      if (rawMarkers.length > 0) {
+        rawMarkers.sort((a, b) => a.sortTime - b.sortTime);
+        createSeriesMarkers(candleSeries, rawMarkers);
+      }
+    }
+
+    // Apply saved user drawings (hlines, trendlines, fib retracements)
     for (const d of drawings) {
       if (d.type === "hline" && typeof d.price === "number") {
         candleSeries.createPriceLine({
@@ -485,7 +736,15 @@ export function InteractiveChartCanvas({
       }
     });
 
-    chart.timeScale().fitContent();
+    // Show comfortable recent window (~180 candles) while keeping full multi-day history scrollable to the left!
+    if (bars.length > 200) {
+      chart.timeScale().setVisibleLogicalRange({
+        from: bars.length - 180,
+        to: bars.length + 6,
+      });
+    } else {
+      chart.timeScale().fitContent();
+    }
 
     const ro = new ResizeObserver(() => {
       if (containerRef.current) {
@@ -498,14 +757,29 @@ export function InteractiveChartCanvas({
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
+      candleSeriesRef.current = null;
     };
-  }, [activeTool, bars, drawings, height, indicators, loading, pendingPoint, persistState, timeframe]);
+  }, [
+    activeTool,
+    bars,
+    dealItems,
+    drawings,
+    height,
+    indicators,
+    loading,
+    openPositions,
+    pendingPoint,
+    persistState,
+    robotZones,
+    timeframe,
+  ]);
 
   const latestBar = bars.length > 0 ? bars[bars.length - 1] : null;
   const firstBar = bars.length > 0 ? bars[0] : null;
+  const displayPrice = livePrice ?? latestBar?.close ?? null;
   const changePct =
-    latestBar && firstBar && firstBar.open > 0
-      ? ((latestBar.close - firstBar.open) / firstBar.open) * 100
+    displayPrice !== null && firstBar && firstBar.open > 0
+      ? ((displayPrice - firstBar.open) / firstBar.open) * 100
       : null;
 
   const latestRsi = useMemo(() => {
@@ -529,14 +803,17 @@ export function InteractiveChartCanvas({
     <Card className="border-border/70">
       <CardHeader className="flex flex-col gap-2 pb-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <AssetLogo symbol={cleanSymbol} size={26} />
+          <AssetLogo symbol={cleanSymbol} size={28} />
           <CardTitle className="font-mono text-base font-bold">{cleanSymbol}</CardTitle>
-          {livePrice !== null || latestBar ? (
-            <span className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold tabular-nums">
-              {livePrice !== null ? (
-                <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" title="Live WS tick" />
-              ) : null}
-              {(livePrice ?? latestBar?.close ?? 0).toLocaleString("en-US", { maximumFractionDigits: 4 })}
+          {displayPrice !== null ? (
+            <span className="inline-flex items-center gap-1.5 font-mono text-sm font-bold tabular-nums">
+              <span
+                className={`size-2 rounded-full ${
+                  livePrice !== null ? "animate-pulse bg-emerald-500" : "bg-primary/70"
+                }`}
+                title="Поток в реальном времени (WebSocket)"
+              />
+              {displayPrice.toLocaleString("en-US", { maximumFractionDigits: 5 })}
             </span>
           ) : null}
           {changePct !== null ? (
@@ -554,7 +831,7 @@ export function InteractiveChartCanvas({
           ) : null}
           {sourceLabel ? (
             <Badge variant="secondary" className="font-mono text-[10px]">
-              {sourceLabel}
+              {sourceLabel} • {bars.length} баров
             </Badge>
           ) : null}
           {latestRsi !== null ? (
@@ -601,11 +878,10 @@ export function InteractiveChartCanvas({
             <span className="mr-1 text-[11px] text-muted-foreground">{t.charts.indicators}:</span>
             {(
               [
+                ["zones", "Зоны MT5 (SELL/FAIR/BUY)"],
                 ["ema20", "EMA20"],
                 ["ema50", "EMA50"],
                 ["ema200", "EMA200"],
-                ["bb", "BB(20)"],
-                ["vwap", "VWAP"],
                 ["rsi", "RSI(14)"],
               ] as const
             ).map(([key, label]) => (
@@ -689,6 +965,24 @@ export function InteractiveChartCanvas({
           </div>
         </div>
 
+        {indicators.zones ? (
+          <div className="flex flex-wrap items-center gap-3 px-1 font-mono text-[10px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1 text-rose-500">
+              <span className="inline-block h-0.5 w-3 bg-rose-500" /> SELL ZONE (Upper BB)
+            </span>
+            <span className="inline-flex items-center gap-1 text-amber-500">
+              <span className="inline-block h-0.5 w-3 border-t border-dashed border-amber-500" /> FAIR (VWAP)
+            </span>
+            <span className="inline-flex items-center gap-1 text-slate-400">
+              <span className="inline-block h-0.5 w-3 border-t border-dotted border-slate-400" /> MEAN (Mid)
+            </span>
+            <span className="inline-flex items-center gap-1 text-emerald-500">
+              <span className="inline-block h-0.5 w-3 bg-emerald-500" /> BUY ZONE (Lower BB)
+            </span>
+            <span className="ml-auto hidden sm:inline">Прокрутите влево для просмотра истории за прошлые дни/недели</span>
+          </div>
+        ) : null}
+
         {loading ? (
           <ChartSkeleton height={height} />
         ) : error ? (
@@ -710,7 +1004,11 @@ export function InteractiveChartCanvas({
             {t.common.noData}
           </div>
         ) : (
-          <div ref={containerRef} className="w-full" style={{ height }} />
+          <div
+            ref={containerRef}
+            className="w-full [&_a[href*='tradingview']]:!hidden"
+            style={{ height }}
+          />
         )}
       </CardContent>
     </Card>

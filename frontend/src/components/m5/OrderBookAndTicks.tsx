@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { Activity, BookOpen, Layers, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, BookOpen, Layers } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,10 +12,11 @@ interface DepthLevel {
   qty: number;
 }
 
-interface DualTickPoint {
+interface CombinedTickPoint {
   ts: number;
-  bid: number; // Buy / Bid line (emerald)
-  ask: number; // Sell / Ask line (rose)
+  bid: number; // BUY / Bid line (green #10b981)
+  ask: number; // SELL / Ask line (red #f43f5e)
+  side: "buy" | "sell";
 }
 
 interface TradeTapeItem {
@@ -26,32 +27,40 @@ interface TradeTapeItem {
 }
 
 function sourceDisplayName(src: string): string {
-  if (src === "binance") return "Binance Spot WS";
-  if (src === "deriv") return "Deriv Spot WS";
+  if (src === "tiingo_fx") return "Tiingo FX Live WS";
+  if (src === "mt5_live") return "MT5 Live Stream";
+  if (src === "binance_vision" || src === "binance") return "Binance Live WS";
   if (src === "alpaca_iex") return "Alpaca IEX WS";
   if (src === "finnhub") return "Finnhub WS";
-  return "Terminal Live WS";
+  return "Live WebSocket";
 }
 
 /**
- * Real-time Order Book (DOM) + Separate Buy (Bid) / Sell (Ask) Tick Chart (#27, #28).
- * 100% same-origin via `/api/v1/ws/live` (zero CSP issues, zero polling):
- * backend collects Binance Spot, Deriv Public WS, Alpaca IEX / Finnhub, and MT5 Bridge.
+ * Real-time Order Book (DOM) + ONE Unified Combined Buy (Green) / Sell (Red) Tick Chart (#25).
+ * 100% same-origin via `/api/v1/ws/live` (Tiingo FX + Binance Vision + Alpaca IEX + MT5 Bridge).
  */
-export function OrderBookAndTicks({ symbol }: { symbol: string }) {
+export function OrderBookAndTicks({
+  symbol,
+  initialPrice,
+}: {
+  symbol: string;
+  initialPrice?: number | null;
+}) {
   const [bids, setBids] = useState<DepthLevel[]>([]);
   const [asks, setAsks] = useState<DepthLevel[]>([]);
-  const [ticks, setTicks] = useState<DualTickPoint[]>([]);
+  const [ticks, setTicks] = useState<CombinedTickPoint[]>([]);
   const [tape, setTape] = useState<TradeTapeItem[]>([]);
   const [buyCount, setBuyCount] = useState(0);
   const [sellCount, setSellCount] = useState(0);
-  const [feedLabel, setFeedLabel] = useState<string>("Terminal WS");
+  const [feedLabel, setFeedLabel] = useState<string>("Live WebSocket");
   const [feedLive, setFeedLive] = useState(false);
 
   const canonSym = useMemo(() => canonicalMarketSymbol(symbol), [symbol]);
-  const ticksRef = useRef<DualTickPoint[]>([]);
+  const ticksRef = useRef<CombinedTickPoint[]>([]);
   const tapeRef = useRef<TradeTapeItem[]>([]);
   const hasL2Ref = useRef(false);
+  const bidLadderRef = useRef<Map<string, DepthLevel>>(new Map());
+  const askLadderRef = useRef<Map<string, DepthLevel>>(new Map());
 
   // Reset buffers when switching symbol
   useEffect(() => {
@@ -62,19 +71,39 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
     setBuyCount(0);
     setSellCount(0);
     setFeedLive(false);
-    setFeedLabel("Terminal WS");
+    setFeedLabel("Live WebSocket");
     ticksRef.current = [];
     tapeRef.current = [];
     hasL2Ref.current = false;
+    bidLadderRef.current.clear();
+    askLadderRef.current.clear();
   }, [canonSym]);
 
-  // Listen to same-origin /api/v1/ws/live events pushed by backend Market WS Hub
-  useLiveEvents(["tick", "orderbook", "bar_update"], (evt) => {
+  // Seed initial point from latest known price if no WS tick arrived yet
+  useEffect(() => {
+    if (initialPrice && initialPrice > 0 && ticksRef.current.length === 0) {
+      const seed: CombinedTickPoint = {
+        ts: Date.now(),
+        bid: initialPrice,
+        ask: initialPrice,
+        side: "buy",
+      };
+      ticksRef.current = [seed];
+      setTicks([seed]);
+      if (!hasL2Ref.current) {
+        setBids([{ price: initialPrice, qty: 1 }]);
+        setAsks([{ price: initialPrice, qty: 1 }]);
+      }
+    }
+  }, [initialPrice]);
+
+  // Listen to same-origin /api/v1/ws/live events pushed by backend Market WS Hub & MT5 Bridge
+  useLiveEvents(["tick", "orderbook", "bar_update", "snapshot"], (evt) => {
     const d = (evt.data ?? {}) as Record<string, unknown>;
     const evtSym = canonicalMarketSymbol(String(d.symbol ?? d.asset_code ?? ""));
     if (!evtSym || evtSym !== canonSym) return;
 
-    const src = String(d.source ?? "");
+    const src = String(d.source ?? (evt.type === "snapshot" ? "mt5_live" : ""));
     if (src) setFeedLabel(sourceDisplayName(src));
     setFeedLive(true);
 
@@ -92,39 +121,72 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
       return;
     }
 
-    if (evt.type === "tick" || evt.type === "bar_update") {
-      const bid = Number(d.bid ?? d.price ?? d.close ?? 0);
-      const ask = Number(d.ask ?? (bid > 0 ? bid : 0));
-      const bidSz = Number(d.bid_size ?? d.qty ?? 1);
-      const askSz = Number(d.ask_size ?? d.qty ?? 1);
-      if (!(bid > 0)) return;
-      const effAsk = ask > 0 ? ask : bid;
-      const now = Date.now();
+    const barObj =
+      d.bar && typeof d.bar === "object" ? (d.bar as Record<string, unknown>) : d;
+    const rawBid = Number(d.bid ?? d.price ?? barObj.close ?? 0);
+    const rawAsk = Number(d.ask ?? (rawBid > 0 ? rawBid : 0));
+    if (!(rawBid > 0)) return;
 
-      const next: DualTickPoint = { ts: now, bid, ask: effAsk };
-      const arr = [...ticksRef.current.slice(-89), next];
-      ticksRef.current = arr;
-      setTicks(arr);
+    const bid = rawBid;
+    const effAsk = rawAsk >= bid ? rawAsk : bid;
+    const bidSz = Math.max(0.01, Number(d.bid_size ?? d.qty ?? 1));
+    const askSz = Math.max(0.01, Number(d.ask_size ?? d.qty ?? 1));
+    const now = Date.now();
 
-      // For Spot FX / Gold / Equities without L2 depth, show Top-of-Book L1 Bid/Ask
-      if (!hasL2Ref.current) {
-        setBids([{ price: bid, qty: bidSz > 0 ? bidSz : 1 }]);
-        setAsks([{ price: effAsk, qty: askSz > 0 ? askSz : 1 }]);
+    const prevLast = ticksRef.current[ticksRef.current.length - 1];
+    const mid = (bid + effAsk) / 2;
+    const prevMid = prevLast ? (prevLast.bid + prevLast.ask) / 2 : mid;
+    const side: "buy" | "sell" =
+      d.side === "sell" ? "sell" : d.side === "buy" ? "buy" : mid >= prevMid ? "buy" : "sell";
+
+    const next: CombinedTickPoint = { ts: now, bid, ask: effAsk, side };
+    const arr = [...ticksRef.current.slice(-119), next];
+    ticksRef.current = arr;
+    setTicks(arr);
+
+    // Build live observed L1/Quote liquidity ladder when exchange doesn't push full L2 book
+    if (!hasL2Ref.current) {
+      const dec = bid < 10 ? 5 : 2;
+      const bKey = bid.toFixed(dec);
+      const aKey = effAsk.toFixed(dec);
+
+      // Prune stale crossed levels
+      for (const [k, v] of bidLadderRef.current.entries()) {
+        if (v.price > effAsk) bidLadderRef.current.delete(k);
+      }
+      for (const [k, v] of askLadderRef.current.entries()) {
+        if (v.price < bid) askLadderRef.current.delete(k);
       }
 
-      const side: "buy" | "sell" = d.side === "sell" ? "sell" : "buy";
-      if (side === "buy") setBuyCount((c) => c + 1);
-      else setSellCount((c) => c + 1);
-      const nextItem: TradeTapeItem = {
-        ts: now,
-        price: side === "buy" ? effAsk : bid,
-        qty: Number(d.qty ?? bidSz ?? 1),
-        side,
-      };
-      const nextTape = [nextItem, ...tapeRef.current.slice(0, 7)];
-      tapeRef.current = nextTape;
-      setTape(nextTape);
+      bidLadderRef.current.set(bKey, { price: bid, qty: bidSz });
+      askLadderRef.current.set(aKey, { price: effAsk, qty: askSz });
+
+      const sortedBids = Array.from(bidLadderRef.current.values())
+        .sort((a, b) => b.price - a.price)
+        .slice(0, 8);
+      const sortedAsks = Array.from(askLadderRef.current.values())
+        .sort((a, b) => a.price - b.price)
+        .slice(0, 8);
+
+      bidLadderRef.current = new Map(sortedBids.map((x) => [x.price.toFixed(dec), x]));
+      askLadderRef.current = new Map(sortedAsks.map((x) => [x.price.toFixed(dec), x]));
+
+      setBids(sortedBids);
+      setAsks(sortedAsks);
     }
+
+    if (side === "buy") setBuyCount((c) => c + 1);
+    else setSellCount((c) => c + 1);
+
+    const nextItem: TradeTapeItem = {
+      ts: now,
+      price: side === "buy" ? effAsk : bid,
+      qty: Number(d.qty ?? (side === "buy" ? askSz : bidSz)),
+      side,
+    };
+    const nextTape = [nextItem, ...tapeRef.current.slice(0, 5)];
+    tapeRef.current = nextTape;
+    setTape(nextTape);
   });
 
   const maxQty = useMemo(() => {
@@ -144,27 +206,66 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
 
   const buyPressurePct = bidSum + askSum > 0 ? Math.round((bidSum / (bidSum + askSum)) * 100) : 50;
 
-  // Dual SVG polylines: separate BUY (Bid, emerald) and SELL (Ask, rose)
-  const tickSvg = useMemo(() => {
-    if (ticks.length < 2) return null;
-    const allPrices = ticks.flatMap((t) => [t.bid, t.ask]);
-    const minP = Math.min(...allPrices);
-    const maxP = Math.max(...allPrices);
+  // Unified Single Tick Chart SVG: BOTH BUY (green #10b981) and SELL (red #f43f5e) together in one chart!
+  const tickChart = useMemo(() => {
+    if (ticks.length === 0) return null;
+    const pts = ticks.length === 1 ? [ticks[0]!, ticks[0]!] : ticks;
+    const allPrices = pts.flatMap((t) => [t.bid, t.ask]);
+    let minP = Math.min(...allPrices);
+    let maxP = Math.max(...allPrices);
+    if (maxP - minP < 1e-6) {
+      const pad = Math.max(minP * 0.0002, 0.05);
+      minP -= pad;
+      maxP += pad;
+    } else {
+      const pad = (maxP - minP) * 0.12;
+      minP -= pad;
+      maxP += pad;
+    }
     const span = Math.max(maxP - minP, 1e-6);
-    const w = 480;
-    const h = 150;
-    const mapY = (p: number) => h - 12 - ((p - minP) / span) * (h - 24);
-    const bidPts = ticks
-      .map((t, i) => `${((i / Math.max(1, ticks.length - 1)) * w).toFixed(1)},${mapY(t.bid).toFixed(1)}`)
-      .join(" ");
-    const askPts = ticks
-      .map((t, i) => `${((i / Math.max(1, ticks.length - 1)) * w).toFixed(1)},${mapY(t.ask).toFixed(1)}`)
-      .join(" ");
-    const last = ticks[ticks.length - 1]!;
-    return { bidPts, askPts, minP, maxP, last, w, h };
+    const w = 520;
+    const h = 168;
+    const leftPad = 6;
+    const rightPad = 62;
+    const plotW = w - leftPad - rightPad;
+
+    const mapX = (i: number) => leftPad + (i / Math.max(1, pts.length - 1)) * plotW;
+    const mapY = (p: number) => h - 14 - ((p - minP) / span) * (h - 28);
+
+    const bidCoords = pts.map((t, i) => ({ x: mapX(i), y: mapY(t.bid), side: t.side }));
+    const askCoords = pts.map((t, i) => ({ x: mapX(i), y: mapY(t.ask), side: t.side }));
+
+    const bidPolyline = bidCoords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+    const askPolyline = askCoords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+    const spreadArea = [
+      ...askCoords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`),
+      ...[...bidCoords].reverse().map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`),
+    ].join(" ");
+
+    const last = pts[pts.length - 1]!;
+    const lastBidY = mapY(last.bid);
+    const lastAskY = mapY(last.ask);
+    const midP = (minP + maxP) / 2;
+
+    return {
+      w,
+      h,
+      plotEnd: leftPad + plotW,
+      bidPolyline,
+      askPolyline,
+      spreadArea,
+      bidCoords,
+      askCoords,
+      minP,
+      midP,
+      maxP,
+      last,
+      lastBidY,
+      lastAskY,
+    };
   }, [ticks]);
 
-  const refPrice = tickSvg?.last.bid ?? bids[0]?.price ?? 0;
+  const refPrice = tickChart?.last.bid ?? bids[0]?.price ?? initialPrice ?? 0;
   const decimals = refPrice > 0 && refPrice < 10 ? 5 : 2;
 
   return (
@@ -188,20 +289,19 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
         </CardHeader>
         <CardContent className="space-y-2.5">
           {bids.length === 0 && asks.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border/70 p-4 text-center text-xs text-muted-foreground">
+            <div className="rounded-md border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
               <BookOpen className="mx-auto mb-1.5 size-4 opacity-70" />
-              Ожидание живого потока для <span className="font-mono font-semibold">{symbol.toUpperCase()}</span> через
-              серверный WebSocket...
+              Подключение к потоку котировок <span className="font-mono font-semibold">{symbol.toUpperCase()}</span>...
             </div>
           ) : (
             <>
               <div className="space-y-1">
                 <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
-                  <span className="text-emerald-500">Bids {buyPressurePct}%</span>
+                  <span className="text-emerald-500">BUY (Bids) {buyPressurePct}%</span>
                   <span>
-                    Spread: {spread.toFixed(decimals)} ({spreadBps.toFixed(1)} bps)
+                    Спред: {spread.toFixed(decimals)} ({spreadBps.toFixed(1)} bps)
                   </span>
-                  <span className="text-rose-500">Asks {100 - buyPressurePct}%</span>
+                  <span className="text-rose-500">SELL (Asks) {100 - buyPressurePct}%</span>
                 </div>
                 <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-rose-500/30">
                   <div className="bg-emerald-500 transition-all duration-150" style={{ width: `${buyPressurePct}%` }} />
@@ -211,8 +311,8 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
               <div className="grid grid-cols-2 gap-2 font-mono text-[11px] tabular-nums">
                 <div className="space-y-0.5">
                   <div className="flex justify-between text-[10px] text-muted-foreground">
-                    <span>Qty</span>
-                    <span>Buy (Bid)</span>
+                    <span>Объём</span>
+                    <span className="text-emerald-500">Buy (Bid)</span>
                   </div>
                   {bids.map((lvl, idx) => (
                     <div key={`b-${idx}`} className="relative flex justify-between overflow-hidden rounded px-1.5 py-0.5">
@@ -220,7 +320,7 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
                         className="pointer-events-none absolute inset-y-0 right-0 bg-emerald-500/15"
                         style={{ width: `${Math.min(100, (lvl.qty / maxQty) * 100)}%` }}
                       />
-                      <span className="relative text-muted-foreground">{lvl.qty.toFixed(3)}</span>
+                      <span className="relative text-muted-foreground">{lvl.qty.toFixed(2)}</span>
                       <span className="relative font-semibold text-emerald-500">{lvl.price.toFixed(decimals)}</span>
                     </div>
                   ))}
@@ -228,8 +328,8 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
 
                 <div className="space-y-0.5">
                   <div className="flex justify-between text-[10px] text-muted-foreground">
-                    <span>Sell (Ask)</span>
-                    <span>Qty</span>
+                    <span className="text-rose-500">Sell (Ask)</span>
+                    <span>Объём</span>
                   </div>
                   {asks.map((lvl, idx) => (
                     <div key={`a-${idx}`} className="relative flex justify-between overflow-hidden rounded px-1.5 py-0.5">
@@ -238,7 +338,7 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
                         style={{ width: `${Math.min(100, (lvl.qty / maxQty) * 100)}%` }}
                       />
                       <span className="relative font-semibold text-rose-500">{lvl.price.toFixed(decimals)}</span>
-                      <span className="relative text-muted-foreground">{lvl.qty.toFixed(3)}</span>
+                      <span className="relative text-muted-foreground">{lvl.qty.toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -248,62 +348,109 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
         </CardContent>
       </Card>
 
-      {/* Dual Buy (Bid) / Sell (Ask) Real-Time Tick Chart + Live Tape */}
+      {/* Unified Single Combined Buy (Green) + Sell (Red) Tick Chart (#25) */}
       <Card className="border-border/70">
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2">
           <CardTitle className="flex items-center gap-1.5 text-sm">
             <Activity className="size-4 text-emerald-500" />
-            Тиковый график — Buy / Sell
+            Тиковый график (Buy + Sell в одном окне)
           </CardTitle>
-          {tickSvg ? (
-            <div className="flex items-center gap-2 font-mono text-xs font-bold tabular-nums">
+          {tickChart ? (
+            <div className="flex items-center gap-2.5 font-mono text-xs font-bold tabular-nums">
               <span className="inline-flex items-center gap-1 text-emerald-500">
-                <TrendingUp className="size-3" />
-                BUY {tickSvg.last.bid.toFixed(decimals)}
+                <span className="size-2 rounded-full bg-emerald-500" />
+                BUY {tickChart.last.bid.toFixed(decimals)}
               </span>
-              <span className="text-muted-foreground">/</span>
               <span className="inline-flex items-center gap-1 text-rose-500">
-                <TrendingDown className="size-3" />
-                SELL {tickSvg.last.ask.toFixed(decimals)}
+                <span className="size-2 rounded-full bg-rose-500" />
+                SELL {tickChart.last.ask.toFixed(decimals)}
               </span>
             </div>
           ) : (
-            <span className="font-mono text-[11px] text-muted-foreground">{ticks.length} ticks</span>
+            <span className="font-mono text-[11px] text-muted-foreground">0 тиков</span>
           )}
         </CardHeader>
         <CardContent className="space-y-2">
-          {tickSvg ? (
+          {tickChart ? (
             <>
               <div className="overflow-hidden rounded-lg border border-border/60 bg-muted/20 p-2">
-                <svg viewBox={`0 0 ${tickSvg.w} ${tickSvg.h}`} className="h-36 w-full">
+                <svg viewBox={`0 0 ${tickChart.w} ${tickChart.h}`} className="h-40 w-full">
+                  {/* Horizontal gridlines */}
+                  {[0.18, 0.5, 0.82].map((r, idx) => {
+                    const y = Math.round(tickChart.h * r);
+                    const pVal =
+                      idx === 0 ? tickChart.maxP : idx === 1 ? tickChart.midP : tickChart.minP;
+                    return (
+                      <g key={idx}>
+                        <line
+                          x1={6}
+                          y1={y}
+                          x2={tickChart.plotEnd}
+                          y2={y}
+                          stroke="rgba(148,163,184,0.14)"
+                          strokeDasharray="3 3"
+                        />
+                        <text
+                          x={tickChart.plotEnd + 6}
+                          y={y + 3}
+                          fill="#94a3b8"
+                          fontSize="9.5"
+                          fontFamily="ui-monospace, monospace"
+                        >
+                          {pVal.toFixed(decimals)}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Shaded Bid-Ask spread channel */}
+                  <polygon points={tickChart.spreadArea} fill="rgba(148, 163, 184, 0.10)" />
+
+                  {/* SELL (Ask) line — RED */}
                   <polyline
                     fill="none"
                     stroke="#f43f5e"
-                    strokeWidth="1.8"
+                    strokeWidth="1.9"
                     strokeLinejoin="round"
                     strokeLinecap="round"
-                    points={tickSvg.askPts}
+                    points={tickChart.askPolyline}
                   />
+
+                  {/* BUY (Bid) line — GREEN */}
                   <polyline
                     fill="none"
                     stroke="#10b981"
-                    strokeWidth="2"
+                    strokeWidth="2.1"
                     strokeLinejoin="round"
                     strokeLinecap="round"
-                    points={tickSvg.bidPts}
+                    points={tickChart.bidPolyline}
                   />
+
+                  {/* Individual recent tick dots (green = buy, red = sell) */}
+                  {tickChart.bidCoords.slice(-24).map((pt, idx) =>
+                    pt.side === "buy" ? (
+                      <circle key={`bd-${idx}`} cx={pt.x} cy={pt.y} r="2.1" fill="#10b981" />
+                    ) : null,
+                  )}
+                  {tickChart.askCoords.slice(-24).map((pt, idx) =>
+                    pt.side === "sell" ? (
+                      <circle key={`ad-${idx}`} cx={pt.x} cy={pt.y} r="2.1" fill="#f43f5e" />
+                    ) : null,
+                  )}
+
+                  {/* Live pulsing endpoints */}
+                  <circle cx={tickChart.plotEnd} cy={tickChart.lastAskY} r="3.5" fill="#f43f5e" />
+                  <circle cx={tickChart.plotEnd} cy={tickChart.lastBidY} r="3.5" fill="#10b981" />
                 </svg>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground tabular-nums">
-                <span className="text-emerald-500">BUY ticks: {buyCount}</span>
-                <span>
-                  Low {tickSvg.minP.toFixed(decimals)} — High {tickSvg.maxP.toFixed(decimals)}
-                </span>
-                <span className="text-rose-500">SELL ticks: {sellCount}</span>
+                <span className="text-emerald-500">● Зелёная линия — BUY (Bid): {buyCount} тиков</span>
+                <span>Буфер: {ticks.length} тиков</span>
+                <span className="text-rose-500">● Красная линия — SELL (Ask): {sellCount} тиков</span>
               </div>
               {tape.length > 0 ? (
-                <div className="grid grid-cols-2 gap-1.5 border-t border-border/50 pt-2 font-mono text-[10px] tabular-nums">
-                  {tape.slice(0, 4).map((tr, i) => (
+                <div className="grid grid-cols-3 gap-1.5 border-t border-border/50 pt-2 font-mono text-[10px] tabular-nums">
+                  {tape.slice(0, 3).map((tr, i) => (
                     <div
                       key={`${tr.ts}-${i}`}
                       className={`flex items-center justify-between rounded px-1.5 py-0.5 ${
@@ -312,7 +459,6 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
                     >
                       <span>{tr.side === "buy" ? "BUY" : "SELL"}</span>
                       <span>{tr.price.toFixed(decimals)}</span>
-                      <span className="opacity-75">{tr.qty.toFixed(3)}</span>
                     </div>
                   ))}
                 </div>
@@ -321,7 +467,7 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
           ) : (
             <div className="flex h-44 flex-col items-center justify-center rounded-md border border-dashed border-border/70 p-4 text-center text-xs text-muted-foreground">
               <Activity className="mb-1.5 size-4 animate-pulse opacity-70" />
-              Ожидание раздельных Buy / Sell тиков по серверному WebSocket...
+              Подключение единого потока тиков (BUY зелёный / SELL красный)...
             </div>
           )}
         </CardContent>

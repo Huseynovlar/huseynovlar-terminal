@@ -13,13 +13,14 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
 from app.core.pagination import Page
+from app.core.symbols import sql_symbol_match
 from app.db.models import (
     BalanceOperation,
     Deal,
@@ -392,7 +393,9 @@ async def get_analytics_overview(
     if account_id:
         deal_stmt = deal_stmt.where(Deal.account_id == account_id)
     if symbol:
-        deal_stmt = deal_stmt.where(Deal.symbol.ilike(f"%{symbol.strip()}%"))
+        deal_stmt = deal_stmt.where(
+            or_(Deal.symbol.ilike(f"%{symbol.strip()}%"), sql_symbol_match(Deal.symbol, symbol))
+        )
     if magic_number is not None:
         deal_stmt = deal_stmt.where(Deal.magic_number == magic_number)
     if side:
@@ -655,7 +658,9 @@ async def list_journal_deals(
     if account_id:
         stmt = stmt.where(Deal.account_id == account_id)
     if symbol:
-        stmt = stmt.where(Deal.symbol.ilike(f"%{symbol.strip()}%"))
+        stmt = stmt.where(
+            or_(Deal.symbol.ilike(f"%{symbol.strip()}%"), sql_symbol_match(Deal.symbol, symbol))
+        )
     if magic_number is not None:
         stmt = stmt.where(Deal.magic_number == magic_number)
     if side:
@@ -746,7 +751,9 @@ async def list_journal_positions(
     if account_id:
         stmt = stmt.where(OpenPositionLive.account_id == account_id)
     if symbol:
-        stmt = stmt.where(OpenPositionLive.symbol.ilike(f"%{symbol.strip()}%"))
+        stmt = stmt.where(
+            or_(OpenPositionLive.symbol.ilike(f"%{symbol.strip()}%"), sql_symbol_match(OpenPositionLive.symbol, symbol))
+        )
     if magic_number is not None:
         stmt = stmt.where(OpenPositionLive.magic_number == magic_number)
     if side:

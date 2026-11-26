@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Eye, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2 } from "lucide-react";
+import { Bot, Eye, Pencil, Plus, RefreshCw, Search, Trash2, Wallet } from "lucide-react";
 
-import { AsyncButton } from "@/components/ui/async-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +30,8 @@ export interface AssetHubItem {
   logo_url?: string | null;
   broker_symbols: string[];
   news_tags: string[];
+  accounts_count?: number;
+  robots_count?: number;
   is_pinned?: boolean;
 }
 
@@ -42,7 +43,6 @@ function AssetHubsListPage() {
   const [query, setQuery] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AssetHubItem | null>(null);
 
@@ -75,22 +75,9 @@ function AssetHubsListPage() {
     void loadHubs(false);
   }, [loadHubs]);
 
-  useLiveEvents(["snapshot", "trade_event"], () => {
+  useLiveEvents(["trade_event", "robot_state"], () => {
     void loadHubs(true);
   });
-
-  async function handleSeedDefaults() {
-    setSeeding(true);
-    try {
-      await apiRequest("/assets/seed-defaults", { method: "POST" });
-      notify.success(t.hubs.seedDefaults);
-      await loadHubs(false);
-    } catch (err) {
-      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
-    } finally {
-      setSeeding(false);
-    }
-  }
 
   async function handleDelete() {
     if (!deleteTarget) return;
@@ -114,16 +101,6 @@ function AssetHubsListPage() {
       badge={`${total}`}
       actions={
         <>
-          <AsyncButton
-            size="sm"
-            variant="outline"
-            loading={seeding}
-            loadingText={t.common.processing}
-            onClick={() => void handleSeedDefaults()}
-          >
-            <Sparkles className="mr-1.5 size-3.5" />
-            {t.hubs.seedDefaults}
-          </AsyncButton>
           <Button size="sm" variant="outline" onClick={() => void loadHubs(false)}>
             <RefreshCw className="mr-1.5 size-3.5" />
             {t.common.refresh}
@@ -158,10 +135,10 @@ function AssetHubsListPage() {
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {hubs.map((hub) => (
-              <Card key={hub.id} className="border-border/70">
+              <Card key={hub.id} className="border-border/70 transition hover:border-primary/40">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <div className="flex items-center gap-2.5">
-                    <AssetLogo symbol={hub.code} size={28} />
+                    <AssetLogo symbol={hub.code} size={30} />
                     <div>
                       <CardTitle className="font-mono text-sm font-bold">{hub.code}</CardTitle>
                       <p className="text-xs text-muted-foreground">{hub.name}</p>
@@ -175,6 +152,16 @@ function AssetHubsListPage() {
                   </Badge>
                 </CardHeader>
                 <CardContent className="space-y-2.5 pt-0 text-xs">
+                  <div className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <Wallet className="size-3 text-primary" />
+                      Счета: <strong className="text-foreground">{hub.accounts_count ?? 0}</strong>
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Bot className="size-3 text-emerald-500" />
+                      Роботы: <strong className="text-foreground">{hub.robots_count ?? 0}</strong>
+                    </span>
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {(hub.news_tags ?? []).slice(0, 5).map((tag) => (
                       <Badge key={tag} variant="secondary" className="text-[10px]">

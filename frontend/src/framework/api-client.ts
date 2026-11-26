@@ -108,8 +108,14 @@ interface PendingRpc {
 }
 
 let activeRpcSocket: WebSocket | null = null;
+let wsRpcConnecting = false;
+let wsOpenWaiters: Array<(ws: WebSocket | null) => void> = [];
 const pendingRpcMap = new Map<string, PendingRpc>();
 let rpcSeq = 0;
+
+export function markWsRpcConnecting() {
+  wsRpcConnecting = true;
+}
 
 /**
  * Registers the live WebSocket instance from `LiveSocketProvider` so all JSON API calls
@@ -117,7 +123,14 @@ let rpcSeq = 0;
  */
 export function registerWsRpcSocket(ws: WebSocket | null) {
   activeRpcSocket = ws;
-  if (!ws) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    wsRpcConnecting = false;
+    const waiters = wsOpenWaiters;
+    wsOpenWaiters = [];
+    for (const resolve of waiters) {
+      resolve(ws);
+    }
+  } else if (!ws) {
     for (const [id, pending] of pendingRpcMap.entries()) {
       window.clearTimeout(pending.timer);
       pending.reject(new Error("WebSocket disconnected"));
@@ -142,14 +155,47 @@ export function handleWsRpcResponse(frame: Record<string, unknown>): boolean {
   return true;
 }
 
-function canUseWsRpc(path: string, init: RequestInit): boolean {
+function isRpcEligibleRequest(path: string, init: RequestInit): boolean {
   if (typeof window === "undefined") return false;
-  if (!activeRpcSocket || activeRpcSocket.readyState !== WebSocket.OPEN) return false;
   if (init.body instanceof FormData || init.body instanceof Blob || init.body instanceof ArrayBuffer) return false;
   // Cookie-setting auth endpoints must use HTTP so browser stores HttpOnly Set-Cookie
   const clean = path.split("?")[0] ?? path;
   if (clean.startsWith("/auth/")) return false;
   return true;
+}
+
+async function ensureWsRpcReady(path: string, init: RequestInit, timeoutMs = 4500): Promise<boolean> {
+  if (!isRpcEligibleRequest(path, init)) return false;
+  if (activeRpcSocket && activeRpcSocket.readyState === WebSocket.OPEN) return true;
+
+  const onDashboard = (window.location.pathname || "").startsWith("/dashboard");
+  const shouldWait =
+    wsRpcConnecting ||
+    (activeRpcSocket !== null && activeRpcSocket.readyState === WebSocket.CONNECTING) ||
+    (onDashboard && Boolean(getAccessToken()));
+
+  if (!shouldWait) return false;
+
+  const ws = await new Promise<WebSocket | null>((resolve) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        wsOpenWaiters = wsOpenWaiters.filter((fn) => fn !== done);
+        resolve(activeRpcSocket && activeRpcSocket.readyState === WebSocket.OPEN ? activeRpcSocket : null);
+      }
+    }, timeoutMs);
+    const done = (sock: WebSocket | null) => {
+      if (!settled) {
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(sock);
+      }
+    };
+    wsOpenWaiters.push(done);
+  });
+
+  return Boolean(ws && ws.readyState === WebSocket.OPEN);
 }
 
 function sendWsRpc(path: string, init: RequestInit = {}): Promise<WsRpcEnvelope> {
@@ -229,12 +275,12 @@ function extractRpcError(status: number, data: unknown): string {
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  if (canUseWsRpc(path, init)) {
+  if (await ensureWsRpcReady(path, init)) {
     try {
       let rpcRes = await sendWsRpc(path, init);
       if (rpcRes.status === 401 && !isAuthNoRefreshPath(path)) {
         const nextToken = await performSingleFlightRefresh();
-        if (nextToken && canUseWsRpc(path, init)) {
+        if (nextToken && (await ensureWsRpcReady(path, init, 2500))) {
           rpcRes = await sendWsRpc(path, init);
         } else if (!nextToken) {
           clearAccessToken();
@@ -376,12 +422,12 @@ export async function apiRequestPaged<T>(path: string, page: number, pageSize: n
   const fullPath = `${path}${sep}limit=${pageSize}&offset=${(page - 1) * pageSize}`;
   const init: RequestInit = { method: "GET" };
 
-  if (canUseWsRpc(fullPath, init)) {
+  if (await ensureWsRpcReady(fullPath, init)) {
     try {
       let rpcRes = await sendWsRpc(fullPath, init);
       if (rpcRes.status === 401 && !isAuthNoRefreshPath(fullPath)) {
         const nextToken = await performSingleFlightRefresh();
-        if (nextToken && canUseWsRpc(fullPath, init)) {
+        if (nextToken && (await ensureWsRpcReady(fullPath, init, 2500))) {
           rpcRes = await sendWsRpc(fullPath, init);
         } else if (!nextToken) {
           clearAccessToken();
