@@ -188,8 +188,8 @@ function HomeCommandCenterPage() {
           {data.macro_ribbon.map((m) => (
             <Link
               key={m.symbol}
-              to="/dashboard/charts/$symbol"
-              params={{ symbol: m.symbol }}
+              to="/dashboard/hubs/$code"
+              params={{ code: m.symbol }}
               className="flex items-center gap-2 rounded-lg border border-border/60 bg-card px-2.5 py-1.5 text-xs transition hover:border-primary/50"
             >
               <AssetLogo symbol={m.symbol} size={18} />

@@ -5,6 +5,7 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { AppLogo } from "@/components/app-logo";
 import { APP_CONFIG } from "@/config/app-config";
 import { useI18n } from "@/framework/i18n";
+import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
 export const Route = createFileRoute("/(main)/auth/v2")({
   component: Layout,
@@ -12,11 +13,13 @@ export const Route = createFileRoute("/(main)/auth/v2")({
 
 /**
  * Institutional split-screen auth layout (#44, #47).
- * Right panel displays the real terminal screenshot (`/login-preview.png`) without AI marketing clutter.
+ * Right panel displays the real dark/light terminal screenshot automatically matching theme_mode.
  */
 function Layout() {
   const { t } = useI18n();
+  const themeMode = usePreferencesStore((s) => s.values.theme_mode);
   const [imgFailed, setImgFailed] = useState(false);
+  const previewSrc = themeMode === "light" ? "/login-preview-light.png" : "/login-preview-dark.png";
 
   return (
     <main>
@@ -37,7 +40,7 @@ function Layout() {
             {!imgFailed ? (
               <div className="w-full overflow-hidden rounded-xl border border-primary-foreground/20 bg-black/25 shadow-2xl">
                 <img
-                  src="/login-preview.png"
+                  src={previewSrc}
                   alt={APP_CONFIG.name}
                   className="h-auto max-h-[58vh] w-full object-cover object-top"
                   onError={() => setImgFailed(true)}

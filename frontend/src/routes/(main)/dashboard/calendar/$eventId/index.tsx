@@ -79,8 +79,8 @@ function CalendarEventDetailPage() {
                 {ev.affected_assets.map((code) => (
                   <Link
                     key={code}
-                    to="/dashboard/charts/$symbol"
-                    params={{ symbol: code }}
+                    to="/dashboard/hubs/$code"
+                    params={{ code }}
                     className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 hover:border-primary/50"
                   >
                     <AssetLogo symbol={code} size={16} />

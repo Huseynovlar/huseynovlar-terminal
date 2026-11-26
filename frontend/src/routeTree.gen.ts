@@ -28,10 +28,8 @@ import { Route as mainDashboardTreemapRouteRouteImport } from './routes/(main)/d
 import { Route as mainAuthV2LoginRouteRouteImport } from './routes/(main)/auth/v2/login/route'
 import { Route as mainDashboardAccountsIndexRouteImport } from './routes/(main)/dashboard/accounts/index'
 import { Route as mainDashboardAccountsNewRouteImport } from './routes/(main)/dashboard/accounts/new'
-import { Route as mainDashboardAiIndexRouteImport } from './routes/(main)/dashboard/ai/index'
 import { Route as mainDashboardAuditIndexRouteImport } from './routes/(main)/dashboard/audit/index'
 import { Route as mainDashboardCalendarIndexRouteImport } from './routes/(main)/dashboard/calendar/index'
-import { Route as mainDashboardChartsIndexRouteImport } from './routes/(main)/dashboard/charts/index'
 import { Route as mainDashboardContainersIndexRouteImport } from './routes/(main)/dashboard/containers/index'
 import { Route as mainDashboardContainersNewRouteImport } from './routes/(main)/dashboard/containers/new'
 import { Route as mainDashboardExplorerIndexRouteImport } from './routes/(main)/dashboard/explorer/index'
@@ -58,10 +56,8 @@ import { Route as mainDashboardWikiCategoriesRouteImport } from './routes/(main)
 import { Route as mainDashboardWikiNewRouteImport } from './routes/(main)/dashboard/wiki/new'
 import { Route as mainDashboardAccountsAccountIdIndexRouteImport } from './routes/(main)/dashboard/accounts/$accountId/index'
 import { Route as mainDashboardAccountsAccountIdEditRouteImport } from './routes/(main)/dashboard/accounts/$accountId/edit'
-import { Route as mainDashboardAiBriefingIdIndexRouteImport } from './routes/(main)/dashboard/ai/$briefingId/index'
 import { Route as mainDashboardAuditAuditIdIndexRouteImport } from './routes/(main)/dashboard/audit/$auditId/index'
 import { Route as mainDashboardCalendarEventIdIndexRouteImport } from './routes/(main)/dashboard/calendar/$eventId/index'
-import { Route as mainDashboardChartsSymbolIndexRouteImport } from './routes/(main)/dashboard/charts/$symbol/index'
 import { Route as mainDashboardContainersContainerIdIndexRouteImport } from './routes/(main)/dashboard/containers/$containerId/index'
 import { Route as mainDashboardContainersContainerIdEditRouteImport } from './routes/(main)/dashboard/containers/$containerId/edit'
 import { Route as mainDashboardHubsCodeIndexRouteImport } from './routes/(main)/dashboard/hubs/$code/index'
@@ -189,11 +185,6 @@ const mainDashboardAccountsNewRoute =
     path: '/accounts/new',
     getParentRoute: () => mainDashboardRouteRoute,
   } as any)
-const mainDashboardAiIndexRoute = mainDashboardAiIndexRouteImport.update({
-  id: '/ai/',
-  path: '/ai/',
-  getParentRoute: () => mainDashboardRouteRoute,
-} as any)
 const mainDashboardAuditIndexRoute = mainDashboardAuditIndexRouteImport.update({
   id: '/audit/',
   path: '/audit/',
@@ -203,12 +194,6 @@ const mainDashboardCalendarIndexRoute =
   mainDashboardCalendarIndexRouteImport.update({
     id: '/calendar/',
     path: '/calendar/',
-    getParentRoute: () => mainDashboardRouteRoute,
-  } as any)
-const mainDashboardChartsIndexRoute =
-  mainDashboardChartsIndexRouteImport.update({
-    id: '/charts/',
-    path: '/charts/',
     getParentRoute: () => mainDashboardRouteRoute,
   } as any)
 const mainDashboardContainersIndexRoute =
@@ -357,12 +342,6 @@ const mainDashboardAccountsAccountIdEditRoute =
     path: '/accounts/$accountId/edit',
     getParentRoute: () => mainDashboardRouteRoute,
   } as any)
-const mainDashboardAiBriefingIdIndexRoute =
-  mainDashboardAiBriefingIdIndexRouteImport.update({
-    id: '/ai/$briefingId/',
-    path: '/ai/$briefingId/',
-    getParentRoute: () => mainDashboardRouteRoute,
-  } as any)
 const mainDashboardAuditAuditIdIndexRoute =
   mainDashboardAuditAuditIdIndexRouteImport.update({
     id: '/audit/$auditId/',
@@ -373,12 +352,6 @@ const mainDashboardCalendarEventIdIndexRoute =
   mainDashboardCalendarEventIdIndexRouteImport.update({
     id: '/calendar/$eventId/',
     path: '/calendar/$eventId/',
-    getParentRoute: () => mainDashboardRouteRoute,
-  } as any)
-const mainDashboardChartsSymbolIndexRoute =
-  mainDashboardChartsSymbolIndexRouteImport.update({
-    id: '/charts/$symbol/',
-    path: '/charts/$symbol/',
     getParentRoute: () => mainDashboardRouteRoute,
   } as any)
 const mainDashboardContainersContainerIdIndexRoute =
@@ -535,10 +508,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/wiki/categories': typeof mainDashboardWikiCategoriesRoute
   '/dashboard/wiki/new': typeof mainDashboardWikiNewRoute
   '/dashboard/accounts/': typeof mainDashboardAccountsIndexRoute
-  '/dashboard/ai/': typeof mainDashboardAiIndexRoute
   '/dashboard/audit/': typeof mainDashboardAuditIndexRoute
   '/dashboard/calendar/': typeof mainDashboardCalendarIndexRoute
-  '/dashboard/charts/': typeof mainDashboardChartsIndexRoute
   '/dashboard/containers/': typeof mainDashboardContainersIndexRoute
   '/dashboard/explorer/': typeof mainDashboardExplorerIndexRoute
   '/dashboard/home/': typeof mainDashboardHomeIndexRoute
@@ -565,10 +536,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/users/$userId/edit': typeof mainDashboardUsersUserIdEditRoute
   '/dashboard/wiki/$slug/edit': typeof mainDashboardWikiSlugEditRoute
   '/dashboard/accounts/$accountId/': typeof mainDashboardAccountsAccountIdIndexRoute
-  '/dashboard/ai/$briefingId/': typeof mainDashboardAiBriefingIdIndexRoute
   '/dashboard/audit/$auditId/': typeof mainDashboardAuditAuditIdIndexRoute
   '/dashboard/calendar/$eventId/': typeof mainDashboardCalendarEventIdIndexRoute
-  '/dashboard/charts/$symbol/': typeof mainDashboardChartsSymbolIndexRoute
   '/dashboard/containers/$containerId/': typeof mainDashboardContainersContainerIdIndexRoute
   '/dashboard/hubs/$code/': typeof mainDashboardHubsCodeIndexRoute
   '/dashboard/login-history/$entryId/': typeof mainDashboardLoginHistoryEntryIdIndexRoute
@@ -610,10 +579,8 @@ export interface FileRoutesByTo {
   '/dashboard/wiki/categories': typeof mainDashboardWikiCategoriesRoute
   '/dashboard/wiki/new': typeof mainDashboardWikiNewRoute
   '/dashboard/accounts': typeof mainDashboardAccountsIndexRoute
-  '/dashboard/ai': typeof mainDashboardAiIndexRoute
   '/dashboard/audit': typeof mainDashboardAuditIndexRoute
   '/dashboard/calendar': typeof mainDashboardCalendarIndexRoute
-  '/dashboard/charts': typeof mainDashboardChartsIndexRoute
   '/dashboard/containers': typeof mainDashboardContainersIndexRoute
   '/dashboard/explorer': typeof mainDashboardExplorerIndexRoute
   '/dashboard/home': typeof mainDashboardHomeIndexRoute
@@ -640,10 +607,8 @@ export interface FileRoutesByTo {
   '/dashboard/users/$userId/edit': typeof mainDashboardUsersUserIdEditRoute
   '/dashboard/wiki/$slug/edit': typeof mainDashboardWikiSlugEditRoute
   '/dashboard/accounts/$accountId': typeof mainDashboardAccountsAccountIdIndexRoute
-  '/dashboard/ai/$briefingId': typeof mainDashboardAiBriefingIdIndexRoute
   '/dashboard/audit/$auditId': typeof mainDashboardAuditAuditIdIndexRoute
   '/dashboard/calendar/$eventId': typeof mainDashboardCalendarEventIdIndexRoute
-  '/dashboard/charts/$symbol': typeof mainDashboardChartsSymbolIndexRoute
   '/dashboard/containers/$containerId': typeof mainDashboardContainersContainerIdIndexRoute
   '/dashboard/hubs/$code': typeof mainDashboardHubsCodeIndexRoute
   '/dashboard/login-history/$entryId': typeof mainDashboardLoginHistoryEntryIdIndexRoute
@@ -687,10 +652,8 @@ export interface FileRoutesById {
   '/(main)/dashboard/wiki/categories': typeof mainDashboardWikiCategoriesRoute
   '/(main)/dashboard/wiki/new': typeof mainDashboardWikiNewRoute
   '/(main)/dashboard/accounts/': typeof mainDashboardAccountsIndexRoute
-  '/(main)/dashboard/ai/': typeof mainDashboardAiIndexRoute
   '/(main)/dashboard/audit/': typeof mainDashboardAuditIndexRoute
   '/(main)/dashboard/calendar/': typeof mainDashboardCalendarIndexRoute
-  '/(main)/dashboard/charts/': typeof mainDashboardChartsIndexRoute
   '/(main)/dashboard/containers/': typeof mainDashboardContainersIndexRoute
   '/(main)/dashboard/explorer/': typeof mainDashboardExplorerIndexRoute
   '/(main)/dashboard/home/': typeof mainDashboardHomeIndexRoute
@@ -717,10 +680,8 @@ export interface FileRoutesById {
   '/(main)/dashboard/users/$userId/edit': typeof mainDashboardUsersUserIdEditRoute
   '/(main)/dashboard/wiki/$slug/edit': typeof mainDashboardWikiSlugEditRoute
   '/(main)/dashboard/accounts/$accountId/': typeof mainDashboardAccountsAccountIdIndexRoute
-  '/(main)/dashboard/ai/$briefingId/': typeof mainDashboardAiBriefingIdIndexRoute
   '/(main)/dashboard/audit/$auditId/': typeof mainDashboardAuditAuditIdIndexRoute
   '/(main)/dashboard/calendar/$eventId/': typeof mainDashboardCalendarEventIdIndexRoute
-  '/(main)/dashboard/charts/$symbol/': typeof mainDashboardChartsSymbolIndexRoute
   '/(main)/dashboard/containers/$containerId/': typeof mainDashboardContainersContainerIdIndexRoute
   '/(main)/dashboard/hubs/$code/': typeof mainDashboardHubsCodeIndexRoute
   '/(main)/dashboard/login-history/$entryId/': typeof mainDashboardLoginHistoryEntryIdIndexRoute
@@ -765,10 +726,8 @@ export interface FileRouteTypes {
     | '/dashboard/wiki/categories'
     | '/dashboard/wiki/new'
     | '/dashboard/accounts/'
-    | '/dashboard/ai/'
     | '/dashboard/audit/'
     | '/dashboard/calendar/'
-    | '/dashboard/charts/'
     | '/dashboard/containers/'
     | '/dashboard/explorer/'
     | '/dashboard/home/'
@@ -795,10 +754,8 @@ export interface FileRouteTypes {
     | '/dashboard/users/$userId/edit'
     | '/dashboard/wiki/$slug/edit'
     | '/dashboard/accounts/$accountId/'
-    | '/dashboard/ai/$briefingId/'
     | '/dashboard/audit/$auditId/'
     | '/dashboard/calendar/$eventId/'
-    | '/dashboard/charts/$symbol/'
     | '/dashboard/containers/$containerId/'
     | '/dashboard/hubs/$code/'
     | '/dashboard/login-history/$entryId/'
@@ -840,10 +797,8 @@ export interface FileRouteTypes {
     | '/dashboard/wiki/categories'
     | '/dashboard/wiki/new'
     | '/dashboard/accounts'
-    | '/dashboard/ai'
     | '/dashboard/audit'
     | '/dashboard/calendar'
-    | '/dashboard/charts'
     | '/dashboard/containers'
     | '/dashboard/explorer'
     | '/dashboard/home'
@@ -870,10 +825,8 @@ export interface FileRouteTypes {
     | '/dashboard/users/$userId/edit'
     | '/dashboard/wiki/$slug/edit'
     | '/dashboard/accounts/$accountId'
-    | '/dashboard/ai/$briefingId'
     | '/dashboard/audit/$auditId'
     | '/dashboard/calendar/$eventId'
-    | '/dashboard/charts/$symbol'
     | '/dashboard/containers/$containerId'
     | '/dashboard/hubs/$code'
     | '/dashboard/login-history/$entryId'
@@ -916,10 +869,8 @@ export interface FileRouteTypes {
     | '/(main)/dashboard/wiki/categories'
     | '/(main)/dashboard/wiki/new'
     | '/(main)/dashboard/accounts/'
-    | '/(main)/dashboard/ai/'
     | '/(main)/dashboard/audit/'
     | '/(main)/dashboard/calendar/'
-    | '/(main)/dashboard/charts/'
     | '/(main)/dashboard/containers/'
     | '/(main)/dashboard/explorer/'
     | '/(main)/dashboard/home/'
@@ -946,10 +897,8 @@ export interface FileRouteTypes {
     | '/(main)/dashboard/users/$userId/edit'
     | '/(main)/dashboard/wiki/$slug/edit'
     | '/(main)/dashboard/accounts/$accountId/'
-    | '/(main)/dashboard/ai/$briefingId/'
     | '/(main)/dashboard/audit/$auditId/'
     | '/(main)/dashboard/calendar/$eventId/'
-    | '/(main)/dashboard/charts/$symbol/'
     | '/(main)/dashboard/containers/$containerId/'
     | '/(main)/dashboard/hubs/$code/'
     | '/(main)/dashboard/login-history/$entryId/'
@@ -1108,13 +1057,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof mainDashboardAccountsNewRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
-    '/(main)/dashboard/ai/': {
-      id: '/(main)/dashboard/ai/'
-      path: '/ai'
-      fullPath: '/dashboard/ai/'
-      preLoaderRoute: typeof mainDashboardAiIndexRouteImport
-      parentRoute: typeof mainDashboardRouteRoute
-    }
     '/(main)/dashboard/audit/': {
       id: '/(main)/dashboard/audit/'
       path: '/audit'
@@ -1127,13 +1069,6 @@ declare module '@tanstack/react-router' {
       path: '/calendar'
       fullPath: '/dashboard/calendar/'
       preLoaderRoute: typeof mainDashboardCalendarIndexRouteImport
-      parentRoute: typeof mainDashboardRouteRoute
-    }
-    '/(main)/dashboard/charts/': {
-      id: '/(main)/dashboard/charts/'
-      path: '/charts'
-      fullPath: '/dashboard/charts/'
-      preLoaderRoute: typeof mainDashboardChartsIndexRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
     '/(main)/dashboard/containers/': {
@@ -1318,13 +1253,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof mainDashboardAccountsAccountIdEditRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
-    '/(main)/dashboard/ai/$briefingId/': {
-      id: '/(main)/dashboard/ai/$briefingId/'
-      path: '/ai/$briefingId'
-      fullPath: '/dashboard/ai/$briefingId/'
-      preLoaderRoute: typeof mainDashboardAiBriefingIdIndexRouteImport
-      parentRoute: typeof mainDashboardRouteRoute
-    }
     '/(main)/dashboard/audit/$auditId/': {
       id: '/(main)/dashboard/audit/$auditId/'
       path: '/audit/$auditId'
@@ -1337,13 +1265,6 @@ declare module '@tanstack/react-router' {
       path: '/calendar/$eventId'
       fullPath: '/dashboard/calendar/$eventId/'
       preLoaderRoute: typeof mainDashboardCalendarEventIdIndexRouteImport
-      parentRoute: typeof mainDashboardRouteRoute
-    }
-    '/(main)/dashboard/charts/$symbol/': {
-      id: '/(main)/dashboard/charts/$symbol/'
-      path: '/charts/$symbol'
-      fullPath: '/dashboard/charts/$symbol/'
-      preLoaderRoute: typeof mainDashboardChartsSymbolIndexRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
     '/(main)/dashboard/containers/$containerId/': {
@@ -1518,10 +1439,8 @@ interface mainDashboardRouteRouteChildren {
   mainDashboardWikiCategoriesRoute: typeof mainDashboardWikiCategoriesRoute
   mainDashboardWikiNewRoute: typeof mainDashboardWikiNewRoute
   mainDashboardAccountsIndexRoute: typeof mainDashboardAccountsIndexRoute
-  mainDashboardAiIndexRoute: typeof mainDashboardAiIndexRoute
   mainDashboardAuditIndexRoute: typeof mainDashboardAuditIndexRoute
   mainDashboardCalendarIndexRoute: typeof mainDashboardCalendarIndexRoute
-  mainDashboardChartsIndexRoute: typeof mainDashboardChartsIndexRoute
   mainDashboardContainersIndexRoute: typeof mainDashboardContainersIndexRoute
   mainDashboardExplorerIndexRoute: typeof mainDashboardExplorerIndexRoute
   mainDashboardHomeIndexRoute: typeof mainDashboardHomeIndexRoute
@@ -1548,10 +1467,8 @@ interface mainDashboardRouteRouteChildren {
   mainDashboardUsersUserIdEditRoute: typeof mainDashboardUsersUserIdEditRoute
   mainDashboardWikiSlugEditRoute: typeof mainDashboardWikiSlugEditRoute
   mainDashboardAccountsAccountIdIndexRoute: typeof mainDashboardAccountsAccountIdIndexRoute
-  mainDashboardAiBriefingIdIndexRoute: typeof mainDashboardAiBriefingIdIndexRoute
   mainDashboardAuditAuditIdIndexRoute: typeof mainDashboardAuditAuditIdIndexRoute
   mainDashboardCalendarEventIdIndexRoute: typeof mainDashboardCalendarEventIdIndexRoute
-  mainDashboardChartsSymbolIndexRoute: typeof mainDashboardChartsSymbolIndexRoute
   mainDashboardContainersContainerIdIndexRoute: typeof mainDashboardContainersContainerIdIndexRoute
   mainDashboardHubsCodeIndexRoute: typeof mainDashboardHubsCodeIndexRoute
   mainDashboardLoginHistoryEntryIdIndexRoute: typeof mainDashboardLoginHistoryEntryIdIndexRoute
@@ -1590,10 +1507,8 @@ const mainDashboardRouteRouteChildren: mainDashboardRouteRouteChildren = {
   mainDashboardWikiCategoriesRoute: mainDashboardWikiCategoriesRoute,
   mainDashboardWikiNewRoute: mainDashboardWikiNewRoute,
   mainDashboardAccountsIndexRoute: mainDashboardAccountsIndexRoute,
-  mainDashboardAiIndexRoute: mainDashboardAiIndexRoute,
   mainDashboardAuditIndexRoute: mainDashboardAuditIndexRoute,
   mainDashboardCalendarIndexRoute: mainDashboardCalendarIndexRoute,
-  mainDashboardChartsIndexRoute: mainDashboardChartsIndexRoute,
   mainDashboardContainersIndexRoute: mainDashboardContainersIndexRoute,
   mainDashboardExplorerIndexRoute: mainDashboardExplorerIndexRoute,
   mainDashboardHomeIndexRoute: mainDashboardHomeIndexRoute,
@@ -1623,11 +1538,9 @@ const mainDashboardRouteRouteChildren: mainDashboardRouteRouteChildren = {
   mainDashboardWikiSlugEditRoute: mainDashboardWikiSlugEditRoute,
   mainDashboardAccountsAccountIdIndexRoute:
     mainDashboardAccountsAccountIdIndexRoute,
-  mainDashboardAiBriefingIdIndexRoute: mainDashboardAiBriefingIdIndexRoute,
   mainDashboardAuditAuditIdIndexRoute: mainDashboardAuditAuditIdIndexRoute,
   mainDashboardCalendarEventIdIndexRoute:
     mainDashboardCalendarEventIdIndexRoute,
-  mainDashboardChartsSymbolIndexRoute: mainDashboardChartsSymbolIndexRoute,
   mainDashboardContainersContainerIdIndexRoute:
     mainDashboardContainersContainerIdIndexRoute,
   mainDashboardHubsCodeIndexRoute: mainDashboardHubsCodeIndexRoute,

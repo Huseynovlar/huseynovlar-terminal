@@ -2,6 +2,6 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/(main)/dashboard/crypto")({
   beforeLoad: () => {
-    throw redirect({ to: "/dashboard/charts", replace: true });
+    throw redirect({ to: "/dashboard/hubs", replace: true });
   },
 });

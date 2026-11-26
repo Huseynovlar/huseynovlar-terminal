@@ -15,6 +15,8 @@ import { useTerminalStore } from "@/framework/terminal-store";
 import { formatTerminalClock, useUtcClock } from "@/framework/use-utc-clock";
 import { prepareRequestOptions, serializeCredential } from "@/framework/webauthn";
 
+import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
+
 export interface LockScreenUser {
   id: string;
   username?: string;
@@ -27,12 +29,14 @@ export interface LockScreenUser {
  */
 export function LockScreenOverlay({ user }: { user: LockScreenUser }) {
   const { t } = useI18n();
+  const themeMode = usePreferencesStore((s) => s.values.theme_mode);
   const screenLocked = useTerminalStore((s) => s.screenLocked);
   const setScreenLocked = useTerminalStore((s) => s.setScreenLocked);
   const timezone = useTerminalStore((s) => s.timezone);
   const timeFormat = useTerminalStore((s) => s.timeFormat);
   const now = useUtcClock(1000);
   const clock = formatTerminalClock(now, timezone, timeFormat);
+  const previewSrc = themeMode === "light" ? "/login-preview-light.png" : "/login-preview-dark.png";
 
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
@@ -127,7 +131,7 @@ export function LockScreenOverlay({ user }: { user: LockScreenUser }) {
           {!imgFailed ? (
             <div className="w-full overflow-hidden rounded-xl border border-primary-foreground/20 bg-black/25 shadow-2xl">
               <img
-                src="/login-preview.png"
+                src={previewSrc}
                 alt={APP_CONFIG.name}
                 className="h-auto max-h-[58vh] w-full object-cover object-top"
                 onError={() => setImgFailed(true)}

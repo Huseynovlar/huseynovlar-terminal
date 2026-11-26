@@ -18,7 +18,6 @@ import {
   Server,
   Settings,
   ShieldCheck,
-  Sparkles,
   UserRound,
   Users,
   Wrench,
@@ -47,7 +46,6 @@ export const TERMINAL_NAV_GROUPS: Record<TerminalNavGroupId, { labelRu: string; 
 
 export const TERMINAL_PAGES: TerminalPageConfig[] = [
   { id: "home", group: "desk", titleRu: "Главная панель", titleEn: "Home Command", titleAz: "Əsas panel", route: "/dashboard/home", icon: Home, hotkeyActionId: "nav.home" },
-  { id: "charts", group: "desk", titleRu: "Живые графики", titleEn: "Live Charts", titleAz: "Canlı qrafiklər", route: "/dashboard/charts", icon: Activity, hotkeyActionId: "nav.overview" },
   { id: "accounts", group: "desk", titleRu: "Счета Exness", titleEn: "Exness Accounts", titleAz: "Exness hesabları", route: "/dashboard/accounts", icon: Layers },
   { id: "robots", group: "desk", titleRu: "Торговые роботы", titleEn: "Trading Robots", titleAz: "Ticarət robotları", route: "/dashboard/robots", icon: Bot },
   { id: "journal", group: "desk", titleRu: "Журнал сделок", titleEn: "Deals Journal", titleAz: "Əməliyyat jurnalı", route: "/dashboard/journal", icon: BookOpen },
@@ -59,7 +57,6 @@ export const TERMINAL_PAGES: TerminalPageConfig[] = [
   { id: "calendar", group: "markets", titleRu: "Экономический календарь", titleEn: "Economic Calendar", titleAz: "İqtisadi təqvim", route: "/dashboard/calendar", icon: Calendar },
   { id: "news", group: "intelligence", titleRu: "Лента новостей", titleEn: "News Wire", titleAz: "Xəbər lenti", route: "/dashboard/news", icon: Newspaper, hotkeyActionId: "nav.news" },
   { id: "news-sources", group: "intelligence", titleRu: "Проверенные источники", titleEn: "Verified Sources", titleAz: "Təsdiqlənmiş mənbələr", route: "/dashboard/news/sources", icon: ShieldCheck },
-  { id: "ai", group: "intelligence", titleRu: "Google AI Co-Pilot", titleEn: "Google AI Co-Pilot", titleAz: "Google AI Co-Pilot", route: "/dashboard/ai", icon: Sparkles },
   { id: "containers", group: "operations", titleRu: "Docker контейнеры MT5", titleEn: "MT5 Docker Containers", titleAz: "MT5 Docker konteynerləri", route: "/dashboard/containers", icon: Server, hotkeyActionId: "nav.containers" },
   { id: "setup", group: "operations", titleRu: "Мастер настройки и /etc", titleEn: "Setup Wizard & /etc", titleAz: "Quraşdırma və /etc", route: "/dashboard/setup", icon: Wrench, hotkeyActionId: "nav.instructions" },
   { id: "wiki", group: "operations", titleRu: "База знаний (Wiki)", titleEn: "Knowledge Base (Wiki)", titleAz: "Bilik bazası (Wiki)", route: "/dashboard/wiki", icon: BookOpen, hotkeyActionId: "nav.wiki" },

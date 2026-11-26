@@ -412,8 +412,8 @@ export function SquarifiedTreemap({ fullPage = true }: { fullPage?: boolean }) {
             </div>
             <div className="flex flex-col gap-2 pt-2">
               <Link
-                to="/dashboard/charts/$symbol"
-                params={{ symbol: selectedItem.ticker }}
+                to="/dashboard/hubs/$code"
+                params={{ code: selectedItem.ticker }}
                 className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
               >
                 <LineChart className="mr-1.5 size-4" />
