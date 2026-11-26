@@ -72,24 +72,28 @@ export function LiveSocketProvider({ children }: { children: ReactNode }) {
       if (disposed) return;
       setStatus(attempt === 0 ? "connecting" : "reconnecting");
       try {
-        ws = new WebSocket(buildWsUrl());
+        const socket = new WebSocket(buildWsUrl());
+        ws = socket;
 
-        ws.onopen = () => {
+        socket.onopen = () => {
+          if (disposed) {
+            socket.close();
+            return;
+          }
           attempt = 0;
           setConnected(true);
           setStatus("live");
-          // Immediately send ping to measure initial RTT
           pingSentAtRef.current = performance.now();
           try {
-            ws?.send(JSON.stringify({ type: "ping", client_ts: Date.now() }));
+            socket.send(JSON.stringify({ type: "ping", client_ts: Date.now() }));
           } catch {
             // ignore
           }
           pingTimer = window.setInterval(() => {
-            if (ws?.readyState === WebSocket.OPEN) {
+            if (socket.readyState === WebSocket.OPEN) {
               pingSentAtRef.current = performance.now();
               try {
-                ws.send(JSON.stringify({ type: "ping", client_ts: Date.now() }));
+                socket.send(JSON.stringify({ type: "ping", client_ts: Date.now() }));
               } catch {
                 // ignore
               }
@@ -97,24 +101,37 @@ export function LiveSocketProvider({ children }: { children: ReactNode }) {
           }, 15000);
         };
 
-        ws.onclose = () => {
+        socket.onclose = (ev) => {
           setConnected(false);
           if (pingTimer !== undefined) window.clearInterval(pingTimer);
           if (!disposed) {
             attempt += 1;
             setStatus("reconnecting");
             const backoff = Math.min(15000, 1500 * Math.min(attempt, 6));
+            if (ev.code === 1008) {
+              void import("@/framework/api-client")
+                .then(({ authApi }) => authApi.refresh())
+                .catch(() => null)
+                .finally(() => {
+                  if (!disposed) {
+                    reconnectTimer = window.setTimeout(connect, Math.min(backoff, 2000));
+                  }
+                });
+              return;
+            }
             reconnectTimer = window.setTimeout(connect, backoff);
           } else {
             setStatus("offline");
           }
         };
 
-        ws.onerror = () => {
-          ws?.close();
+        socket.onerror = () => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.close();
+          }
         };
 
-        ws.onmessage = (msg) => {
+        socket.onmessage = (msg) => {
           try {
             const raw = JSON.parse(msg.data) as LiveWsEvent;
             const evt: LiveWsEvent = {
@@ -133,6 +150,18 @@ export function LiveSocketProvider({ children }: { children: ReactNode }) {
 
             if (evt.type === "welcome" || evt.type === "heartbeat") {
               setLastHeartbeatAt(Date.now());
+            }
+
+            if (raw.portfolio && typeof raw.portfolio === "object") {
+              const p = raw.portfolio as Record<string, unknown>;
+              useTerminalStore.getState().setLivePortfolio({
+                total_balance_usd: Number(p.total_balance_usd ?? 0),
+                total_equity_usd: Number(p.total_equity_usd ?? 0),
+                total_floating_pnl_usd: Number(p.total_floating_pnl_usd ?? 0),
+                accounts_count: Number(p.accounts_count ?? 0),
+                open_positions_count: Number(p.open_positions_count ?? 0),
+                active_robots_count: Number(p.active_robots_count ?? 0),
+              });
             }
 
             setLastEvent(evt);
@@ -179,7 +208,9 @@ export function LiveSocketProvider({ children }: { children: ReactNode }) {
       disposed = true;
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
       if (pingTimer !== undefined) window.clearInterval(pingTimer);
-      ws?.close();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
     };
   }, []);
 

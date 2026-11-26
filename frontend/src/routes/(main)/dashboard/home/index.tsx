@@ -195,9 +195,11 @@ function HomeCommandCenterPage() {
               <AssetLogo symbol={m.symbol} size={18} />
               <span className="font-mono font-semibold">{m.symbol}</span>
               <span className="font-mono tabular-nums">
-                {m.price !== undefined ? m.price.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "—"}
+                {typeof m.price === "number" && Number.isFinite(m.price)
+                  ? m.price.toLocaleString("en-US", { maximumFractionDigits: 2 })
+                  : "—"}
               </span>
-              {m.change_pct !== undefined ? (
+              {typeof m.change_pct === "number" && Number.isFinite(m.change_pct) ? (
                 <span
                   className={`font-mono text-[11px] font-medium ${
                     m.change_pct >= 0 ? "text-emerald-500" : "text-rose-500"

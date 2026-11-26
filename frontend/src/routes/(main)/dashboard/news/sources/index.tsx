@@ -59,14 +59,18 @@ function NewsSourcesListPage() {
   async function handleTest(src: NewsSourceItem) {
     setBusyKey(`test:${src.id}`);
     try {
-      const res = await apiRequest<{ ok?: boolean; entries_found?: number; status_code?: number }>(
-        `/intelligence/sources/${encodeURIComponent(src.id)}/test`,
-        { method: "POST" },
-      );
+      const res = await apiRequest<{
+        ok?: boolean;
+        entries_found?: number;
+        items_found?: number;
+        status_code?: number;
+        error?: string;
+      }>(`/intelligence/sources/${encodeURIComponent(src.id)}/test`, { method: "POST" });
+      const count = res.entries_found ?? res.items_found ?? 0;
       if (res.ok) {
-        notify.success(t.sources.testSuccess, `${src.name} (${res.entries_found ?? 0} entries)`);
+        notify.success(t.sources.testSuccess, `${src.name} (${count} entries)`);
       } else {
-        notify.warning(src.name, `HTTP ${res.status_code ?? "ERR"}`);
+        notify.warning(src.name, res.error || `HTTP ${res.status_code ?? "ERR"}`);
       }
       await loadSources();
     } catch (err) {

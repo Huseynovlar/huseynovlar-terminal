@@ -48,12 +48,15 @@ function NewsSourceDetailPage() {
     if (!src) return;
     setBusy(true);
     try {
-      const res = await apiRequest<{ ok?: boolean; entries_found?: number }>(
-        `/intelligence/sources/${encodeURIComponent(src.id)}/test`,
-        { method: "POST" },
-      );
-      if (res.ok) notify.success(t.sources.testSuccess, `${res.entries_found ?? 0} entries`);
-      else notify.warning(src.name, "Feed check returned non-OK");
+      const res = await apiRequest<{
+        ok?: boolean;
+        entries_found?: number;
+        items_found?: number;
+        error?: string;
+      }>(`/intelligence/sources/${encodeURIComponent(src.id)}/test`, { method: "POST" });
+      const count = res.entries_found ?? res.items_found ?? 0;
+      if (res.ok) notify.success(t.sources.testSuccess, `${count} entries`);
+      else notify.warning(src.name, res.error || "Feed check returned non-OK");
       await loadSource();
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));

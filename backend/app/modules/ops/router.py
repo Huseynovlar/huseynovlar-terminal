@@ -88,25 +88,32 @@ async def _authorize_container(
     container_name: str,
     db: AsyncSession,
     settings: Settings,
-) -> tuple[bool, DockerContainer | None]:
+) -> tuple[bool, DockerContainer | None, str]:
+    """Return (allowed, db_ref, resolved_docker_name)."""
     clean = container_name.lstrip("/")
     db_ref = (
-        await db.execute(select(DockerContainer).where(DockerContainer.container_name == clean))
+        await db.execute(
+            select(DockerContainer).where(
+                (DockerContainer.id == clean) | (DockerContainer.container_name == clean)
+            )
+        )
     ).scalar_one_or_none()
     if db_ref is not None:
-        return True, db_ref
+        return True, db_ref, db_ref.container_name
     if clean in _allowed_names(settings):
-        return True, None
+        return True, None, clean
     try:
         async with httpx.AsyncClient(timeout=4.0) as http:
             insp = await http.get(f"{_docker_base_url()}/containers/{clean}/json")
             if insp.status_code == 200:
-                labels = insp.json().get("Config", {}).get("Labels") or {}
-                if _has_managed_label(labels, settings):
-                    return True, None
+                payload = insp.json()
+                real_name = str(payload.get("Name") or clean).lstrip("/")
+                labels = (payload.get("Config") or {}).get("Labels") or {}
+                if real_name in _allowed_names(settings) or _has_managed_label(labels, settings):
+                    return True, None, real_name
     except Exception:
         pass
-    return False, None
+    return False, None, clean
 
 
 def _compute_docker_stats(stats_json: dict[str, Any]) -> dict[str, Any]:
@@ -229,6 +236,7 @@ async def register_mt5_container(
 
 @router.get("/containers")
 async def list_managed_containers(
+    q: str | None = Query(default=None),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -248,6 +256,7 @@ async def list_managed_containers(
             )
 
     raw: list[dict[str, Any]] = []
+    docker_reachable = True
     try:
         async with httpx.AsyncClient(timeout=5.0) as http:
             resp = await http.get(f"{_docker_base_url()}/containers/json", params={"all": "1"})
@@ -255,6 +264,7 @@ async def list_managed_containers(
             raw = resp.json()
     except Exception:
         raw = []
+        docker_reachable = False
 
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -266,6 +276,7 @@ async def list_managed_containers(
             continue
         seen.add(cname)
         ref = reg_map.get(cname)
+        networks = list(((c.get("NetworkSettings") or {}).get("Networks") or {}).keys())
         out.append(
             {
                 "id": ref.id if ref else c.get("Id", "")[:12],
@@ -279,6 +290,9 @@ async def list_managed_containers(
                 "state": c.get("State", "unknown"),
                 "status": c.get("Status", ""),
                 "registered": ref is not None,
+                "networks": networks,
+                "connected_to_ingest": "exness_mt5_ingest" in networks,
+                "docker_reachable": docker_reachable,
                 "linked_accounts": linked_by_cid.get(ref.id, []) if ref else [],
             }
         )
@@ -296,14 +310,35 @@ async def list_managed_containers(
                     "is_restart_allowed": ref.is_restart_allowed,
                     "image": "not found in docker-proxy yet",
                     "state": ref.last_status or "not_connected",
-                    "status": "Registered — connect to exness_mt5_ingest & allowlist",
+                    "status": (
+                        "Docker proxy unreachable — check terminal-docker-proxy"
+                        if not docker_reachable
+                        else "Container not found on VPS host — check exact docker ps name"
+                    ),
                     "registered": True,
+                    "networks": [],
+                    "connected_to_ingest": False,
+                    "docker_reachable": docker_reachable,
                     "linked_accounts": linked_by_cid.get(ref.id, []),
                 }
             )
     for item in out:
         cname = item.get("container_name") or item.get("name")
         item["network_cmd"] = f"sudo docker network connect exness_mt5_ingest {cname}"
+
+    if q and q.strip():
+        needle = q.strip().lower()
+        out = [
+            item
+            for item in out
+            if needle in str(item.get("id", "")).lower()
+            or needle in str(item.get("docker_id", "")).lower()
+            or needle in str(item.get("name", "")).lower()
+            or needle in str(item.get("display_name", "")).lower()
+            or needle in str(item.get("host_label", "")).lower()
+            or needle in str(item.get("image", "")).lower()
+            or needle in str(item.get("state", "")).lower()
+        ]
     return page.apply(out)
 
 
@@ -314,12 +349,10 @@ async def get_container_detail(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    ref = await _resolve_container_record(db, id_or_name)
-    cname = ref.container_name if ref else id_or_name.lstrip("/")
-    if not ref and cname not in _allowed_names(settings):
-        allowed, _ = await _authorize_container(cname, db, settings)
-        if not allowed:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Container not found")
+    allowed, ref, resolved_name = await _authorize_container(id_or_name, db, settings)
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Container not found")
+    cname = ref.container_name if ref else resolved_name
 
     linked_accounts: list[dict[str, Any]] = []
     if ref:
@@ -344,6 +377,7 @@ async def get_container_detail(
 
     state_obj = inspect_data.get("State") or {}
     config_obj = inspect_data.get("Config") or {}
+    networks = list(((inspect_data.get("NetworkSettings") or {}).get("Networks") or {}).keys())
     return {
         "id": ref.id if ref else inspect_data.get("Id", "")[:12] or cname,
         "name": cname,
@@ -357,6 +391,11 @@ async def get_container_detail(
         "started_at": state_obj.get("StartedAt", ""),
         "image": config_obj.get("Image", ""),
         "stats": stats_data,
+        "cpu_pct": stats_data.get("cpu_percent"),
+        "mem_mb": stats_data.get("memory_mb"),
+        "networks": networks,
+        "connected_to_ingest": "exness_mt5_ingest" in networks,
+        "network_cmd": f"sudo docker network connect exness_mt5_ingest {cname}",
         "linked_accounts": linked_accounts,
         "created_at": ref.created_at.isoformat() if ref else None,
     }
@@ -441,7 +480,7 @@ async def control_managed_container(
     if action not in {"restart", "start", "stop"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported container action")
 
-    allowed, db_ref = await _authorize_container(container_name, db, settings)
+    allowed, db_ref, resolved_name = await _authorize_container(container_name, db, settings)
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -451,15 +490,20 @@ async def control_managed_container(
     if db_ref and not db_ref.is_restart_allowed and action in {"stop", "restart"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Container '{container_name}' has restart/stop disabled",
+            detail=f"Container '{resolved_name}' has restart/stop disabled",
         )
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as http:
-            resp = await http.post(f"{_docker_base_url()}/containers/{container_name}/{action}")
+            resp = await http.post(f"{_docker_base_url()}/containers/{resolved_name}/{action}")
             if resp.status_code not in (200, 204, 304):
+                hint = (
+                    f" — verify container '{resolved_name}' exists on VPS (`sudo docker ps -a`)"
+                    if resp.status_code == 404
+                    else ""
+                )
                 raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Docker proxy HTTP {resp.status_code}"
+                    status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Docker proxy HTTP {resp.status_code}{hint}"
                 )
     except HTTPException:
         raise
@@ -476,11 +520,11 @@ async def control_managed_container(
         action=f"container.{action}",
         user_id=user.id,
         resource_type="docker_container",
-        resource_id=container_name,
+        resource_id=resolved_name,
         ip_address=extract_client_ip(request),
     )
     await db.commit()
-    return {"status": "ok", "container": container_name, "action": action}
+    return {"status": "ok", "container": resolved_name, "action": action}
 
 
 @router.get("/containers/{container_name}/logs")
@@ -491,17 +535,17 @@ async def get_container_logs(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    allowed, _ = await _authorize_container(container_name, db, settings)
+    allowed, _, resolved_name = await _authorize_container(container_name, db, settings)
     if not allowed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Container not allowlisted")
     try:
         async with httpx.AsyncClient(timeout=6.0) as http:
             resp = await http.get(
-                f"{_docker_base_url()}/containers/{container_name}/logs",
+                f"{_docker_base_url()}/containers/{resolved_name}/logs",
                 params={"stdout": "1", "stderr": "1", "tail": str(tail)},
             )
             resp.raise_for_status()
-            return {"container": container_name, "logs": _redact_logs(resp.text)}
+            return {"container": resolved_name, "logs": _redact_logs(resp.text)}
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Docker proxy error: {exc}"
@@ -732,6 +776,12 @@ async def send_test_alert(
             )
             r.raise_for_status()
             delivered.append("huseynovlar-alerts-bot")
+        except httpx.ConnectError as exc:
+            host = urlparse(webhook_url).hostname or "huseynovlar-core"
+            errors.append(
+                f"webhook: {exc} (ensure '{host}' is running and attached to network 'huseynovlar_webhooks': "
+                f"sudo docker network connect huseynovlar_webhooks {host})"
+            )
         except Exception as exc:
             errors.append(f"webhook: {exc}")
 

@@ -10,6 +10,15 @@ export type LanguageMode = "ru" | "en" | "az";
 export type DensityMode = "bloomberg";
 export type TickerSpeed = "slow" | "normal" | "fast";
 
+export interface LivePortfolioSnapshot {
+  total_balance_usd: number;
+  total_equity_usd: number;
+  total_floating_pnl_usd: number;
+  accounts_count: number;
+  open_positions_count: number;
+  active_robots_count: number;
+}
+
 export interface TerminalPreferencesState {
   currencyMode: CurrencyMode;
   privacyMode: boolean;
@@ -28,6 +37,8 @@ export interface TerminalPreferencesState {
   treemapFilters: Record<string, unknown>;
   screenLocked: boolean;
   serverHydrated: boolean;
+  profileAvatarUrl: string | null;
+  livePortfolio: LivePortfolioSnapshot | null;
 
   toggleCurrencyMode: () => void;
   togglePrivacyMode: () => void;
@@ -49,6 +60,8 @@ export interface TerminalPreferencesState {
   setAnalyticsFilters: (filters: Record<string, unknown>) => void;
   setTreemapFilters: (filters: Record<string, unknown>) => void;
   setScreenLocked: (locked: boolean) => void;
+  setProfileAvatarUrl: (url: string | null) => void;
+  setLivePortfolio: (portfolio: LivePortfolioSnapshot | null) => void;
   hydrateFromServer: (prefs: Record<string, unknown>) => void;
 }
 
@@ -116,6 +129,11 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
       treemapFilters: {},
       screenLocked: false,
       serverHydrated: false,
+      profileAvatarUrl: null,
+      livePortfolio: null,
+
+      setProfileAvatarUrl: (profileAvatarUrl) => set({ profileAvatarUrl }),
+      setLivePortfolio: (livePortfolio) => set({ livePortfolio }),
 
       toggleCurrencyMode: () =>
         set((s) => ({ currencyMode: s.currencyMode === "USD" ? "USC" : "USD" })),

@@ -19,13 +19,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog, PromptDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
+import { SearchSelect } from "@/components/ui/search-select";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
-import { apiRequest } from "@/framework/api-client";
+import { apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useLiveEvents } from "@/framework/use-live-socket";
-import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/containers/")({
   component: ContainersListPage,
@@ -33,6 +35,7 @@ export const Route = createFileRoute("/(main)/dashboard/containers/")({
 
 interface ContainerItem {
   id?: string;
+  docker_id?: string;
   name: string;
   container_name?: string;
   display_name?: string;
@@ -42,6 +45,7 @@ interface ContainerItem {
   status?: string;
   cpu_pct?: number | null;
   mem_mb?: number | null;
+  connected_to_ingest?: boolean;
   network_cmd?: string;
 }
 
@@ -56,6 +60,9 @@ function ContainersListPage() {
   const { t } = useI18n();
   const [containers, setContainers] = useState<ContainerItem[]>([]);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ContainerItem | null>(null);
@@ -63,28 +70,33 @@ function ContainersListPage() {
   const [killDialogOpen, setKillDialogOpen] = useState(false);
   const [killLoading, setKillLoading] = useState(false);
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
+  const loadAll = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const [cList, aList] = await Promise.all([
-        apiRequest<ContainerItem[]>("/ops/containers").catch(() => [] as ContainerItem[]),
+      const qs = search.trim() ? `?q=${encodeURIComponent(search.trim())}` : "";
+      const [cRes, aList] = await Promise.all([
+        apiRequestPaged<ContainerItem>(`/ops/containers${qs}`, page, DEFAULT_PAGE_SIZE).catch(() => ({
+          items: [] as ContainerItem[],
+          total: 0,
+        })),
         apiRequest<AccountOption[]>("/accounts").catch(() => [] as AccountOption[]),
       ]);
-      setContainers(Array.isArray(cList) ? cList : []);
+      setContainers(cRes.items);
+      setTotal(cRes.total);
       const accs = Array.isArray(aList) ? aList : [];
       setAccounts(accs);
       setKillAccountId((prev) => prev || accs[0]?.id || "");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, search]);
 
   useEffect(() => {
-    void loadAll();
+    void loadAll(false);
   }, [loadAll]);
 
   useLiveEvents("container_event", () => {
-    void loadAll();
+    void loadAll(true);
   });
 
   async function runAction(name: string, action: "start" | "stop" | "restart") {
@@ -93,7 +105,7 @@ function ContainersListPage() {
     try {
       await apiRequest(`/ops/containers/${encodeURIComponent(name)}/${action}`, { method: "POST" });
       notify.success(t.containers.actionSuccess, `${name} → ${action.toUpperCase()}`);
-      await loadAll();
+      await loadAll(true);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
@@ -109,7 +121,7 @@ function ContainersListPage() {
       await apiRequest(`/ops/containers/${encodeURIComponent(targetId)}`, { method: "DELETE" });
       notify.success(t.common.deletedSuccess, deleteTarget.display_name || deleteTarget.name);
       setDeleteTarget(null);
-      await loadAll();
+      await loadAll(true);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
@@ -146,7 +158,7 @@ function ContainersListPage() {
             variant="outline"
             loading={loading}
             loadingText={t.common.refreshing}
-            onClick={() => void loadAll()}
+            onClick={() => void loadAll(false)}
           >
             <RefreshCw className="mr-1.5 size-3.5" />
             {t.common.refresh}
@@ -158,133 +170,156 @@ function ContainersListPage() {
         </>
       }
     >
-      {loading ? (
+      <div className="flex max-w-md items-center gap-2">
+        <Input
+          className="font-mono text-xs"
+          placeholder="Search by ID, container name, host, state..."
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+        />
+      </div>
+
+      {loading && containers.length === 0 ? (
         <TableSkeleton rows={4} cols={5} />
       ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {containers.length === 0 ? (
-            <Card className="lg:col-span-2">
-              <CardContent className="text-muted-foreground py-8 text-center text-sm">
-                {t.common.noData}
-              </CardContent>
-            </Card>
-          ) : (
-            containers.map((c) => {
-              const cid = c.id || c.name;
-              const cname = c.container_name || c.name;
-              const isRunning = (c.state || "").toLowerCase() === "running" || (c.status || "").toLowerCase().startsWith("up");
-              return (
-                <Card key={cid} className="border-border/70">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-0.5">
-                        <CardTitle className="flex items-center gap-2 text-base">
-                          <Server className="size-4 text-primary" />
-                          <span>{c.display_name || cname}</span>
-                        </CardTitle>
-                        <CardDescription className="font-mono text-xs">
-                          {cname} {c.host_label ? `• ${c.host_label}` : ""}
-                        </CardDescription>
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {containers.length === 0 ? (
+              <Card className="lg:col-span-2">
+                <CardContent className="text-muted-foreground py-8 text-center text-sm">
+                  {t.common.noData}
+                </CardContent>
+              </Card>
+            ) : (
+              containers.map((c) => {
+                const cid = c.id || c.name;
+                const cname = c.container_name || c.name;
+                const isRunning =
+                  (c.state || "").toLowerCase() === "running" || (c.status || "").toLowerCase().startsWith("up");
+                return (
+                  <Card key={cid} className="border-border/70">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-0.5">
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            <Server className="size-4 text-primary" />
+                            <span>{c.display_name || cname}</span>
+                          </CardTitle>
+                          <CardDescription className="font-mono text-xs">
+                            ID: {String(cid).slice(0, 12)} • {cname} {c.host_label ? `• ${c.host_label}` : ""}
+                          </CardDescription>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {c.connected_to_ingest ? (
+                            <Badge variant="outline" className="border-emerald-500/40 font-mono text-[10px] text-emerald-500">
+                              INGEST OK
+                            </Badge>
+                          ) : null}
+                          <Badge variant={isRunning ? "default" : "secondary"} className="font-mono text-[10px] uppercase">
+                            {c.state || (isRunning ? "running" : "stopped")}
+                          </Badge>
+                        </div>
                       </div>
-                      <Badge variant={isRunning ? "default" : "secondary"} className="font-mono text-[10px] uppercase">
-                        {c.state || (isRunning ? "running" : "stopped")}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted/40 p-2 text-xs">
-                      <div>
-                        <div className="text-muted-foreground text-[10px]">{t.common.status}</div>
-                        <div className="truncate font-mono">{c.status || t.common.unknown}</div>
-                      </div>
-                      <div>
-                        <div className="text-muted-foreground text-[10px]">{t.containers.cpu}</div>
-                        <div className="font-mono">{c.cpu_pct != null ? `${c.cpu_pct.toFixed(1)}%` : "—"}</div>
-                      </div>
-                      <div>
-                        <div className="text-muted-foreground text-[10px]">{t.containers.memory}</div>
-                        <div className="font-mono">{c.mem_mb != null ? `${Math.round(c.mem_mb)} MB` : "—"}</div>
-                      </div>
-                    </div>
-
-                    {c.network_cmd ? (
-                      <button
-                        type="button"
-                        title="Copy"
-                        className="bg-muted/40 hover:bg-muted w-full truncate rounded-md px-2 py-1 text-left font-mono text-[10px]"
-                        onClick={() => {
-                          void navigator.clipboard?.writeText(c.network_cmd ?? "");
-                          notify.success(t.common.savedSuccess);
-                        }}
-                      >
-                        {c.network_cmd}
-                      </button>
-                    ) : null}
-
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap gap-1.5">
-                        <AsyncButton
-                          size="xs"
-                          variant="outline"
-                          loading={busyKey === `${cname}:start`}
-                          onClick={() => void runAction(cname, "start")}
-                        >
-                          <Play className="mr-1 size-3 text-emerald-500" />
-                          {t.containers.start}
-                        </AsyncButton>
-                        <AsyncButton
-                          size="xs"
-                          variant="outline"
-                          loading={busyKey === `${cname}:restart`}
-                          onClick={() => void runAction(cname, "restart")}
-                        >
-                          <RotateCcw className="mr-1 size-3 text-amber-500" />
-                          {t.containers.restart}
-                        </AsyncButton>
-                        <AsyncButton
-                          size="xs"
-                          variant="outline"
-                          loading={busyKey === `${cname}:stop`}
-                          onClick={() => void runAction(cname, "stop")}
-                        >
-                          <Square className="mr-1 size-3 text-destructive" />
-                          {t.containers.stop}
-                        </AsyncButton>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2 rounded-lg bg-muted/40 p-2 text-xs">
+                        <div>
+                          <div className="text-muted-foreground text-[10px]">{t.common.status}</div>
+                          <div className="truncate font-mono">{c.status || t.common.unknown}</div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground text-[10px]">{t.containers.cpu}</div>
+                          <div className="font-mono">{c.cpu_pct != null ? `${c.cpu_pct.toFixed(1)}%` : "—"}</div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground text-[10px]">{t.containers.memory}</div>
+                          <div className="font-mono">{c.mem_mb != null ? `${Math.round(c.mem_mb)} MB` : "—"}</div>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          nativeButton={false}
-                          render={<Link to="/dashboard/containers/$containerId" params={{ containerId: cid }} />}
+                      {c.network_cmd ? (
+                        <button
+                          type="button"
+                          title="Copy"
+                          className="bg-muted/40 hover:bg-muted w-full truncate rounded-md px-2 py-1 text-left font-mono text-[10px]"
+                          onClick={() => {
+                            void navigator.clipboard?.writeText(c.network_cmd ?? "");
+                            notify.success(t.common.savedSuccess);
+                          }}
                         >
-                          <Eye className="mr-1 size-3" />
-                          {t.common.view}
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          nativeButton={false}
-                          render={<Link to="/dashboard/containers/$containerId/edit" params={{ containerId: cid }} />}
-                        >
-                          <Pencil className="size-3" />
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => setDeleteTarget(c)}
-                        >
-                          <Trash2 className="size-3" />
-                        </Button>
+                          {c.network_cmd}
+                        </button>
+                      ) : null}
+
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap gap-1.5">
+                          <AsyncButton
+                            size="xs"
+                            variant="outline"
+                            loading={busyKey === `${cname}:start`}
+                            onClick={() => void runAction(cname, "start")}
+                          >
+                            <Play className="mr-1 size-3 text-emerald-500" />
+                            {t.containers.start}
+                          </AsyncButton>
+                          <AsyncButton
+                            size="xs"
+                            variant="outline"
+                            loading={busyKey === `${cname}:restart`}
+                            onClick={() => void runAction(cname, "restart")}
+                          >
+                            <RotateCcw className="mr-1 size-3 text-amber-500" />
+                            {t.containers.restart}
+                          </AsyncButton>
+                          <AsyncButton
+                            size="xs"
+                            variant="outline"
+                            loading={busyKey === `${cname}:stop`}
+                            onClick={() => void runAction(cname, "stop")}
+                          >
+                            <Square className="mr-1 size-3 text-destructive" />
+                            {t.containers.stop}
+                          </AsyncButton>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            nativeButton={false}
+                            render={<Link to="/dashboard/containers/$containerId" params={{ containerId: cname }} />}
+                          >
+                            <Eye className="mr-1 size-3" />
+                            {t.common.view}
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            nativeButton={false}
+                            render={<Link to="/dashboard/containers/$containerId/edit" params={{ containerId: cid }} />}
+                          >
+                            <Pencil className="size-3" />
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setDeleteTarget(c)}
+                          >
+                            <Trash2 className="size-3" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })
-          )}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+          <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
         </div>
       )}
 

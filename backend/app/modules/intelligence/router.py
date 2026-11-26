@@ -532,8 +532,17 @@ async def test_news_source(
     safe_url = validate_safe_external_url(src.url)
     now = datetime.now(UTC)
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as http:
-            resp = await http.get(safe_url, headers={"User-Agent": "HuseynovlarTerminal/1.0"})
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as http:
+            resp = await http.get(
+                safe_url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+                },
+            )
             resp.raise_for_status()
             parsed = parse_rss_xml(resp.text, src.name, src.category)
         src.last_polled_at = now
@@ -543,6 +552,7 @@ async def test_news_source(
             "ok": True,
             "status_code": resp.status_code,
             "items_found": len(parsed),
+            "entries_found": len(parsed),
             "sample_titles": [p["title"] for p in parsed[:5]],
             "error": "",
         }
@@ -554,6 +564,7 @@ async def test_news_source(
             "ok": False,
             "status_code": 0,
             "items_found": 0,
+            "entries_found": 0,
             "sample_titles": [],
             "error": str(exc)[:300],
         }

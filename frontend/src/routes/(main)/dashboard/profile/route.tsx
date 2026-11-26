@@ -19,6 +19,8 @@ import { useAuthImage } from "@/framework/use-auth-image";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { getInitials } from "@/lib/utils";
 
+import { useTerminalStore } from "@/framework/terminal-store";
+
 export const Route = createFileRoute("/(main)/dashboard/profile")({
   component: PersonalProfilePage,
 });
@@ -39,6 +41,7 @@ interface ProfileData {
  */
 function PersonalProfilePage() {
   const { t } = useI18n();
+  const setProfileAvatarUrl = useTerminalStore((s) => s.setProfileAvatarUrl);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -56,7 +59,9 @@ function PersonalProfilePage() {
       const fd = new FormData();
       fd.append("file", file);
       const res = await apiRequest<{ avatar_url?: string }>("/profile/avatar", { method: "POST", body: fd });
-      setAvatarUrl(res.avatar_url || "");
+      const nextUrl = res.avatar_url || "";
+      setAvatarUrl(nextUrl);
+      setProfileAvatarUrl(nextUrl);
       notify.success(t.common.savedSuccess);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
@@ -70,6 +75,8 @@ function PersonalProfilePage() {
     try {
       await apiRequest("/profile/avatar", { method: "DELETE" });
       setAvatarUrl("");
+      setProfileAvatarUrl("");
+      notify.success(t.common.savedSuccess);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
@@ -84,11 +91,13 @@ function PersonalProfilePage() {
         setDisplayName(res.display_name || "");
         setEmail(res.email || "");
         setBio(res.bio || "");
-        setAvatarUrl(res.avatar_url || "");
+        const nextUrl = res.avatar_url || "";
+        setAvatarUrl(nextUrl);
+        setProfileAvatarUrl(nextUrl);
       })
       .catch((err) => notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
-  }, [t.common.errorTitle]);
+  }, [setProfileAvatarUrl, t.common.errorTitle]);
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
