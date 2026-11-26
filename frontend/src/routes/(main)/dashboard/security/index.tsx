@@ -171,10 +171,9 @@ function SecurityPage() {
     }
     setPkBusy(true);
     try {
-      const { options } = await apiRequest<{ options: Record<string, unknown> }>(
-        "/auth/webauthn/register/options",
-        { method: "POST" },
-      );
+      const options = await apiRequest<Record<string, unknown>>("/auth/webauthn/register/options", {
+        method: "POST",
+      });
       const publicKey = prepareCreationOptions(options);
       const cred = (await navigator.credentials.create({ publicKey })) as PublicKeyCredential | null;
       if (!cred) throw new Error("Passkey registration cancelled");

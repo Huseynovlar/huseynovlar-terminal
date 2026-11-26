@@ -57,8 +57,23 @@ function convertCredentialDescriptorList(
   });
 }
 
-export function prepareCreationOptions(raw: Record<string, unknown>): PublicKeyCredentialCreationOptions {
-  const userObj = (raw.user ?? {}) as Record<string, unknown>;
+/** Accepts both `{options: {...}}` envelopes and bare option objects (guards against `e.user` of undefined). */
+export function unwrapWebauthnOptions(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Invalid WebAuthn options received from server");
+  }
+  const obj = raw as Record<string, unknown>;
+  const inner = obj.options;
+  if (inner && typeof inner === "object") return inner as Record<string, unknown>;
+  return obj;
+}
+
+export function prepareCreationOptions(input: Record<string, unknown>): PublicKeyCredentialCreationOptions {
+  const raw = unwrapWebauthnOptions(input);
+  if (!raw.user || typeof raw.user !== "object") {
+    throw new Error("Server returned incomplete passkey options (missing user)");
+  }
+  const userObj = raw.user as Record<string, unknown>;
   const challenge =
     typeof raw.challenge === "string" ? base64urlToUint8Array(raw.challenge) : (raw.challenge as BufferSource);
   const userId =
@@ -77,7 +92,8 @@ export function prepareCreationOptions(raw: Record<string, unknown>): PublicKeyC
   } as unknown as PublicKeyCredentialCreationOptions;
 }
 
-export function prepareRequestOptions(raw: Record<string, unknown>): PublicKeyCredentialRequestOptions {
+export function prepareRequestOptions(input: Record<string, unknown>): PublicKeyCredentialRequestOptions {
+  const raw = unwrapWebauthnOptions(input);
   const challenge =
     typeof raw.challenge === "string" ? base64urlToUint8Array(raw.challenge) : (raw.challenge as BufferSource);
   const allowCredentials = convertCredentialDescriptorList(raw.allowCredentials);
