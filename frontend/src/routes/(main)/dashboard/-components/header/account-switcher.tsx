@@ -13,6 +13,7 @@ import {
 import { notify } from "@/components/ui/toast";
 import { authApi } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
+import { useAuthImage } from "@/framework/use-auth-image";
 import { useTerminalStore } from "@/framework/terminal-store";
 import { getInitials } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ import type { CurrentTerminalUser } from "../sidebar/app-sidebar";
 
 export function AccountSwitcher({ user }: { readonly user: CurrentTerminalUser }) {
   const { t } = useI18n();
+  const avatarSrc = useAuthImage(user.avatar);
   const setScreenLocked = useTerminalStore((s) => s.setScreenLocked);
 
   async function handleLogout() {
@@ -35,13 +37,13 @@ export function AccountSwitcher({ user }: { readonly user: CurrentTerminalUser }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger nativeButton={false} render={<Avatar className="size-8 cursor-pointer rounded-lg ring-1 ring-border" />}>
-        <AvatarImage src={user.avatar || undefined} alt={user.name} />
+        <AvatarImage src={avatarSrc} alt={user.name} />
         <AvatarFallback className="text-xs font-semibold">{getInitials(user.name)}</AvatarFallback>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="min-w-60 space-y-1 rounded-lg" side="bottom" align="end" sideOffset={4}>
         <div className="flex items-center gap-2 px-2 py-1.5">
           <Avatar className="size-8 rounded-lg">
-            <AvatarImage src={user.avatar || undefined} alt={user.name} />
+            <AvatarImage src={avatarSrc} alt={user.name} />
             <AvatarFallback className="text-xs">{getInitials(user.name)}</AvatarFallback>
           </Avatar>
           <div className="grid min-w-0 flex-1 text-left text-xs leading-tight">

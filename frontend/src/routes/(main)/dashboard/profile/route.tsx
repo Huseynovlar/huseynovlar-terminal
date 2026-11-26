@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
+import { useAuthImage } from "@/framework/use-auth-image";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { getInitials } from "@/lib/utils";
 
@@ -45,6 +46,36 @@ function PersonalProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const avatarSrc = useAuthImage(avatarUrl);
+
+  async function handleAvatarFile(file: File | undefined) {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await apiRequest<{ avatar_url?: string }>("/profile/avatar", { method: "POST", body: fd });
+      setAvatarUrl(res.avatar_url || "");
+      notify.success(t.common.savedSuccess);
+    } catch (err) {
+      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleAvatarRemove() {
+    setUploading(true);
+    try {
+      await apiRequest("/profile/avatar", { method: "DELETE" });
+      setAvatarUrl("");
+    } catch (err) {
+      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+    }
+  }
 
   useEffect(() => {
     apiRequest<ProfileData>("/profile/me")
@@ -69,7 +100,6 @@ function PersonalProfilePage() {
           display_name: displayName.trim(),
           email: email.trim(),
           bio: bio.trim(),
-          avatar_url: avatarUrl.trim(),
         }),
       });
       setProfile(updated);
@@ -99,7 +129,7 @@ function PersonalProfilePage() {
         <CardContent className="space-y-5 pt-6">
           <div className="flex items-center gap-4 border-b border-border/60 pb-4">
             <Avatar className="size-14 rounded-xl ring-1 ring-border">
-              <AvatarImage src={avatarUrl || undefined} alt={displayName || profile?.username || "User"} />
+              <AvatarImage src={avatarSrc} alt={displayName || profile?.username || "User"} />
               <AvatarFallback className="text-base font-semibold">
                 {getInitials(displayName || profile?.username || "U")}
               </AvatarFallback>
@@ -128,12 +158,23 @@ function PersonalProfilePage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="prof-avatar">{t.profile.avatarUrl}</Label>
-              <Input
-                id="prof-avatar"
-                placeholder="https://..."
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  id="prof-avatar"
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  disabled={uploading}
+                  onChange={(e) => {
+                    void handleAvatarFile(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+                {avatarUrl ? (
+                  <Button type="button" variant="outline" size="sm" disabled={uploading} onClick={() => void handleAvatarRemove()}>
+                    {t.common.delete ?? "Delete"}
+                  </Button>
+                ) : null}
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="prof-bio">{t.profile.bio}</Label>

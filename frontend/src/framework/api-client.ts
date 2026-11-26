@@ -228,3 +228,28 @@ export const authApi = {
       body: JSON.stringify({ challenge_key, credential }),
     }),
 };
+
+export interface PagedResult<T> {
+  items: T[];
+  total: number;
+}
+
+/** GET a list endpoint that returns a plain array plus X-Total-Count header. */
+export async function apiRequestPaged<T>(path: string, page: number, pageSize: number): Promise<PagedResult<T>> {
+  const sep = path.includes("?") ? "&" : "?";
+  const res = await apiRequestRaw(`${path}${sep}limit=${pageSize}&offset=${(page - 1) * pageSize}`, { method: "GET" });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const data = await res.json();
+      if (data?.detail) detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+    } catch {
+      // ignore non-JSON error body
+    }
+    throw new Error(detail);
+  }
+  const items = (await res.json()) as T[];
+  const list = Array.isArray(items) ? items : [];
+  const header = Number(res.headers.get("X-Total-Count"));
+  return { items: list, total: Number.isFinite(header) && header > 0 ? header : list.length };
+}

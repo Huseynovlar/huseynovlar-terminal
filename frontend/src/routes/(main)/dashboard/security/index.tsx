@@ -41,6 +41,7 @@ function SecurityPage() {
   const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [totpEnabled, setTotpEnabled] = useState(false);
+  const [pwTotp, setPwTotp] = useState("");
   const [passkeys, setPasskeys] = useState<PasskeyItem[]>([]);
 
   // Password change
@@ -90,6 +91,23 @@ function SecurityPage() {
       notify.error(t.common.errorTitle, t.security.passwordMismatch);
       return;
     }
+    const strong =
+      newPassword.length >= 8 &&
+      /[A-Z]/.test(newPassword) &&
+      /[a-z]/.test(newPassword) &&
+      /\d/.test(newPassword) &&
+      /[^A-Za-z0-9]/.test(newPassword);
+    if (!strong) {
+      notify.error(
+        t.common.errorTitle,
+        "Password must be at least 8 characters and contain an uppercase letter, a lowercase letter, a digit and a special character",
+      );
+      return;
+    }
+    if (totpEnabled && !pwTotp.trim()) {
+      notify.error(t.common.errorTitle, "2FA code required");
+      return;
+    }
     setPwSaving(true);
     try {
       await apiRequest("/auth/change-password", {
@@ -97,12 +115,14 @@ function SecurityPage() {
         body: JSON.stringify({
           current_password: currentPassword,
           new_password: newPassword,
+          totp_code: totpEnabled ? pwTotp.trim() : undefined,
           revoke_other_sessions: revokeOthers,
         }),
       });
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      setPwTotp("");
       notify.success(t.common.savedSuccess);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
@@ -258,6 +278,20 @@ function SecurityPage() {
                   required
                 />
               </div>
+              <p className="text-muted-foreground text-xs">8+ · A-Z · a-z · 0-9 · !@#</p>
+              {totpEnabled ? (
+                <div className="space-y-1">
+                  <Label htmlFor="sec-pw-totp">2FA code</Label>
+                  <Input
+                    id="sec-pw-totp"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={pwTotp}
+                    onChange={(e) => setPwTotp(e.target.value)}
+                    required
+                  />
+                </div>
+              ) : null}
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="sec-revoke-others"

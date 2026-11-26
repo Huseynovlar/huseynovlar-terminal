@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { TableSkeleton } from "@/components/ui/skeleton";
+import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
 import { notify } from "@/components/ui/toast";
-import { apiRequest } from "@/framework/api-client";
+import { apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 
@@ -31,6 +32,8 @@ function SessionsListPage() {
   const { t } = useI18n();
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [revokeTarget, setRevokeTarget] = useState<SessionRecord | null>(null);
   const [revokeOthersOpen, setRevokeOthersOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -38,14 +41,15 @@ function SessionsListPage() {
   const loadSessions = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiRequest<SessionRecord[]>("/auth/sessions");
-      setSessions(Array.isArray(res) ? res : []);
+      const res = await apiRequestPaged<SessionRecord>("/auth/sessions", page, DEFAULT_PAGE_SIZE);
+      setSessions(res.items);
+      setTotal(res.total);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [t.common.errorTitle]);
+  }, [page, t.common.errorTitle]);
 
   useEffect(() => {
     void loadSessions();
@@ -143,6 +147,7 @@ function SessionsListPage() {
                 </div>
               ))
             )}
+            <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
           </CardContent>
         </Card>
       )}

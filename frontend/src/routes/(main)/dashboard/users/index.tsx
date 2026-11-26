@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { TableSkeleton } from "@/components/ui/skeleton";
+import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
 import { notify } from "@/components/ui/toast";
-import { apiRequest } from "@/framework/api-client";
+import { apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 
@@ -33,20 +34,23 @@ function UsersListPage() {
   const { t } = useI18n();
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiRequest<UserRecord[]>("/users");
-      setUsers(Array.isArray(res) ? res : []);
+      const res = await apiRequestPaged<UserRecord>("/users", page, DEFAULT_PAGE_SIZE);
+      setUsers(res.items);
+      setTotal(res.total);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [t.common.errorTitle]);
+  }, [page, t.common.errorTitle]);
 
   useEffect(() => {
     void loadUsers();
@@ -179,6 +183,7 @@ function UsersListPage() {
                 )}
               </tbody>
             </table>
+            <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
           </CardContent>
         </Card>
       )}

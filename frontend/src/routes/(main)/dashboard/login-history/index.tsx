@@ -7,10 +7,11 @@ import { AsyncButton } from "@/components/ui/async-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
-import { apiRequest } from "@/framework/api-client";
+import { apiRequestPaged } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 
@@ -32,19 +33,22 @@ function LoginHistoryListPage() {
   const [entries, setEntries] = useState<LoginHistoryEntry[]>([]);
   const [ipFilter, setIpFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = ipFilter.trim() ? `?ip=${encodeURIComponent(ipFilter.trim())}&limit=100` : "?limit=100";
-      const res = await apiRequest<LoginHistoryEntry[]>(`/auth/login-history${qs}`);
-      setEntries(Array.isArray(res) ? res : []);
+      const qs = ipFilter.trim() ? `?ip=${encodeURIComponent(ipFilter.trim())}` : "";
+      const res = await apiRequestPaged<LoginHistoryEntry>(`/auth/login-history${qs}`, page, DEFAULT_PAGE_SIZE);
+      setEntries(res.items);
+      setTotal(res.total);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [ipFilter, t.common.errorTitle]);
+  }, [ipFilter, page, t.common.errorTitle]);
 
   useEffect(() => {
     void loadHistory();
@@ -142,6 +146,7 @@ function LoginHistoryListPage() {
                 )}
               </tbody>
             </table>
+            <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
           </CardContent>
         </Card>
       )}

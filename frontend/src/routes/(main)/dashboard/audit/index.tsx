@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
-import { apiRequest } from "@/framework/api-client";
+import { apiRequestPaged } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/(main)/dashboard/audit/")({
 interface AuditEntry {
   id: string;
   action: string;
+  action_label?: Record<string, string>;
   resource_type?: string;
   resource_id?: string;
   ip_address?: string;
@@ -28,23 +30,26 @@ interface AuditEntry {
 }
 
 function AuditListPage() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [rows, setRows] = useState<AuditEntry[]>([]);
   const [actionFilter, setActionFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const loadAudit = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = actionFilter.trim() ? `?action=${encodeURIComponent(actionFilter.trim())}&limit=100` : "?limit=100";
-      const res = await apiRequest<AuditEntry[]>(`/audit${qs}`);
-      setRows(Array.isArray(res) ? res : []);
+      const qs = actionFilter.trim() ? `?action=${encodeURIComponent(actionFilter.trim())}` : "";
+      const res = await apiRequestPaged<AuditEntry>(`/audit${qs}`, page, DEFAULT_PAGE_SIZE);
+      setRows(res.items);
+      setTotal(res.total);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [actionFilter, t.common.errorTitle]);
+  }, [actionFilter, page, t.common.errorTitle]);
 
   useEffect(() => {
     void loadAudit();
@@ -69,7 +74,10 @@ function AuditListPage() {
             className="pl-8 font-mono text-xs"
             placeholder="Filter by action..."
             value={actionFilter}
-            onChange={(e) => setActionFilter(e.target.value)}
+            onChange={(e) => {
+              setActionFilter(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
         <Button size="sm" variant="outline" onClick={() => void loadAudit()}>
@@ -115,7 +123,7 @@ function AuditListPage() {
                     </td>
                       <td className="px-3 py-2">
                         <Badge variant="outline" className="font-mono text-[10px]">
-                          {row.action}
+                          {row.action_label?.[language] ?? row.action}
                         </Badge>
                       </td>
                       <td className="px-3 py-2 font-mono">
@@ -141,6 +149,7 @@ function AuditListPage() {
                 )}
               </tbody>
             </table>
+            <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
           </CardContent>
         </Card>
       )}
