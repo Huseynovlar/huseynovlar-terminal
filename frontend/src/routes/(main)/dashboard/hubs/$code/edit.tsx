@@ -1,19 +1,23 @@
 import { type FormEvent, useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Plus, Save, Sparkles, X } from "lucide-react";
 
 import { AsyncButton } from "@/components/ui/async-button";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchSelect } from "@/components/ui/search-select";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
+import { AssetLogo } from "@/framework/components/AssetLogo";
+import { type MarketTickerRecord, TickerSelect } from "@/framework/components/TickerSelect";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import type { AssetHubItem } from "@/routes/(main)/dashboard/hubs/index";
-import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/hubs/$code/edit")({
   component: HubEditPage,
@@ -28,7 +32,8 @@ function HubEditPage() {
   const [name, setName] = useState("");
   const [group, setGroup] = useState("macro");
   const [brokerSymbols, setBrokerSymbols] = useState("");
-  const [newsTags, setNewsTags] = useState("");
+  const [newsKeywords, setNewsKeywords] = useState<string[]>([]);
+  const [customTag, setCustomTag] = useState("");
 
   useEffect(() => {
     apiRequest<AssetHubItem>(`/assets/${encodeURIComponent(code)}`)
@@ -36,11 +41,42 @@ function HubEditPage() {
         setName(res.name);
         setGroup(res.group || "macro");
         setBrokerSymbols((res.broker_symbols ?? []).join(", "));
-        setNewsTags((res.news_tags ?? []).join(", "));
+        setNewsKeywords(res.news_tags ?? []);
       })
       .catch((err) => notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
   }, [code, t.common.errorTitle]);
+
+  async function handleFillFromDirectory() {
+    try {
+      const rows = await apiRequest<MarketTickerRecord[]>(
+        `/assets/tickers?q=${encodeURIComponent(code)}&limit=5`,
+      );
+      const exact = (rows ?? []).find((r) => r.symbol === code.toUpperCase()) ?? rows?.[0];
+      if (exact) {
+        if (exact.broker_symbols?.length) {
+          setBrokerSymbols(exact.broker_symbols.join(", "));
+        }
+        if (exact.news_keywords?.length) {
+          setNewsKeywords((prev) => Array.from(new Set([...prev, ...exact.news_keywords!])));
+        }
+        notify.success("Ключевые слова подтянуты из справочника", exact.symbol);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  function handleAddCustomTag() {
+    const clean = customTag.trim();
+    if (!clean) return;
+    const parts = clean
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    setNewsKeywords((prev) => Array.from(new Set([...prev, ...parts])));
+    setCustomTag("");
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -52,8 +88,11 @@ function HubEditPage() {
           name: name.trim(),
           group,
           category: group,
-          broker_symbols: brokerSymbols.split(",").map((s) => s.trim()).filter(Boolean),
-          news_tags: newsTags.split(",").map((s) => s.trim()).filter(Boolean),
+          broker_symbols: brokerSymbols
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+          news_tags: newsKeywords,
         }),
       });
       notify.success(t.common.savedSuccess, code);
@@ -71,41 +110,103 @@ function HubEditPage() {
     <TerminalPageShell
       title={`${t.hubs.editTitle}: ${code}`}
       actions={
-        <Link to="/dashboard/hubs/$code" params={{ code }} className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent">
+        <Link
+          to="/dashboard/hubs/$code"
+          params={{ code }}
+          className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
+        >
           <ArrowLeft className="mr-1.5 size-3.5" />
           {t.common.back}
         </Link>
       }
     >
-      <Card className="max-w-xl border-border/70">
+      <Card className="max-w-2xl border-border/70">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">{t.hubs.editTitle}</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <AssetLogo symbol={code} size={22} />
+            {t.hubs.editTitle} — {code}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3.5">
             <div className="space-y-1">
-              <Label htmlFor="he-name">Name</Label>
+              <Label htmlFor="he-name">Название</Label>
               <Input id="he-name" required value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="he-grp">Group</Label>
-              <SearchSelect id="he-grp" value={group} onChange={(e) => setGroup(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs">
+              <Label htmlFor="he-grp">Группа</Label>
+              <SearchSelect
+                id="he-grp"
+                value={group}
+                onChange={(e) => setGroup(e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs"
+              >
                 <option value="metals">Metals</option>
                 <option value="indices">Indices</option>
                 <option value="forex">Forex</option>
                 <option value="crypto">Crypto</option>
+                <option value="commodities">Commodities</option>
                 <option value="equities">Equities</option>
                 <option value="macro">Macro</option>
               </SearchSelect>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="he-syms">Broker Symbols</Label>
+              <Label htmlFor="he-syms">Символы брокера MT5</Label>
               <Input id="he-syms" value={brokerSymbols} onChange={(e) => setBrokerSymbols(e.target.value)} />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="he-tags">News Keywords</Label>
-              <Input id="he-tags" value={newsTags} onChange={(e) => setNewsTags(e.target.value)} />
+
+            <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label>Ключевые слова новостей (из справочника тикеров)</Label>
+                <Button type="button" size="xs" variant="outline" onClick={() => void handleFillFromDirectory()}>
+                  <Sparkles className="mr-1 size-3" />
+                  Подтянуть все слова для {code}
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {newsKeywords.map((kw) => (
+                  <Badge key={kw} variant="secondary" className="inline-flex items-center gap-1 text-[11px]">
+                    {kw}
+                    <button
+                      type="button"
+                      onClick={() => setNewsKeywords((prev) => prev.filter((x) => x !== kw))}
+                      className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                    >
+                      <X className="size-2.5" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
+                <TickerSelect
+                  value=""
+                  placeholder="+ Добавить слова другого тикера (DXY, BTC...)"
+                  onSelectTicker={(_s, rec) => {
+                    if (rec?.news_keywords?.length) {
+                      setNewsKeywords((prev) => Array.from(new Set([...prev, ...rec.news_keywords!])));
+                    }
+                  }}
+                />
+                <div className="flex gap-1.5">
+                  <Input
+                    value={customTag}
+                    onChange={(e) => setCustomTag(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddCustomTag();
+                      }
+                    }}
+                    placeholder="Своё слово (Enter)..."
+                    className="h-9 text-xs"
+                  />
+                  <Button type="button" size="sm" variant="outline" className="h-9 px-2.5" onClick={handleAddCustomTag}>
+                    <Plus className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
             </div>
+
             <AsyncButton type="submit" loading={saving} loadingText={t.common.saving}>
               <Save className="mr-1.5 size-4" />
               {t.common.save}

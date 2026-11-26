@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import verify_account_api_key
+from app.core.market_ws_hub import market_ws_hub
 from app.core.symbols import canonical_asset_code
 from app.core.ws_hub import ws_hub
 from app.db.models import (
@@ -405,6 +406,7 @@ async def ingest_snapshot(
     if body.symbol.strip() and body.bid > 0:
         canon_sym = canonical_asset_code(body.symbol) or body.symbol.strip().upper()
         eff_ask = body.ask if body.ask > 0 else body.bid
+        market_ws_hub.record_tick(canon_sym, body.bid, eff_ask, source="mt5_live", min_interval=0.15)
         await ws_hub.broadcast(
             "tick",
             {

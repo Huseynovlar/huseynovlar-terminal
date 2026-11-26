@@ -23,15 +23,18 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
 from app.core.pagination import Page
+from app.core.symbols import canonical_asset_code, sql_symbol_match, symbol_matches_asset
 from app.core.ws_hub import ws_hub
 from app.db.models import (
     AiBriefing,
     AssetHub,
     EconomicEvent,
+    MarketBar,
     MarketCache,
     NewsItem,
     NewsSource,
     OpenPositionLive,
+    Robot,
     SecretVaultEntry,
     TradingAccount,
     User,
@@ -1225,7 +1228,244 @@ async def refresh_market_treemap(
 class AiAnalyzeRequest(BaseModel):
     prompt: str = Field(min_length=3, max_length=4000)
     kind: str = Field(default="copilot", max_length=32)
+    mode: str | None = Field(default=None, max_length=32)
+    symbol: str | None = Field(default=None, max_length=32)
     model: str | None = Field(default=None, max_length=64)
+
+
+def _compute_chart_snapshot_stats(bars: list[dict[str, Any]]) -> dict[str, Any]:
+    if not bars:
+        return {}
+    closes = [float(b["close"]) for b in bars if b.get("close")]
+    highs = [float(b["high"]) for b in bars if b.get("high")]
+    lows = [float(b["low"]) for b in bars if b.get("low")]
+    if not closes:
+        return {}
+    last = closes[-1]
+    first = closes[0]
+    chg_pct = round(((last - first) / first) * 100.0, 2) if first else 0.0
+    hi = max(highs) if highs else last
+    lo = min(lows) if lows else last
+
+    # Bollinger Bands (20, 2.0)
+    win = closes[-20:] if len(closes) >= 20 else closes
+    mean = sum(win) / len(win)
+    variance = sum((c - mean) ** 2 for c in win) / len(win)
+    sd = variance**0.5
+    sell_zone = mean + 2.0 * sd
+    buy_zone = mean - 2.0 * sd
+
+    # RSI(14)
+    rsi = 50.0
+    if len(closes) >= 15:
+        gains = 0.0
+        losses = 0.0
+        for i in range(-14, 0):
+            diff = closes[i] - closes[i - 1]
+            if diff >= 0:
+                gains += diff
+            else:
+                losses -= diff
+        avg_g = gains / 14.0
+        avg_l = losses / 14.0
+        rsi = 100.0 if avg_l == 0 else 100.0 - (100.0 / (1.0 + avg_g / avg_l))
+
+    # Rolling VWAP
+    tp_vol = 0.0
+    vol_sum = 0.0
+    for b in bars[-60:]:
+        tp = (float(b["high"]) + float(b["low"]) + float(b["close"])) / 3.0
+        v = max(1.0, float(b.get("volume") or 1.0))
+        tp_vol += tp * v
+        vol_sum += v
+    vwap = tp_vol / vol_sum if vol_sum > 0 else mean
+
+    dec = 5 if last < 10 else 2
+    return {
+        "price": round(last, dec),
+        "high_24h": round(hi, dec),
+        "low_24h": round(lo, dec),
+        "change_pct": chg_pct,
+        "sell_zone": round(sell_zone, dec),
+        "mean": round(mean, dec),
+        "buy_zone": round(buy_zone, dec),
+        "vwap": round(vwap, dec),
+        "rsi_14": round(rsi, 1),
+        "bars_count": len(closes),
+    }
+
+
+async def _build_asset_deep_context(db: AsyncSession, raw_symbol: str) -> tuple[str, dict[str, Any]]:
+    from app.modules.assets.router import build_ticker_news_keywords
+    from app.modules.charts.router import fetch_yahoo_chart
+
+    canon = canonical_asset_code(raw_symbol) or raw_symbol.strip().upper()
+    hub = (await db.execute(select(AssetHub).where(AssetHub.code == canon))).scalar_one_or_none()
+    broker_syms = hub.broker_symbols if hub and hub.broker_symbols else [canon]
+
+    # 1. 24h News digest for this asset (fallback to recent macro news if quiet 24h)
+    now = datetime.now(UTC)
+    cutoff_24h = now - timedelta(hours=24)
+    recent_rows = (await db.execute(select(NewsItem).order_by(NewsItem.published_at.desc()).limit(200))).scalars().all()
+    kw_list = build_ticker_news_keywords(canon, hub.name if hub else canon, hub.group if hub else "")
+    kw_set = {k.lower() for k in kw_list}
+    if hub and hub.news_tags:
+        kw_set.update(str(t).lower() for t in hub.news_tags if str(t).strip())
+
+    matched_24h: list[NewsItem] = []
+    matched_older: list[NewsItem] = []
+    for n in recent_rows:
+        aff = {canonical_asset_code(str(x)) for x in (n.affected_assets or [])}
+        hay = f"{n.title} {n.summary}".lower()
+        is_match = canon in aff or any(k in hay for k in kw_set)
+        pub = n.published_at if n.published_at.tzinfo else n.published_at.replace(tzinfo=UTC)
+        if is_match:
+            if pub >= cutoff_24h:
+                matched_24h.append(n)
+            else:
+                matched_older.append(n)
+
+    selected_news = matched_24h[:12] if matched_24h else (matched_older[:8] or recent_rows[:6])
+    bull_c = sum(1 for n in selected_news if n.sentiment == "bullish")
+    bear_c = sum(1 for n in selected_news if n.sentiment == "bearish")
+
+    # 2. Recent M5/H1 chart bars & technical indicators
+    db_bars = (
+        (
+            await db.execute(
+                select(MarketBar)
+                .where(sql_symbol_match(MarketBar.symbol, canon, broker_syms), MarketBar.timeframe == "M5")
+                .order_by(MarketBar.bar_time.desc())
+                .limit(288)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    bars_list = [
+        {"open": b.open, "high": b.high, "low": b.low, "close": b.close, "volume": b.volume}
+        for b in reversed(db_bars)
+    ]
+    if len(bars_list) < 30:
+        try:
+            y = await fetch_yahoo_chart(canon, "M5")
+            bars_list = list(y.get("bars") or [])[-288:]
+        except Exception:
+            pass
+    tech = _compute_chart_snapshot_stats(bars_list)
+
+    # 3. Active Robot HUD telemetry & open positions
+    all_robots = (await db.execute(select(Robot))).scalars().all()
+    matched_robots = [
+        r for r in all_robots if (hub and r.asset_id == hub.id) or symbol_matches_asset(r.symbol, canon, broker_syms)
+    ]
+    pos_stmt = select(OpenPositionLive).where(sql_symbol_match(OpenPositionLive.symbol, canon, broker_syms))
+    positions = (await db.execute(pos_stmt)).scalars().all()
+
+    robot_lines: list[str] = []
+    for r in matched_robots[:3]:
+        st = r.live_state_json or {}
+        tel = st.get("telemetry") if isinstance(st.get("telemetry"), dict) else {}
+        merged = {**st, **tel}
+        robot_lines.append(
+            f"{r.name} ({r.symbol}, status={r.live_status}, regime={merged.get('regime', 'N/A')}, "
+            f"bias={merged.get('signal_bias', 'N/A')}, rsi={merged.get('rsi_m5', 'N/A')}, "
+            f"vwap_z={merged.get('vwap_z', 'N/A')}, filter={merged.get('wait_reason', 'N/A')})"
+        )
+
+    news_lines = [
+        f"- [{n.sentiment.upper()}] ({n.source}, {n.published_at.strftime('%H:%M UTC')}): {n.title}"
+        for n in selected_news[:10]
+    ]
+
+    summary_block = (
+        f"Asset: {canon} ({hub.name if hub else canon})\n"
+        f"Chart Technicals (M5 last 24h): {tech if tech else 'No bar data'}\n"
+        f"Active Robots HUD: {'; '.join(robot_lines) if robot_lines else 'None'}\n"
+        f"Open Positions on {canon}: {len(positions)}\n"
+        f"24h News Sentiment: Bullish={bull_c}, Bearish={bear_c}, Total={len(selected_news)}\n"
+        f"Recent 24h Headlines:\n" + ("\n".join(news_lines) if news_lines else "- No recent headlines")
+    )
+    meta = {
+        "canon": canon,
+        "name": hub.name if hub else canon,
+        "tech": tech,
+        "bull_c": bull_c,
+        "bear_c": bear_c,
+        "headlines": [n.title for n in selected_news[:6]],
+        "robots": robot_lines,
+        "open_positions": len(positions),
+    }
+    return summary_block, meta
+
+
+def _build_algorithmic_brief_fallback(meta: dict[str, Any]) -> str:
+    canon = meta.get("canon", "ASSET")
+    tech = meta.get("tech") or {}
+    price = tech.get("price", "—")
+    chg = tech.get("change_pct", 0.0)
+    hi = tech.get("high_24h", "—")
+    lo = tech.get("low_24h", "—")
+    rsi = tech.get("rsi_14", 50.0)
+    sell_z = tech.get("sell_zone", "—")
+    buy_z = tech.get("buy_zone", "—")
+    vwap = tech.get("vwap", "—")
+    bull_c = meta.get("bull_c", 0)
+    bear_c = meta.get("bear_c", 0)
+    headlines = meta.get("headlines") or []
+    robots = meta.get("robots") or []
+
+    rsi_note = (
+        "перекупленность (потенциал отката к VWAP)"
+        if isinstance(rsi, (int, float)) and rsi >= 68
+        else "перепроданность (потенциал возврата к среднему)"
+        if isinstance(rsi, (int, float)) and rsi <= 32
+        else "нейтральный баланс импульса"
+    )
+    sent_note = "Бычий" if bull_c > bear_c else "Медвежий" if bear_c > bull_c else "Нейтральный"
+    hl_md = "\n".join(f"- {h}" for h in headlines[:5]) if headlines else "- Значимых публикаций за 24ч не зафиксировано"
+    rob_md = "\n".join(f"- {r}" for r in robots) if robots else "- Активных советников с телеметрией нет"
+
+    return (
+        f"### Аналитическая сводка 24ч — {canon}\n\n"
+        f"**1. Структура графика и ключевые зоны (M5 / 24ч)**\n"
+        f"- Текущая котировка: **{price}** ({'+' if isinstance(chg, (int, float)) and chg >= 0 else ''}{chg}%)\n"
+        f"- Диапазон 24ч: Low **{lo}** — High **{hi}**\n"
+        f"- Зоны стратегии: **SELL ZONE {sell_z}** • **FAIR (VWAP) {vwap}** • **BUY ZONE {buy_z}**\n"
+        f"- Индикатор **RSI(14): {rsi}** — {rsi_note}\n\n"
+        f"**2. Новостной фон за 24 часа ({sent_note}: Bull {bull_c} / Bear {bear_c})**\n"
+        f"{hl_md}\n\n"
+        f"**3. Телеметрия торговых роботов**\n"
+        f"{rob_md}"
+    )
+
+
+async def _try_free_llm_fallback(system_prompt: str, user_prompt: str) -> tuple[str, str] | None:
+    """Zero-key free LLM fallback (Pollinations OpenAI-compatible API) used when Gemini models return 503/429."""
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(28.0, connect=6.0)) as http:
+            resp = await http.post(
+                "https://text.pollinations.ai/openai",
+                json={
+                    "model": "openai",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.3,
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                txt = (
+                    ((data.get("choices") or [{}])[0].get("message") or {}).get("content")
+                    or ""
+                ).strip()
+                if txt:
+                    return txt, "free-ai-gpt4o-mini"
+    except Exception:
+        pass
+    return None
 
 
 @router.post("/ai/analyze")
@@ -1235,17 +1475,16 @@ async def gemini_ai_copilot(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    """Google AI (Gemini) Co-Pilot enriched with live portfolio equity, open positions, and recent news."""
+    """Multi-model AI Analyst enriched with 24h news headlines, real OHLC chart indicators, and Robot HUD."""
     api_key = (settings.google_ai_api_key or "").strip()
     if not api_key:
         vault_entry = await db.get(SecretVaultEntry, "google_ai_api_key")
         if vault_entry:
             api_key = decrypt_secret(vault_entry.value_enc, settings.vault_master_key).strip()
 
-    default_model = (settings.google_ai_default_model or "gemini-3.8-flash").strip()
-    model_name = (body.model or default_model).strip()
-    if model_name.startswith(("gemini-1.", "gemini-2.")):
-        model_name = default_model
+    default_model = (settings.google_ai_default_model or "gemini-2.5-flash-lite").strip()
+    primary_model = (body.model or default_model).strip()
+    is_asset_brief = bool((body.symbol and body.symbol.strip()) or body.mode == "asset_deep_dive")
 
     accounts = (await db.execute(select(TradingAccount))).scalars().all()
     positions = (await db.execute(select(OpenPositionLive))).scalars().all()
@@ -1260,7 +1499,12 @@ async def gemini_ai_copilot(
         f"Latest Headlines: {'; '.join(n.title for n in recent_news[:6]) or 'None yet'}."
     )
 
-    if not api_key:
+    asset_meta: dict[str, Any] = {}
+    if body.symbol and body.symbol.strip():
+        asset_block, asset_meta = await _build_asset_deep_context(db, body.symbol)
+        context_text = f"{context_text}\n\n{asset_block}"
+
+    if not api_key and not is_asset_brief:
         reply = (
             "**Google AI (Gemini) ключ не настроен.**\n\n"
             "Добавьте `GEMINI_API_KEY` (или `google_ai_api_key`) в `/opt/huseynovlar-terminal/.env` "
@@ -1270,62 +1514,116 @@ async def gemini_ai_copilot(
         return {
             "configured": False,
             "error": "Gemini API key not configured in /opt/huseynovlar-terminal/.env",
-            "model": model_name,
+            "model": primary_model,
             "response_md": reply,
+            "content_md": reply,
         }
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": (
-                            "You are an institutional Bloomberg-grade multi-asset trading & risk analyst. "
-                            "Respond concisely with clear, structured bullet points based only on real data.\n\n"
-                            f"{context_text}\n\nUser request: {body.prompt}"
-                        )
-                    }
+    sys_instruction = (
+        "Ты — институциональный мульти-активный аналитик уровня Bloomberg / MetaTrader 5. "
+        "Отвечай на русском языке чётко, структурированно, по пунктам: "
+        "1) Рыночный режим и ключевые уровни графика (SELL ZONE / FAIR VWAP / BUY ZONE / RSI), "
+        "2) Сводка новостей за 24 часа и их влияние, "
+        "3) Оценка рисков и сценарий для торгового робота. Используй только переданные реальные данные."
+    )
+    full_text_prompt = f"{sys_instruction}\n\n{context_text}\n\nЗапрос: {body.prompt}"
+
+    text_out = ""
+    used_model = primary_model
+    last_status_exc: httpx.HTTPStatusError | None = None
+
+    if api_key:
+        candidate_models = list(
+            dict.fromkeys(
+                [
+                    primary_model,
+                    "gemini-2.5-flash-lite",
+                    "gemini-2.0-flash-lite",
+                    "gemini-2.0-flash",
+                    "gemini-2.5-flash",
+                    "gemini-flash-latest",
                 ]
-            }
-        ]
-    }
-    try:
-        # Gemini 3.x may take longer on analytical prompts. Keep a bounded
-        # response timeout and retry connection establishment once.
-        timeout = httpx.Timeout(90.0, connect=10.0)
+            )
+        )
+        payload = {"contents": [{"parts": [{"text": full_text_prompt}]}]}
+        timeout = httpx.Timeout(45.0, connect=10.0)
         transport = httpx.AsyncHTTPTransport(retries=1)
-        async with httpx.AsyncClient(timeout=timeout, transport=transport) as http:
-            resp = await http.post(url, params={"key": api_key}, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gemini API error ({exc.response.status_code}): {exc.response.text[:250]}",
-        ) from exc
-    except httpx.TimeoutException as exc:
-        logger.warning("Gemini API timed out (model=%s)", model_name, exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail=(
-                f"Gemini API timed out ({type(exc).__name__}) while waiting for model "
-                f"{model_name}. Check outbound HTTPS access from the backend and retry."
-            ),
-        ) from exc
-    except httpx.RequestError as exc:
-        logger.warning("Gemini API connection failed (model=%s)", model_name, exc_info=True)
-        reason = str(exc).strip() or repr(exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Gemini API connection failed ({type(exc).__name__}): {reason}",
-        ) from exc
 
-    text_out = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        try:
+            async with httpx.AsyncClient(timeout=timeout, transport=transport) as http:
+                for cand_model in candidate_models:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{cand_model}:generateContent"
+                    try:
+                        resp = await http.post(url, params={"key": api_key}, json=payload)
+                        if resp.status_code in (404, 429, 500, 502, 503, 504):
+                            logger.warning(
+                                "Gemini model %s returned HTTP %d; trying next fallback model",
+                                cand_model,
+                                resp.status_code,
+                            )
+                            resp.raise_for_status()
+                        resp.raise_for_status()
+                        data = resp.json()
+                        cand_txt = (
+                            data.get("candidates", [{}])[0]
+                            .get("content", {})
+                            .get("parts", [{}])[0]
+                            .get("text", "")
+                        )
+                        if cand_txt:
+                            text_out = cand_txt
+                            used_model = cand_model
+                            break
+                    except httpx.HTTPStatusError as st_exc:
+                        last_status_exc = st_exc
+                        if st_exc.response.status_code in (404, 429, 500, 502, 503, 504):
+                            continue
+                        raise
+        except httpx.TimeoutException as exc:
+            if not is_asset_brief:
+                logger.warning("Gemini API timed out (model=%s)", primary_model, exc_info=True)
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail=(
+                        f"Gemini API timed out ({type(exc).__name__}) while waiting for model "
+                        f"{primary_model}. Check outbound HTTPS access from the backend and retry."
+                    ),
+                ) from exc
+        except httpx.RequestError as exc:
+            if not is_asset_brief:
+                logger.warning("Gemini API connection failed (model=%s)", primary_model, exc_info=True)
+                reason = str(exc).strip() or repr(exc)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Gemini API connection failed ({type(exc).__name__}): {reason}",
+                ) from exc
+        except httpx.HTTPStatusError as exc:
+            if not is_asset_brief:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Gemini API error ({exc.response.status_code}): {exc.response.text[:250]}",
+                ) from exc
+
+    # Free keyless LLM fallback when all Gemini models are overloaded (503/429) or unconfigured on Hub View
     if not text_out:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Empty response from Gemini API")
+        free_res = await _try_free_llm_fallback(sys_instruction, f"{context_text}\n\nЗапрос: {body.prompt}")
+        if free_res is not None:
+            text_out, used_model = free_res
 
-    briefing = AiBriefing(kind=body.kind, model_name=model_name, prompt=body.prompt, response_md=text_out)
+    # Deterministic quantitative 24h digest if all external AI providers are unreachable
+    if not text_out and asset_meta:
+        text_out = _build_algorithmic_brief_fallback(asset_meta)
+        used_model = "quant-digest-24h"
+
+    if not text_out:
+        if last_status_exc is not None:
+            sc = last_status_exc.response.status_code
+            body_snip = last_status_exc.response.text[:250]
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Gemini API error ({sc}): {body_snip}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Empty response from AI provider")
+
+    kind_val = body.mode or body.kind
+    briefing = AiBriefing(kind=kind_val[:32], model_name=used_model[:64], prompt=body.prompt, response_md=text_out)
     db.add(briefing)
     await db.commit()
     return {
@@ -1335,6 +1633,8 @@ async def gemini_ai_copilot(
         "model": briefing.model_name,
         "prompt": briefing.prompt,
         "response_md": briefing.response_md,
+        "content_md": briefing.response_md,
+        "summary": briefing.response_md,
         "created_at": briefing.created_at.isoformat(),
     }
 

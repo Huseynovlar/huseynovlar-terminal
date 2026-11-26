@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
@@ -545,11 +545,149 @@ _CORE_MARKET_TICKERS: list[tuple[str, str, str, str]] = [
 ]
 
 
+_SPECIFIC_NEWS_KEYWORDS: dict[str, list[str]] = {
+    "XAUUSD": ["XAUUSD", "Gold", "Bullion", "Spot Gold", "XAU", "Fed", "Real Yields", "DXY", "Inflation", "Safe Haven"],
+    "XAGUSD": ["XAGUSD", "Silver", "Bullion", "XAG", "Industrial Metals", "Fed", "DXY", "Inflation"],
+    "USOIL": ["USOIL", "WTI", "Crude Oil", "OPEC", "EIA Inventory", "Energy", "Geopolitics"],
+    "UKOIL": ["UKOIL", "Brent", "Crude Oil", "OPEC", "North Sea", "Energy", "Geopolitics"],
+    "NGAS": ["NGAS", "Natural Gas", "Henry Hub", "LNG", "EIA Storage", "Energy"],
+    "USTEC": ["USTEC", "NASDAQ", "Nasdaq 100", "NDX", "QQQ", "Big Tech", "AI", "Semiconductors", "Fed", "US Yields"],
+    "US500": ["US500", "S&P 500", "SPX", "SPY", "Wall Street", "Fed", "FOMC", "US CPI", "Earnings"],
+    "US30": ["US30", "Dow Jones", "DJI", "DIA", "Blue Chips", "US Economy", "Fed"],
+    "DXY": ["DXY", "US Dollar", "Dollar Index", "Fed", "FOMC", "Treasury Yields", "CPI", "NFP"],
+    "VIX": ["VIX", "Volatility", "CBOE VIX", "Risk-Off", "Options", "S&P 500"],
+    "US10Y": ["US10Y", "Treasury Yields", "10-Year Yield", "Bonds", "Fed", "Inflation"],
+    "BTCUSD": ["BTC", "Bitcoin", "BTCUSD", "Spot Bitcoin ETF", "Crypto", "SEC", "Halving", "Institutional Flow"],
+    "ETHUSD": ["ETH", "Ethereum", "ETHUSD", "Spot ETH ETF", "Layer 2", "DeFi", "Staking", "Crypto"],
+    "SOLUSD": ["SOL", "Solana", "SOLUSD", "Solana DeFi", "DEX", "Crypto", "Altcoins"],
+    "BNBUSD": ["BNB", "BNB Chain", "Binance", "Crypto", "Exchange"],
+    "XRPUSD": ["XRP", "Ripple", "RLUSD", "SEC", "Payments", "Crypto"],
+    "TONUSD": ["TON", "Toncoin", "Telegram", "Web3", "Crypto"],
+    "DOGEUSD": ["DOGE", "Dogecoin", "Memecoin", "Crypto"],
+    "ADAUSD": ["ADA", "Cardano", "Smart Contracts", "Crypto"],
+    "NVDA": ["NVDA", "NVIDIA", "AI Chips", "GPU", "Blackwell", "Data Center", "Semiconductors"],
+    "AAPL": ["AAPL", "Apple", "iPhone", "Apple Intelligence", "Services", "Big Tech"],
+    "MSFT": ["MSFT", "Microsoft", "Azure", "OpenAI", "Cloud", "Enterprise AI"],
+    "AMZN": ["AMZN", "Amazon", "AWS", "Cloud", "E-Commerce", "Retail"],
+    "GOOGL": ["GOOGL", "Alphabet", "Google", "Gemini", "Search", "Cloud"],
+    "META": ["META", "Meta", "Llama", "Instagram", "Digital Ads", "AI"],
+    "TSLA": ["TSLA", "Tesla", "EV", "FSD", "Robotaxi", "Energy Storage"],
+    "AMD": ["AMD", "Advanced Micro Devices", "MI300", "AI Chips", "Semiconductors"],
+    "COIN": ["COIN", "Coinbase", "Crypto Exchange", "Bitcoin ETF", "Base", "SEC"],
+    "MSTR": ["MSTR", "MicroStrategy", "Bitcoin Treasury", "BTC"],
+    "PLTR": ["PLTR", "Palantir", "AIP", "Defense AI", "Enterprise Software"],
+}
+
+_CCY_CENTRAL_BANKS: dict[str, list[str]] = {
+    "USD": ["USD", "Fed", "FOMC", "US CPI", "NFP"],
+    "EUR": ["EUR", "ECB", "Eurozone CPI", "Lagarde"],
+    "GBP": ["GBP", "BOE", "Bank of England", "UK CPI"],
+    "JPY": ["JPY", "BOJ", "Bank of Japan", "Yen Intervention"],
+    "CHF": ["CHF", "SNB", "Swiss Franc"],
+    "AUD": ["AUD", "RBA", "Australia", "China PMI"],
+    "CAD": ["CAD", "BOC", "Bank of Canada", "Crude Oil"],
+    "NZD": ["NZD", "RBNZ", "New Zealand"],
+}
+
+_SEARCH_SYNONYMS: dict[str, str] = {
+    "XAUSD": "XAUUSD",
+    "XAU": "XAUUSD",
+    "GOLD": "XAUUSD",
+    "ЗОЛОТО": "XAUUSD",
+    "XAG": "XAGUSD",
+    "SILVER": "XAGUSD",
+    "СЕРЕБРО": "XAGUSD",
+    "NAS100": "USTEC",
+    "NASDAQ": "USTEC",
+    "NDX": "USTEC",
+    "US100": "USTEC",
+    "SPX": "US500",
+    "SP500": "US500",
+    "DJI": "US30",
+    "WTI": "USOIL",
+    "НЕФТЬ": "USOIL",
+    "OIL": "USOIL",
+    "БИТКОИН": "BTCUSD",
+    "BTC": "BTCUSD",
+    "ЭФИР": "ETHUSD",
+    "ETH": "ETHUSD",
+}
+
+
+def build_ticker_news_keywords(symbol: str, name: str = "", asset_class: str = "", exchange: str = "") -> list[str]:
+    """Generate rich asset-specific news keywords/tags for any crypto, forex, metal, index, or equity ticker."""
+    sym = symbol.strip().upper()
+    if sym in _SPECIFIC_NEWS_KEYWORDS:
+        return list(_SPECIFIC_NEWS_KEYWORDS[sym])
+
+    cls = (asset_class or "").strip().lower()
+    clean_name = re.sub(r"\s*\(.*?\)\s*", " ", name or "").replace("/ US Dollar", "").strip()
+    out: list[str] = [sym]
+
+    if cls == "crypto" or (sym.endswith("USD") and exchange.upper() == "BINANCE"):
+        base = sym[:-3] if sym.endswith("USD") and len(sym) > 3 else sym
+        for kw in (base, clean_name, f"{base}USDT", "Crypto", "Altcoin", "Blockchain", "Binance", "DeFi", "SEC"):
+            if kw and kw not in out:
+                out.append(kw)
+        return out[:10]
+
+    if cls == "forex" or (len(sym) == 6 and sym[:3] in _CCY_CENTRAL_BANKS and sym[3:] in _CCY_CENTRAL_BANKS):
+        c1, c2 = sym[:3], sym[3:6]
+        out.append(f"{c1}/{c2}")
+        for kw in [*_CCY_CENTRAL_BANKS.get(c1, []), *_CCY_CENTRAL_BANKS.get(c2, []), "Forex", "Interest Rates"]:
+            if kw and kw not in out:
+                out.append(kw)
+        return out[:10]
+
+    if cls in ("metals", "commodities"):
+        for kw in (clean_name, "Commodities", "Fed", "DXY", "Inflation", "Supply"):
+            if kw and kw not in out:
+                out.append(kw)
+        return out[:9]
+
+    if cls == "indices":
+        for kw in (clean_name, "Macro", "Fed", "FOMC", "Yields", "Earnings"):
+            if kw and kw not in out:
+                out.append(kw)
+        return out[:9]
+
+    # Equities / ETFs
+    short_corp = re.sub(
+        r"\b(Inc\.?|Corporation|Corp\.?|Ltd\.?|PLC|Holdings|Group|Incorporated|Class [A-Z])\b",
+        "",
+        clean_name,
+        flags=re.IGNORECASE,
+    ).strip(" ,.-")
+    for kw in (short_corp, clean_name, exchange.upper(), "Earnings", "Guidance", "Wall Street", "US Stocks"):
+        if kw and len(kw) >= 2 and kw not in out:
+            out.append(kw)
+    return out[:9]
+
+
+def build_ticker_broker_symbols(symbol: str, asset_class: str = "") -> list[str]:
+    sym = symbol.strip().upper()
+    cls = (asset_class or "").strip().lower()
+    if sym == "XAUUSD":
+        return ["XAUUSD", "XAUUSDc", "XAUUSDm", "GOLD"]
+    if sym == "XAGUSD":
+        return ["XAGUSD", "XAGUSDc", "XAGUSDm", "SILVER"]
+    if sym == "USTEC":
+        return ["USTEC", "USTECc", "USTECm", "NAS100"]
+    if sym == "US500":
+        return ["US500", "US500c", "US500m", "SPX500"]
+    if sym == "US30":
+        return ["US30", "US30c", "US30m", "DJ30"]
+    if cls in ("forex", "metals", "indices", "commodities", "crypto"):
+        return [sym, f"{sym}c", f"{sym}m"]
+    return [sym]
+
+
 async def _ensure_core_tickers(db: AsyncSession) -> None:
-    cnt = int((await db.execute(select(func.count(MarketTicker.symbol)))).scalar_one() or 0)
-    if cnt > 0:
+    existing = set((await db.execute(select(MarketTicker.symbol))).scalars().all())
+    missing = [item for item in _CORE_MARKET_TICKERS if item[0] not in existing]
+    if not missing:
         return
-    for sym, name, cls, exch in _CORE_MARKET_TICKERS:
+    for sym, name, cls, exch in missing:
         db.add(MarketTicker(symbol=sym, name=name, asset_class=cls, exchange=exch, source="core"))
     await db.commit()
 
@@ -563,22 +701,40 @@ async def list_market_tickers(
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
-    """Master reference directory of all available market tickers (for Hub/Robot dropdowns & browsing)."""
+    """Master reference directory of all available market tickers with news_keywords & broker_symbols."""
     await _ensure_core_tickers(db)
     stmt = select(MarketTicker)
     if asset_class and asset_class.strip().lower() not in ("", "all"):
         stmt = stmt.where(MarketTicker.asset_class == asset_class.strip().lower())
-    if q and q.strip():
-        pat = f"%{q.strip()}%"
-        stmt = stmt.where(or_(MarketTicker.symbol.ilike(pat), MarketTicker.name.ilike(pat)))
+
+    q_clean = q.strip() if q and q.strip() else ""
+    q_up = q_clean.upper()
+    synonym_sym = _SEARCH_SYNONYMS.get(q_up) or canonical_asset_code(q_up)
+    if q_clean:
+        pat = f"%{q_clean}%"
+        conds = [MarketTicker.symbol.ilike(pat), MarketTicker.name.ilike(pat)]
+        if synonym_sym and synonym_sym != q_up:
+            conds.append(MarketTicker.symbol.ilike(f"%{synonym_sym}%"))
+        stmt = stmt.where(or_(*conds))
 
     total = int((await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one() or 0)
     response.headers["X-Total-Count"] = str(total)
-    ordered_stmt = (
-        stmt.order_by(MarketTicker.asset_class.asc(), MarketTicker.symbol.asc())
-        .limit(page.limit)
-        .offset(page.offset)
-    )
+
+    # Always rank exact/synonym matches and core institutional instruments (XAUUSD, USTEC, EURUSD, BTCUSD, NVDA) first!
+    core_rank = case((MarketTicker.source == "core", 0), else_=1)
+    if q_up:
+        exact_rank = case(
+            (MarketTicker.symbol == q_up, 0),
+            (MarketTicker.symbol == synonym_sym, 1),
+            (MarketTicker.symbol.ilike(f"{q_up}%"), 2),
+            else_=3,
+        )
+        ordered_stmt = (
+            stmt.order_by(exact_rank, core_rank, MarketTicker.symbol.asc()).limit(page.limit).offset(page.offset)
+        )
+    else:
+        ordered_stmt = stmt.order_by(core_rank, MarketTicker.symbol.asc()).limit(page.limit).offset(page.offset)
+
     rows = (await db.execute(ordered_stmt)).scalars().all()
     return [
         {
@@ -588,6 +744,8 @@ async def list_market_tickers(
             "exchange": r.exchange,
             "source": r.source,
             "logo_url": f"/api/v1/assets/logo/{r.symbol}",
+            "broker_symbols": build_ticker_broker_symbols(r.symbol, r.asset_class),
+            "news_keywords": build_ticker_news_keywords(r.symbol, r.name, r.asset_class, r.exchange),
         }
         for r in rows
     ]

@@ -429,3 +429,65 @@ def test_websocket_live_auth_welcome_and_ping_pong():
             assert len(rpc_tk["data"]) == 5
 
     asyncio.run(engine.dispose())
+
+
+async def test_tickers_news_keywords_mt5_ticks_and_ai_503_fallback(client: AsyncClient):
+    """Verify XAUSD/GOLD search returns XAUUSD + news_keywords, /charts/ticks works, and AI 503 auto-falls back."""
+    import httpx
+
+    h, _ = await _bootstrap(client)
+
+    # 1. Core tickers always include XAUUSD on page 1 and match typo 'XAUSD' / 'GOLD' with news_keywords
+    t_page1 = (await client.get("/api/v1/assets/tickers?limit=60&offset=0", headers=h)).json()
+    syms_p1 = {t["symbol"] for t in t_page1}
+    assert "XAUUSD" in syms_p1
+    assert "USTEC" in syms_p1
+
+    t_typo = (await client.get("/api/v1/assets/tickers?q=XAUSD", headers=h)).json()
+    assert len(t_typo) >= 1
+    assert t_typo[0]["symbol"] == "XAUUSD"
+    assert "Gold" in t_typo[0]["news_keywords"]
+    assert "XAUUSDc" in t_typo[0]["broker_symbols"]
+
+    # 2. Crypto ticker includes crypto news_keywords
+    t_btc = (await client.get("/api/v1/assets/tickers?q=BTC", headers=h)).json()
+    assert t_btc[0]["symbol"] == "BTCUSD"
+    assert "Bitcoin" in t_btc[0]["news_keywords"]
+
+    # 3. AI 503 fallback: first Gemini model returns 503 UNAVAILABLE, second succeeds!
+    await client.put("/api/v1/profile/vault/google_ai_api_key", headers=h, json={"value": "AIzaFallbackKey"})
+    await client.post("/api/v1/assets", headers=h, json={"code": "XAUUSD", "name": "Gold Spot", "group": "metals"})
+
+    resp_503 = MagicMock()
+    resp_503.status_code = 503
+    resp_503.text = '{"error":{"code":503,"status":"UNAVAILABLE"}}'
+    resp_503.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "503 Unavailable",
+        request=httpx.Request("POST", "https://generativelanguage.googleapis.com/v1beta/models/m1:generateContent"),
+        response=resp_503,
+    )
+
+    resp_200 = MagicMock()
+    resp_200.status_code = 200
+    resp_200.raise_for_status = MagicMock()
+    resp_200.json.return_value = {
+        "candidates": [{"content": {"parts": [{"text": "### Обзор XAUUSD\n- Зона покупок удержана."}]}}]
+    }
+
+    mock_http = AsyncMock()
+    mock_http.__aenter__.return_value = mock_http
+    mock_http.post = AsyncMock(side_effect=[resp_503, resp_200])
+
+    with (
+        patch("app.modules.charts.router.fetch_yahoo_chart", AsyncMock(return_value={"bars": []})),
+        patch("app.modules.intelligence.router.httpx.AsyncClient", return_value=mock_http),
+    ):
+        ai = await client.post(
+            "/api/v1/intelligence/ai/analyze",
+            headers=h,
+            json={"mode": "asset_deep_dive", "symbol": "XAUUSD", "prompt": "Обзор XAUUSD за 24ч"},
+        )
+    assert ai.status_code == 200
+    assert "Обзор XAUUSD" in ai.json()["response_md"]
+    assert "Обзор XAUUSD" in ai.json()["content_md"]
+

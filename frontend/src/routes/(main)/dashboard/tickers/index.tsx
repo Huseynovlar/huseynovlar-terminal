@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Compass, Plus, RefreshCw, Search } from "lucide-react";
 
 import { AsyncButton } from "@/components/ui/async-button";
@@ -27,12 +27,15 @@ export interface MarketTickerItem {
   exchange: string;
   source: string;
   logo_url: string;
+  broker_symbols?: string[];
+  news_keywords?: string[];
 }
 
-const CLASSES = ["all", "equities", "crypto", "forex", "metals", "indices", "commodities"] as const;
+const CLASSES = ["all", "metals", "indices", "forex", "crypto", "equities", "commodities"] as const;
 
 function MarketTickersPage() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [items, setItems] = useState<MarketTickerItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -46,7 +49,7 @@ function MarketTickersPage() {
     const id = window.setTimeout(() => {
       setDebouncedQ(query.trim());
       setPage(1);
-    }, 220);
+    }, 200);
     return () => window.clearTimeout(id);
   }, [query]);
 
@@ -77,7 +80,10 @@ function MarketTickersPage() {
       const res = await apiRequest<{ added: number; total: number; sources: string[] }>("/assets/tickers/sync", {
         method: "POST",
       });
-      notify.success("Справочник тикеров обновлён", `+${res.added} новых (всего ${res.total}: ${res.sources.join(", ")})`);
+      notify.success(
+        "Справочник тикеров обновлён",
+        `+${res.added} новых (всего ${res.total}: ${res.sources.join(", ")})`,
+      );
       setPage(1);
       await loadTickers();
     } catch (err) {
@@ -90,7 +96,7 @@ function MarketTickersPage() {
   return (
     <TerminalPageShell
       title="Справочник тикеров"
-      subtitle="Все доступные инструменты (Binance, Alpaca US Stocks/ETFs, Forex, Металлы, Индексы) с официальными логотипами — используются при создании Хабов и Роботов"
+      subtitle="Все доступные инструменты (Металлы, Индексы, Forex, Крипто Binance, Акции Alpaca) с логотипами и кодовыми словами для новостей"
       badge={`${total} тикеров`}
       actions={
         <AsyncButton size="sm" loading={syncing} loadingText="Синхронизация..." onClick={() => void handleSync()}>
@@ -105,7 +111,7 @@ function MarketTickersPage() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Поиск: NVIDIA, AAPL, BTC, XAUUSD, EURUSD..."
+            placeholder="Поиск: XAUUSD, GOLD, USTEC, BTC, NVIDIA, AAPL..."
             className="h-8 pl-8 text-xs"
           />
         </div>
@@ -128,7 +134,7 @@ function MarketTickersPage() {
       </div>
 
       {loading ? (
-        <TableSkeleton rows={8} cols={5} />
+        <TableSkeleton rows={8} cols={6} />
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-xs text-muted-foreground">{t.common.noData}</CardContent>
@@ -142,7 +148,8 @@ function MarketTickersPage() {
                   <th className="px-3 py-2">Тикер и Лого</th>
                   <th className="px-3 py-2">Название</th>
                   <th className="px-3 py-2">Класс</th>
-                  <th className="px-3 py-2">Биржа / Источник</th>
+                  <th className="px-3 py-2">Ключевые слова новостей (News Keywords)</th>
+                  <th className="px-3 py-2">Биржа</th>
                   <th className="px-3 py-2 text-right">{t.common.actions}</th>
                 </tr>
               </thead>
@@ -161,25 +168,38 @@ function MarketTickersPage() {
                         {tk.asset_class}
                       </Badge>
                     </td>
+                    <td className="max-w-md px-3 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {(tk.news_keywords ?? []).slice(0, 6).map((kw) => (
+                          <Badge key={kw} variant="secondary" className="font-mono text-[10px]">
+                            {kw}
+                          </Badge>
+                        ))}
+                      </div>
+                    </td>
                     <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">
                       {tk.exchange} • {tk.source}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1.5">
-                        <Link
-                          to="/dashboard/explorer"
-                          className="inline-flex h-7 items-center gap-1 rounded-md border border-input px-2 text-[11px] hover:bg-accent"
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => void navigate({ to: "/dashboard/explorer" })}
                         >
-                          <Compass className="size-3" />
+                          <Compass className="mr-1 size-3" />
                           График
-                        </Link>
-                        <Link
-                          to="/dashboard/hubs/new"
-                          className="inline-flex h-7 items-center gap-1 rounded-md bg-primary/10 px-2 text-[11px] font-medium text-primary hover:bg-primary/20"
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="default"
+                          onClick={() => {
+                            window.location.href = `/dashboard/hubs/new?ticker=${encodeURIComponent(tk.symbol)}`;
+                          }}
                         >
-                          <Plus className="size-3" />
+                          <Plus className="mr-1 size-3" />
                           В Хаб
-                        </Link>
+                        </Button>
                       </div>
                     </td>
                   </tr>

@@ -16,6 +16,7 @@ from app.core import market_data
 from app.core.config import Settings, get_settings
 from app.core.database import get_db, get_session_factory
 from app.core.deps import get_current_user
+from app.core.market_ws_hub import market_ws_hub
 from app.core.security import decode_token
 from app.core.symbols import canonical_asset_code, expand_symbol_variants, sql_symbol_match
 from app.core.ws_hub import ws_hub
@@ -333,6 +334,98 @@ async def explore_any_symbol_chart(
         "open_positions": [],
         "deals": [],
         "is_explorer": True,
+    }
+
+
+def _estimate_half_spread(canon: str, ref_price: float) -> float:
+    if canon == "XAUUSD":
+        return 0.08
+    if canon == "XAGUSD":
+        return 0.012
+    if canon in ("USTEC", "US30"):
+        return 0.65
+    if canon == "US500":
+        return 0.18
+    if ref_price < 10:
+        return round(max(ref_price * 0.00006, 0.00005), 6)
+    return round(max(ref_price * 0.00012, 0.01), 4)
+
+
+@router.get("/charts/ticks/{symbol}")
+async def get_symbol_recent_ticks(
+    symbol: str,
+    limit: int = Query(default=140, ge=10, le=200),
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Return rolling live Bid/Ask ticks + latest L2 orderbook for immediate MT5-style Tick Chart hydration."""
+    canon = canonical_asset_code(symbol) or symbol.strip().upper()
+    live_ticks = market_ws_hub.get_recent_ticks(canon, limit=limit)
+    ob = market_ws_hub.get_latest_orderbook(canon)
+
+    if len(live_ticks) < 24:
+        # Backfill older path from recent M1/M5 DB or upstream bars so cold-opened chart has full tick trajectory
+        bars_db = (
+            (
+                await db.execute(
+                    select(MarketBar)
+                    .where(sql_symbol_match(MarketBar.symbol, canon), MarketBar.timeframe.in_(["M1", "M5"]))
+                    .order_by(MarketBar.bar_time.desc())
+                    .limit(30)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        seed_bars: list[dict[str, Any]] = [
+            {
+                "time": int(b.bar_time),
+                "open": float(b.open),
+                "high": float(b.high),
+                "low": float(b.low),
+                "close": float(b.close),
+            }
+            for b in reversed(bars_db)
+        ]
+        if len(seed_bars) < 12:
+            with contextlib.suppress(Exception):
+                y = await fetch_yahoo_chart(canon, "M1")
+                seed_bars = list(y.get("bars") or [])[-30:]
+
+        if seed_bars:
+            cutoff_ms = live_ticks[0]["ts_ms"] if live_ticks else int(datetime.now(UTC).timestamp() * 1000) + 1
+            synth: list[dict[str, Any]] = []
+            prev_p = float(seed_bars[0]["open"])
+            for b in seed_bars:
+                base_ms = int(b["time"]) * 1000
+                if base_ms >= cutoff_ms:
+                    continue
+                o, h, lo, c = float(b["open"]), float(b["high"]), float(b["low"]), float(b["close"])
+                seq = (o, lo, h, c) if c >= o else (o, h, lo, c)
+                for idx, mid_p in enumerate(seq):
+                    ts_ms = base_ms + idx * 12_000
+                    if ts_ms >= cutoff_ms:
+                        break
+                    hs = _estimate_half_spread(canon, mid_p)
+                    dec = 5 if mid_p < 10 else 3
+                    synth.append(
+                        {
+                            "ts_ms": ts_ms,
+                            "symbol": canon,
+                            "bid": round(mid_p - hs, dec),
+                            "ask": round(mid_p + hs, dec),
+                            "price": round(mid_p, dec),
+                            "side": "buy" if mid_p >= prev_p else "sell",
+                            "source": "history_seed",
+                        }
+                    )
+                    prev_p = mid_p
+            live_ticks = (synth + live_ticks)[-limit:]
+
+    return {
+        "symbol": canon,
+        "ticks": live_ticks,
+        "orderbook": ob,
     }
 
 

@@ -5,8 +5,11 @@ import contextlib
 import json
 import logging
 import time
+from collections import deque
+from typing import Any
 
 from app.core.config import Settings
+from app.core.symbols import canonical_asset_code
 from app.core.ws_hub import ws_hub
 
 logger = logging.getLogger(__name__)
@@ -49,16 +52,20 @@ TIINGO_FX_TICKERS: dict[str, str] = {
 
 
 class ServerMarketWsHub:
-    """Server-side real-time WebSocket collector:
+    """Server-side real-time WebSocket collector + rolling 180-tick MT5 Market Watch buffer:
     - Tiingo FX WS -> real-time Spot Gold (XAUUSD), Silver (XAGUSD), and 13 Forex pairs
     - Binance Vision WS -> real-time Crypto ticks + L2 orderbook
+    - MT5 Bridge / Alpaca IEX -> recorded via record_tick()
     """
 
     def __init__(self) -> None:
         self._tasks: list[asyncio.Task[None]] = []
         self._stop_event = asyncio.Event()
         self._last_emit: dict[str, float] = {}
+        self._last_ring: dict[str, float] = {}
         self._prev_mid: dict[str, float] = {}
+        self._tick_ring: dict[str, deque[dict[str, Any]]] = {}
+        self._orderbook_cache: dict[str, dict[str, Any]] = {}
         self._tiingo_key: str = ""
 
     def _allow_emit(self, key: str, min_interval: float = 0.2) -> bool:
@@ -70,6 +77,60 @@ class ServerMarketWsHub:
             return False
         self._last_emit[key] = now
         return True
+
+    def record_tick(
+        self,
+        symbol: str,
+        bid: float,
+        ask: float,
+        *,
+        bid_size: float = 1.0,
+        ask_size: float = 1.0,
+        source: str = "live",
+        min_interval: float = 0.22,
+    ) -> dict[str, Any] | None:
+        canon = canonical_asset_code(symbol) or symbol.strip().upper()
+        if not canon or bid <= 0:
+            return None
+        eff_ask = ask if ask >= bid else bid
+        now_mono = time.monotonic()
+        if now_mono - self._last_ring.get(canon, 0.0) < min_interval:
+            return None
+        self._last_ring[canon] = now_mono
+
+        mid = (bid + eff_ask) / 2.0
+        prev = self._prev_mid.get(canon, mid)
+        side = "buy" if mid >= prev else "sell"
+        self._prev_mid[canon] = mid
+
+        entry = {
+            "ts_ms": int(time.time() * 1000),
+            "symbol": canon,
+            "bid": bid,
+            "ask": eff_ask,
+            "price": round(mid, 5),
+            "bid_size": bid_size,
+            "ask_size": ask_size,
+            "side": side,
+            "source": source,
+        }
+        buf = self._tick_ring.get(canon)
+        if buf is None:
+            buf = deque(maxlen=180)
+            self._tick_ring[canon] = buf
+        buf.append(entry)
+        return entry
+
+    def get_recent_ticks(self, symbol: str, limit: int = 160) -> list[dict[str, Any]]:
+        canon = canonical_asset_code(symbol) or symbol.strip().upper()
+        buf = self._tick_ring.get(canon)
+        if not buf:
+            return []
+        return list(buf)[-limit:]
+
+    def get_latest_orderbook(self, symbol: str) -> dict[str, Any] | None:
+        canon = canonical_asset_code(symbol) or symbol.strip().upper()
+        return self._orderbook_cache.get(canon)
 
     async def start(self, settings: Settings | None = None) -> None:
         if self._tasks:
@@ -132,41 +193,36 @@ class ServerMarketWsHub:
                         if stream.endswith("@bookTicker"):
                             bid = float(data.get("b") or 0.0)
                             ask = float(data.get("a") or 0.0)
+                            bid_sz = float(data.get("B") or 1.0)
+                            ask_sz = float(data.get("A") or 1.0)
                             if bid > 0 and ask > 0:
                                 for canon in targets:
-                                    if self._allow_emit(f"tk:{canon}", 0.2):
-                                        mid = (bid + ask) / 2.0
-                                        prev = self._prev_mid.get(canon, mid)
-                                        side = "buy" if mid >= prev else "sell"
-                                        self._prev_mid[canon] = mid
-                                        await ws_hub.broadcast(
-                                            "tick",
-                                            {
-                                                "symbol": canon,
-                                                "bid": bid,
-                                                "ask": ask,
-                                                "price": mid,
-                                                "bid_size": float(data.get("B") or 1.0),
-                                                "ask_size": float(data.get("A") or 1.0),
-                                                "side": side,
-                                                "source": "binance_vision",
-                                            },
-                                        )
+                                    entry = self.record_tick(
+                                        canon,
+                                        bid,
+                                        ask,
+                                        bid_size=bid_sz,
+                                        ask_size=ask_sz,
+                                        source="binance_vision",
+                                    )
+                                    if entry and self._allow_emit(f"tk:{canon}", 0.2):
+                                        await ws_hub.broadcast("tick", entry)
                         elif "@depth" in stream:
                             raw_bids = data.get("bids") or []
                             raw_asks = data.get("asks") or []
                             if raw_bids or raw_asks:
+                                bids_list = [[float(p), float(q)] for p, q in raw_bids[:8]]
+                                asks_list = [[float(p), float(q)] for p, q in raw_asks[:8]]
                                 for canon in targets:
+                                    ob_payload = {
+                                        "symbol": canon,
+                                        "bids": bids_list,
+                                        "asks": asks_list,
+                                        "source": "binance_vision",
+                                    }
+                                    self._orderbook_cache[canon] = ob_payload
                                     if self._allow_emit(f"ob:{canon}", 0.4):
-                                        await ws_hub.broadcast(
-                                            "orderbook",
-                                            {
-                                                "symbol": canon,
-                                                "bids": [[float(p), float(q)] for p, q in raw_bids[:8]],
-                                                "asks": [[float(p), float(q)] for p, q in raw_asks[:8]],
-                                                "source": "binance_vision",
-                                            },
-                                        )
+                                        await ws_hub.broadcast("orderbook", ob_payload)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -215,27 +271,20 @@ class ServerMarketWsHub:
                             continue
                         bid_sz = float(arr[3] or 1.0)
                         bid = float(arr[4] or 0.0)
-                        mid = float(arr[5] or 0.0)
                         ask_sz = float(arr[6] or 1.0)
                         ask = float(arr[7] or 0.0)
-                        if bid > 0 and ask > 0 and self._allow_emit(f"tk:{canon}", 0.18):
-                            eff_mid = mid if mid > 0 else (bid + ask) / 2.0
-                            prev = self._prev_mid.get(canon, eff_mid)
-                            side = "buy" if eff_mid >= prev else "sell"
-                            self._prev_mid[canon] = eff_mid
-                            await ws_hub.broadcast(
-                                "tick",
-                                {
-                                    "symbol": canon,
-                                    "bid": bid,
-                                    "ask": ask,
-                                    "price": eff_mid,
-                                    "bid_size": bid_sz,
-                                    "ask_size": ask_sz,
-                                    "side": side,
-                                    "source": "tiingo_fx",
-                                },
+                        if bid > 0 and ask > 0:
+                            entry = self.record_tick(
+                                canon,
+                                bid,
+                                ask,
+                                bid_size=bid_sz,
+                                ask_size=ask_sz,
+                                source="tiingo_fx",
+                                min_interval=0.18,
                             )
+                            if entry and self._allow_emit(f"tk:{canon}", 0.18):
+                                await ws_hub.broadcast("tick", entry)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

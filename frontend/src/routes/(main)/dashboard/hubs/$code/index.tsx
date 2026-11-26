@@ -170,6 +170,7 @@ function HubDetailPage() {
   const [latestChartPrice, setLatestChartPrice] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"orders" | "positions" | "robots" | "news" | "calendar">("orders");
   const [aiResult, setAiResult] = useState<string | null>(null);
+  const [aiModel, setAiModel] = useState<string>("");
   const [aiLoading, setAiLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -363,15 +364,19 @@ function HubDetailPage() {
     if (!hub) return;
     setAiLoading(true);
     try {
-      const res = await apiRequest<{ content_md?: string; summary?: string }>("/intelligence/ai/analyze", {
-        method: "POST",
-        body: JSON.stringify({
-          mode: "asset_deep_dive",
-          symbol: hub.code,
-          prompt: `Проанализируй текущую рыночную структуру, риски, новостной фон и зоны входа/выхода по активу ${hub.code} (${hub.name}).`,
-        }),
-      });
-      setAiResult(res.content_md || res.summary || "Анализ завершён.");
+      const res = await apiRequest<{ response_md?: string; content_md?: string; summary?: string; model?: string }>(
+        "/intelligence/ai/analyze",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            mode: "asset_deep_dive",
+            symbol: hub.code,
+            prompt: `Сделай обзор по активу ${hub.code} (${hub.name}) на основе новостей за последние 24 часа, данных графика (SELL ZONE / FAIR VWAP / BUY ZONE / RSI) и состояния роботов.`,
+          }),
+        },
+      );
+      setAiModel(res.model || "AI");
+      setAiResult(res.response_md || res.content_md || res.summary || "Анализ завершён.");
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
@@ -535,10 +540,15 @@ function HubDetailPage() {
       {/* Contextual AI Market Brief Panel */}
       {aiResult ? (
         <Card className="border-primary/40 bg-primary/5">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Brain className="size-4 text-primary" />
-              AI Обзор рынка — {hub.code}
+              AI Обзор 24ч — {hub.code}
+              {aiModel ? (
+                <Badge variant="outline" className="font-mono text-[10px]">
+                  {aiModel}
+                </Badge>
+              ) : null}
             </CardTitle>
             <Button size="xs" variant="ghost" onClick={() => setAiResult(null)}>
               Закрыть
