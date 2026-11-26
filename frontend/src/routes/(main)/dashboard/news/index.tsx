@@ -9,14 +9,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
+import { SearchSelect } from "@/components/ui/search-select";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
-import { apiRequest } from "@/framework/api-client";
+import { apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useLiveEvents } from "@/framework/use-live-socket";
-import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/news/")({
   component: NewsWirePage,
@@ -48,6 +49,8 @@ function NewsWirePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sentiment, setSentiment] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -57,36 +60,38 @@ function NewsWirePage() {
       .catch(() => {});
   }, []);
 
-  const loadNews = useCallback(async () => {
-    setLoading(true);
+  const loadNews = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const qs = new URLSearchParams({ limit: "60" });
+      const qs = new URLSearchParams();
       if (assetFilter) qs.set("asset", assetFilter);
       if (searchQuery.trim()) qs.set("q", searchQuery.trim());
       if (sentiment) qs.set("sentiment", sentiment);
       if (verifiedOnly) qs.set("verified_only", "true");
-      const rows = await apiRequest<NewsArticle[]>(`/intelligence/news?${qs.toString()}`);
-      setArticles(Array.isArray(rows) ? rows : []);
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      const res = await apiRequestPaged<NewsArticle>(`/intelligence/news${suffix}`, page, DEFAULT_PAGE_SIZE);
+      setArticles(res.items);
+      setTotal(res.total);
     } catch (err) {
-      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
+      if (!silent) notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [assetFilter, searchQuery, sentiment, t.common.errorTitle, verifiedOnly]);
+  }, [assetFilter, page, searchQuery, sentiment, t.common.errorTitle, verifiedOnly]);
 
   useEffect(() => {
-    void loadNews();
+    void loadNews(false);
   }, [loadNews]);
 
   useLiveEvents("breaking_news", () => {
-    void loadNews();
+    void loadNews(true);
   });
 
   async function handleRefreshWire() {
     setRefreshing(true);
     try {
       const res = await apiRequest<{ inserted?: number }>("/intelligence/news/refresh", { method: "POST" });
-      await loadNews();
+      await loadNews(true);
       notify.success(t.news.refreshNews, `+${res.inserted ?? 0}`);
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
@@ -99,7 +104,7 @@ function NewsWirePage() {
     <TerminalPageShell
       title={t.news.title}
       subtitle={t.news.subtitle}
-      badge={`${articles.length}`}
+      badge={`${total}`}
       actions={
         <>
           <Link
@@ -243,6 +248,7 @@ function NewsWirePage() {
               </CardContent>
             </Card>
           ))}
+          <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
         </div>
       )}
     </TerminalPageShell>

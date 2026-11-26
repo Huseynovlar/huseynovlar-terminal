@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchSelect } from "@/components/ui/search-select";
 import { Textarea } from "@/components/ui/textarea";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
@@ -24,12 +25,16 @@ function WikiCreatePage() {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
-  const [category, setCategory] = useState("playbook");
-  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+  const [category, setCategory] = useState("");
+  const [categoryOptions, setCategoryOptions] = useState<Array<{ slug: string; name: string }>>([]);
 
   useEffect(() => {
-    apiRequest<{ slug: string }[]>("/wiki/categories")
-      .then((rows) => setCategoryOptions(Array.isArray(rows) ? rows.map((r) => r.slug) : []))
+    apiRequest<Array<{ slug: string; name: string }>>("/wiki/categories")
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : [];
+        setCategoryOptions(list);
+        if (list.length > 0) setCategory((prev) => prev || list[0].slug);
+      })
       .catch(() => setCategoryOptions([]));
   }, []);
   const [isPinned, setIsPinned] = useState(false);
@@ -38,6 +43,10 @@ function WikiCreatePage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!category) {
+      notify.error(t.common.errorTitle, "Select a category first");
+      return;
+    }
     setSaving(true);
     try {
       const created = await apiRequest<{ slug: string }>("/wiki", {
@@ -45,7 +54,7 @@ function WikiCreatePage() {
         body: JSON.stringify({
           title: title.trim(),
           slug: slug.trim() || undefined,
-          category: category.trim() || "playbook",
+          category,
           is_pinned: isPinned,
           content_md: contentMd,
         }),
@@ -81,7 +90,7 @@ function WikiCreatePage() {
                 <Label htmlFor="wiki-slug">{t.wiki.slug}</Label>
                 <Input
                   id="wiki-slug"
-                  placeholder="mt5-dual-ea-runbook"
+                  placeholder="auto-generated if empty"
                   value={slug}
                   onChange={(e) => setSlug(e.target.value)}
                 />
@@ -89,18 +98,24 @@ function WikiCreatePage() {
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="wiki-category">{t.wiki.category}</Label>
-                <Input
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="wiki-category">{t.wiki.category}</Label>
+                  <Link to="/dashboard/wiki/categories" className="text-primary text-[11px] hover:underline">
+                    Manage categories
+                  </Link>
+                </div>
+                <SearchSelect
                   id="wiki-category"
-                  list="wiki-category-options"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                />
-                <datalist id="wiki-category-options">
+                  className="border-input bg-background flex h-9 w-full rounded-md border px-3 text-sm"
+                >
                   {categoryOptions.map((c) => (
-                    <option key={c} value={c} />
+                    <option key={c.slug} value={c.slug}>
+                      {c.name} ({c.slug})
+                    </option>
                   ))}
-                </datalist>
+                </SearchSelect>
               </div>
               <div className="flex items-center gap-2 pt-6">
                 <Checkbox id="wiki-pinned" checked={isPinned} onCheckedChange={(v) => setIsPinned(Boolean(v))} />

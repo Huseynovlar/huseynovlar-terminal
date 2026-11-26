@@ -143,10 +143,14 @@ async def list_wiki_pages(
     stmt = select(WikiPage).order_by(WikiPage.is_pinned.desc(), WikiPage.updated_at.desc())
     if category:
         stmt = stmt.where(WikiPage.category == category.strip())
-    if q:
+    if q and q.strip():
         pattern = f"%{q.strip()}%"
         stmt = stmt.where(
-            WikiPage.title.ilike(pattern) | WikiPage.slug.ilike(pattern) | WikiPage.content_md.ilike(pattern)
+            WikiPage.id.ilike(pattern)
+            | WikiPage.title.ilike(pattern)
+            | WikiPage.slug.ilike(pattern)
+            | WikiPage.category.ilike(pattern)
+            | WikiPage.content_md.ilike(pattern)
         )
     pages = (await db.execute(stmt)).scalars().all()
     return page.apply([_serialize_page(p) for p in pages])

@@ -1,17 +1,18 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Save } from "lucide-react";
 
 import { AsyncButton } from "@/components/ui/async-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchSelect } from "@/components/ui/search-select";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { useI18n } from "@/framework/i18n";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
-import { SearchSelect } from "@/components/ui/search-select";
 
 export const Route = createFileRoute("/(main)/dashboard/news/sources/new")({
   component: NewsSourceCreatePage,
@@ -23,10 +24,22 @@ function NewsSourceCreatePage() {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [category, setCategory] = useState("macro");
+  const [categories, setCategories] = useState<string[]>(["macro", "commodities", "equities", "forex", "crypto", "global"]);
   const [trustTier, setTrustTier] = useState("tier_1");
   const [isVerified, setIsVerified] = useState(true);
   const [assetTags, setAssetTags] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiRequest<string[]>("/intelligence/source-categories")
+      .then((rows) => {
+        if (Array.isArray(rows) && rows.length > 0) {
+          setCategories(rows);
+          setCategory((prev) => (rows.includes(prev) ? prev : rows[0]));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -79,7 +92,18 @@ function NewsSourceCreatePage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="ns-cat">Category</Label>
-                <Input id="ns-cat" value={category} onChange={(e) => setCategory(e.target.value)} />
+                <SearchSelect
+                  id="ns-cat"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-background px-2.5 text-xs"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </SearchSelect>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="ns-tier">{t.sources.trustTier}</Label>
@@ -95,7 +119,7 @@ function NewsSourceCreatePage() {
               <Input id="ns-tags" value={assetTags} onChange={(e) => setAssetTags(e.target.value)} placeholder="XAUUSD, USTEC, SPX" />
             </div>
             <div className="flex items-center gap-2">
-              <input id="ns-ver" type="checkbox" checked={isVerified} onChange={(e) => setIsVerified(e.target.checked)} />
+              <Checkbox id="ns-ver" checked={isVerified} onCheckedChange={(v) => setIsVerified(Boolean(v))} />
               <Label htmlFor="ns-ver">{t.sources.verifiedBadge}</Label>
             </div>
             <AsyncButton type="submit" loading={saving} loadingText={t.common.saving}>

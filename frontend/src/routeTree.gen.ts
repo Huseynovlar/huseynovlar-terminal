@@ -54,6 +54,7 @@ import { Route as mainDashboardTreasuryNewRouteImport } from './routes/(main)/da
 import { Route as mainDashboardUsersIndexRouteImport } from './routes/(main)/dashboard/users/index'
 import { Route as mainDashboardUsersNewRouteImport } from './routes/(main)/dashboard/users/new'
 import { Route as mainDashboardWikiIndexRouteImport } from './routes/(main)/dashboard/wiki/index'
+import { Route as mainDashboardWikiCategoriesRouteImport } from './routes/(main)/dashboard/wiki/categories'
 import { Route as mainDashboardWikiNewRouteImport } from './routes/(main)/dashboard/wiki/new'
 import { Route as mainDashboardAccountsAccountIdIndexRouteImport } from './routes/(main)/dashboard/accounts/$accountId/index'
 import { Route as mainDashboardAccountsAccountIdEditRouteImport } from './routes/(main)/dashboard/accounts/$accountId/edit'
@@ -333,6 +334,12 @@ const mainDashboardWikiIndexRoute = mainDashboardWikiIndexRouteImport.update({
   path: '/wiki/',
   getParentRoute: () => mainDashboardRouteRoute,
 } as any)
+const mainDashboardWikiCategoriesRoute =
+  mainDashboardWikiCategoriesRouteImport.update({
+    id: '/wiki/categories',
+    path: '/wiki/categories',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
 const mainDashboardWikiNewRoute = mainDashboardWikiNewRouteImport.update({
   id: '/wiki/new',
   path: '/wiki/new',
@@ -525,6 +532,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/robots/new': typeof mainDashboardRobotsNewRoute
   '/dashboard/treasury/new': typeof mainDashboardTreasuryNewRoute
   '/dashboard/users/new': typeof mainDashboardUsersNewRoute
+  '/dashboard/wiki/categories': typeof mainDashboardWikiCategoriesRoute
   '/dashboard/wiki/new': typeof mainDashboardWikiNewRoute
   '/dashboard/accounts/': typeof mainDashboardAccountsIndexRoute
   '/dashboard/ai/': typeof mainDashboardAiIndexRoute
@@ -599,6 +607,7 @@ export interface FileRoutesByTo {
   '/dashboard/robots/new': typeof mainDashboardRobotsNewRoute
   '/dashboard/treasury/new': typeof mainDashboardTreasuryNewRoute
   '/dashboard/users/new': typeof mainDashboardUsersNewRoute
+  '/dashboard/wiki/categories': typeof mainDashboardWikiCategoriesRoute
   '/dashboard/wiki/new': typeof mainDashboardWikiNewRoute
   '/dashboard/accounts': typeof mainDashboardAccountsIndexRoute
   '/dashboard/ai': typeof mainDashboardAiIndexRoute
@@ -675,6 +684,7 @@ export interface FileRoutesById {
   '/(main)/dashboard/robots/new': typeof mainDashboardRobotsNewRoute
   '/(main)/dashboard/treasury/new': typeof mainDashboardTreasuryNewRoute
   '/(main)/dashboard/users/new': typeof mainDashboardUsersNewRoute
+  '/(main)/dashboard/wiki/categories': typeof mainDashboardWikiCategoriesRoute
   '/(main)/dashboard/wiki/new': typeof mainDashboardWikiNewRoute
   '/(main)/dashboard/accounts/': typeof mainDashboardAccountsIndexRoute
   '/(main)/dashboard/ai/': typeof mainDashboardAiIndexRoute
@@ -752,6 +762,7 @@ export interface FileRouteTypes {
     | '/dashboard/robots/new'
     | '/dashboard/treasury/new'
     | '/dashboard/users/new'
+    | '/dashboard/wiki/categories'
     | '/dashboard/wiki/new'
     | '/dashboard/accounts/'
     | '/dashboard/ai/'
@@ -826,6 +837,7 @@ export interface FileRouteTypes {
     | '/dashboard/robots/new'
     | '/dashboard/treasury/new'
     | '/dashboard/users/new'
+    | '/dashboard/wiki/categories'
     | '/dashboard/wiki/new'
     | '/dashboard/accounts'
     | '/dashboard/ai'
@@ -901,6 +913,7 @@ export interface FileRouteTypes {
     | '/(main)/dashboard/robots/new'
     | '/(main)/dashboard/treasury/new'
     | '/(main)/dashboard/users/new'
+    | '/(main)/dashboard/wiki/categories'
     | '/(main)/dashboard/wiki/new'
     | '/(main)/dashboard/accounts/'
     | '/(main)/dashboard/ai/'
@@ -1277,6 +1290,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof mainDashboardWikiIndexRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
+    '/(main)/dashboard/wiki/categories': {
+      id: '/(main)/dashboard/wiki/categories'
+      path: '/wiki/categories'
+      fullPath: '/dashboard/wiki/categories'
+      preLoaderRoute: typeof mainDashboardWikiCategoriesRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
     '/(main)/dashboard/wiki/new': {
       id: '/(main)/dashboard/wiki/new'
       path: '/wiki/new'
@@ -1495,6 +1515,7 @@ interface mainDashboardRouteRouteChildren {
   mainDashboardRobotsNewRoute: typeof mainDashboardRobotsNewRoute
   mainDashboardTreasuryNewRoute: typeof mainDashboardTreasuryNewRoute
   mainDashboardUsersNewRoute: typeof mainDashboardUsersNewRoute
+  mainDashboardWikiCategoriesRoute: typeof mainDashboardWikiCategoriesRoute
   mainDashboardWikiNewRoute: typeof mainDashboardWikiNewRoute
   mainDashboardAccountsIndexRoute: typeof mainDashboardAccountsIndexRoute
   mainDashboardAiIndexRoute: typeof mainDashboardAiIndexRoute
@@ -1566,6 +1587,7 @@ const mainDashboardRouteRouteChildren: mainDashboardRouteRouteChildren = {
   mainDashboardRobotsNewRoute: mainDashboardRobotsNewRoute,
   mainDashboardTreasuryNewRoute: mainDashboardTreasuryNewRoute,
   mainDashboardUsersNewRoute: mainDashboardUsersNewRoute,
+  mainDashboardWikiCategoriesRoute: mainDashboardWikiCategoriesRoute,
   mainDashboardWikiNewRoute: mainDashboardWikiNewRoute,
   mainDashboardAccountsIndexRoute: mainDashboardAccountsIndexRoute,
   mainDashboardAiIndexRoute: mainDashboardAiIndexRoute,

@@ -25,6 +25,8 @@ interface WikiArticle {
   category: string;
   content_md: string;
   is_pinned: boolean;
+  updated_by?: string;
+  created_at?: string;
   updated_at?: string;
 }
 
@@ -62,7 +64,7 @@ function WikiDetailPage() {
   return (
     <TerminalPageShell
       title={article?.title || slug}
-      subtitle={article?.updated_at ? `${t.common.updatedAt}: ${formatTerminalDateTime(article.updated_at)}` : slug}
+      subtitle={`Author: ${article?.updated_by || "system"} • Created: ${formatTerminalDateTime(article?.created_at || article?.updated_at)}`}
       badge={article?.category || "WIKI"}
       actions={
         <>
@@ -88,9 +90,13 @@ function WikiDetailPage() {
     >
       <Card>
         <CardContent className="space-y-3 pt-6">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">{article?.category || "playbook"}</Badge>
-            <span className="text-muted-foreground font-mono text-xs">{article?.slug}</span>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge variant="outline">{article?.category || "runbook"}</Badge>
+            <span className="text-muted-foreground font-mono">ID: {article?.id || "—"}</span>
+            <span className="text-muted-foreground font-mono">• {article?.slug}</span>
+            <span className="text-muted-foreground ml-auto font-mono">
+              {article?.updated_by || "system"} • {formatTerminalDateTime(article?.created_at || article?.updated_at)}
+            </span>
           </div>
           <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap font-sans text-sm leading-relaxed">
             {article?.content_md || t.common.noData}

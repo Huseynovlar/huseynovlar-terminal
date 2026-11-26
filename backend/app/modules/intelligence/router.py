@@ -358,8 +358,72 @@ async def ensure_default_news_sources(db: AsyncSession, settings: Settings) -> l
     return added
 
 
+DEFAULT_SOURCE_CATEGORIES = ["macro", "commodities", "equities", "forex", "crypto", "central_banks", "global"]
+
+
+class SourceCategoryCreate(BaseModel):
+    slug: str = Field(min_length=2, max_length=64)
+
+
+async def _load_source_categories(db: AsyncSession) -> list[str]:
+    row = await db.get(MarketCache, "news_source_categories")
+    saved: list[str] = list((row.payload_json or {}).get("categories") or []) if row else []
+    used = list((await db.execute(select(NewsSource.category).distinct())).scalars().all())
+    merged = sorted({c.strip().lower() for c in [*DEFAULT_SOURCE_CATEGORIES, *saved, *used] if c and c.strip()})
+    return merged
+
+
+@router.get("/source-categories")
+async def list_source_categories(
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[str]:
+    return await _load_source_categories(db)
+
+
+@router.post("/source-categories", status_code=status.HTTP_201_CREATED)
+async def create_source_category(
+    body: SourceCategoryCreate,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[str]:
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", body.slug.strip().lower()).strip("_")
+    if len(slug) < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug")
+    cats = await _load_source_categories(db)
+    if slug not in cats:
+        cats.append(slug)
+        cats.sort()
+    row = await db.get(MarketCache, "news_source_categories")
+    if row is None:
+        db.add(MarketCache(cache_key="news_source_categories", payload_json={"categories": cats}))
+    else:
+        row.payload_json = {"categories": cats}
+    await db.commit()
+    return cats
+
+
+@router.delete("/source-categories/{slug}")
+async def delete_source_category(
+    slug: str,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[str]:
+    target = slug.strip().lower()
+    cats = [c for c in await _load_source_categories(db) if c != target]
+    row = await db.get(MarketCache, "news_source_categories")
+    if row is None:
+        db.add(MarketCache(cache_key="news_source_categories", payload_json={"categories": cats}))
+    else:
+        row.payload_json = {"categories": cats}
+    await db.commit()
+    return cats
+
+
 @router.get("/sources")
 async def list_verified_sources(
+    q: str | None = Query(default=None),
+    category: str | None = Query(default=None),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
@@ -371,7 +435,21 @@ async def list_verified_sources(
     counts: dict[str, int] = {}
     for src in rows:
         counts[src] = counts.get(src, 0) + 1
-    return page.apply([_serialize_source(s, live_items_count=counts.get(s.name, s.article_count)) for s in sources])
+    serialized = [_serialize_source(s, live_items_count=counts.get(s.name, s.article_count)) for s in sources]
+    if category and category.strip():
+        cat_lo = category.strip().lower()
+        serialized = [s for s in serialized if str(s.get("category", "")).lower() == cat_lo]
+    if q and q.strip():
+        needle = q.strip().lower()
+        serialized = [
+            s
+            for s in serialized
+            if needle in str(s.get("id", "")).lower()
+            or needle in str(s.get("name", "")).lower()
+            or needle in str(s.get("url", "")).lower()
+            or needle in str(s.get("category", "")).lower()
+        ]
+    return page.apply(serialized)
 
 
 @router.post("/sources", status_code=status.HTTP_201_CREATED)
