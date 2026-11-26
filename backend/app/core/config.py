@@ -92,6 +92,15 @@ class Settings(BaseSettings):
     alerts_bot_webhook_secret: str = Field(default="", alias="ALERTS_BOT_WEBHOOK_SECRET")
     ip_geo_api_url: str = Field(default="https://ipwho.is/{ip}", alias="IP_GEO_API_URL")
 
+    # Market-data WebSocket & REST providers (loaded from /opt/huseynovlar-terminal/.env)
+    alpaca_endpoint: str = Field(default="https://paper-api.alpaca.markets/v2", alias="ALPACA_ENDPOINT")
+    alpaca_api_key: str = Field(default="", alias="ALPACA_API_KEY")
+    alpaca_api_secret: str = Field(default="", alias="ALPACA_API_SECRET")
+    tiingo_api_key: str = Field(default="", alias="TIINGO_API_KEY")
+    finnhub_api_key: str = Field(default="", alias="FINNHUB_API_KEY")
+    kraken_api_key: str = Field(default="", alias="KRAKEN_API_KEY")
+    kraken_private_key: str = Field(default="", alias="KRAKEN_PRIVATE_KEY")
+
     def model_post_init(self, __context: Any) -> None:
         # Support alternative env names if primary aliases are empty
         if not self.google_ai_api_key:
@@ -127,6 +136,19 @@ class Settings(BaseSettings):
             ip_geo = etc_values.get("IP_GEO_API_URL")
             if ip_geo:
                 self.ip_geo_api_url = ip_geo.strip()
+
+            for env_key, attr_name in (
+                ("ALPACA_ENDPOINT", "alpaca_endpoint"),
+                ("ALPACA_API_KEY", "alpaca_api_key"),
+                ("ALPACA_API_SECRET", "alpaca_api_secret"),
+                ("TIINGO_API_KEY", "tiingo_api_key"),
+                ("FINNHUB_API_KEY", "finnhub_api_key"),
+                ("KRAKEN_API_KEY", "kraken_api_key"),
+                ("KRAKEN_PRIVATE_KEY", "kraken_private_key"),
+            ):
+                val = etc_values.get(env_key)
+                if val:
+                    setattr(self, attr_name, val.strip())
 
     def load_yaml_config(self, filename: str) -> dict[str, Any]:
         path = self.config_dir / filename

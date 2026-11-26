@@ -4,7 +4,7 @@ import { Activity, BookOpen, Layers, TrendingDown, TrendingUp } from "lucide-rea
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { mapSymbolToOpenWs, normalizeCleanSymbol } from "@/framework/open-market-ws";
+import { DERIV_PUBLIC_WS_URL, mapSymbolToOpenWs, normalizeCleanSymbol } from "@/framework/open-market-ws";
 import { useLiveEvents } from "@/framework/use-live-socket";
 
 interface DepthLevel {
@@ -27,8 +27,10 @@ interface TradeTapeItem {
 
 /**
  * Real-time Order Book (DOM) + Separate Buy (Bid) / Sell (Ask) Tick Chart (#27, #28).
- * Zero polling: streams directly over open WebSocket (Binance @depth10 + @bookTicker + @aggTrade)
- * and Terminal WS (MT5 / Broker tick & orderbook pushes).
+ * Zero polling: streams directly over open WebSocket:
+ * - Crypto -> Binance Spot WS (@depth10@100ms + @bookTicker + @aggTrade)
+ * - Forex / Spot Gold (XAUUSD) / Silver / Indices (USTEC, US500, US30) -> Deriv Public WS (app_id=1089)
+ * - Plus Terminal WS (MT5 / Broker tick & orderbook pushes)
  */
 export function OrderBookAndTicks({ symbol }: { symbol: string }) {
   const [bids, setBids] = useState<DepthLevel[]>([]);
@@ -77,7 +79,7 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
     }
   });
 
-  // 2. Open Public WebSocket (Binance @depth10@100ms + @bookTicker for separate Bid/Ask + @aggTrade for Buy/Sell tape)
+  // 2. Open Public WebSocket (Binance for Crypto, Deriv Public WS for Spot Gold / Silver / Forex / Indices)
   useEffect(() => {
     const mapped = mapSymbolToOpenWs(symbol);
     setBids([]);
@@ -97,54 +99,102 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
 
     let disposed = false;
     let ws: WebSocket | null = null;
+    let pingTimer: number | undefined;
     let lastTickEmit = 0;
-    setFeedLabel(`${mapped.label}`);
+    let prevMid = 0;
+    setFeedLabel(mapped.label);
 
     try {
-      ws = new WebSocket(
-        `wss://stream.binance.com:9443/stream?streams=${mapped.streamSym}@depth10@100ms/${mapped.streamSym}@bookTicker/${mapped.streamSym}@aggTrade`,
-      );
-      ws.onopen = () => {
-        if (!disposed) setFeedLive(true);
-      };
-      ws.onmessage = (ev) => {
-        if (disposed) return;
-        try {
-          const msg = JSON.parse(ev.data) as { stream?: string; data?: Record<string, unknown> };
-          const payload = msg.data;
-          if (!payload) return;
+      if (mapped.provider === "binance") {
+        ws = new WebSocket(
+          `wss://stream.binance.com:9443/stream?streams=${mapped.streamSym}@depth10@100ms/${mapped.streamSym}@bookTicker/${mapped.streamSym}@aggTrade`,
+        );
+        ws.onopen = () => {
+          if (!disposed) setFeedLive(true);
+        };
+        ws.onmessage = (ev) => {
+          if (disposed) return;
+          try {
+            const msg = JSON.parse(ev.data) as { stream?: string; data?: Record<string, unknown> };
+            const payload = msg.data;
+            if (!payload) return;
 
-          if (msg.stream?.includes("@depth")) {
-            const b = Array.isArray(payload.bids) ? (payload.bids as Array<[string, string]>) : [];
-            const a = Array.isArray(payload.asks) ? (payload.asks as Array<[string, string]>) : [];
-            setBids(b.slice(0, 8).map(([p, q]) => ({ price: Number(p), qty: Number(q) })));
-            setAsks(a.slice(0, 8).map(([p, q]) => ({ price: Number(p), qty: Number(q) })));
-          } else if (msg.stream?.includes("@bookTicker")) {
-            const now = Date.now();
-            if (now - lastTickEmit < 120) return;
-            lastTickEmit = now;
-            const bid = Number(payload.b ?? 0);
-            const ask = Number(payload.a ?? 0);
-            if (bid > 0 && ask > 0) {
-              pushDualTick(bid, ask, now);
+            if (msg.stream?.includes("@depth")) {
+              const b = Array.isArray(payload.bids) ? (payload.bids as Array<[string, string]>) : [];
+              const a = Array.isArray(payload.asks) ? (payload.asks as Array<[string, string]>) : [];
+              setBids(b.slice(0, 8).map(([p, q]) => ({ price: Number(p), qty: Number(q) })));
+              setAsks(a.slice(0, 8).map(([p, q]) => ({ price: Number(p), qty: Number(q) })));
+            } else if (msg.stream?.includes("@bookTicker")) {
+              const now = Date.now();
+              if (now - lastTickEmit < 120) return;
+              lastTickEmit = now;
+              const bid = Number(payload.b ?? 0);
+              const ask = Number(payload.a ?? 0);
+              if (bid > 0 && ask > 0) pushDualTick(bid, ask, now);
+            } else if (msg.stream?.includes("@aggTrade")) {
+              const price = Number(payload.p ?? 0);
+              const qty = Number(payload.q ?? 0);
+              if (price > 0) {
+                const side: "buy" | "sell" = payload.m ? "sell" : "buy";
+                if (side === "buy") setBuyCount((c) => c + 1);
+                else setSellCount((c) => c + 1);
+                const nextItem: TradeTapeItem = { ts: Number(payload.T ?? Date.now()), price, qty, side };
+                const nextTape = [nextItem, ...tapeRef.current.slice(0, 7)];
+                tapeRef.current = nextTape;
+                setTape(nextTape);
+              }
             }
-          } else if (msg.stream?.includes("@aggTrade")) {
-            const price = Number(payload.p ?? 0);
-            const qty = Number(payload.q ?? 0);
-            if (price > 0) {
-              const side: "buy" | "sell" = payload.m ? "sell" : "buy";
-              if (side === "buy") setBuyCount((c) => c + 1);
-              else setSellCount((c) => c + 1);
-              const nextItem: TradeTapeItem = { ts: Number(payload.T ?? Date.now()), price, qty, side };
-              const nextTape = [nextItem, ...tapeRef.current.slice(0, 7)];
-              tapeRef.current = nextTape;
-              setTape(nextTape);
-            }
+          } catch {
+            // ignore
           }
-        } catch {
-          // ignore malformed frame
-        }
-      };
+        };
+      } else {
+        // Deriv Public WS (Spot Gold XAU/USD, Silver, Forex, Indices — zero API key)
+        ws = new WebSocket(DERIV_PUBLIC_WS_URL);
+        ws.onopen = () => {
+          if (disposed || !ws) return;
+          setFeedLive(true);
+          ws.send(JSON.stringify({ ticks: mapped.streamSym, subscribe: 1 }));
+          pingTimer = window.setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ ping: 1 }));
+            }
+          }, 25000);
+        };
+        ws.onmessage = (ev) => {
+          if (disposed) return;
+          try {
+            const msg = JSON.parse(ev.data) as {
+              tick?: { bid?: number; ask?: number; quote?: number; epoch?: number };
+            };
+            const tk = msg.tick;
+            if (!tk) return;
+            const quote = Number(tk.quote ?? 0);
+            const bid = Number(tk.bid ?? quote);
+            const ask = Number(tk.ask ?? quote);
+            if (!(bid > 0) || !(ask > 0)) return;
+            const ts = (tk.epoch ? tk.epoch * 1000 : Date.now());
+            pushDualTick(bid, ask, ts);
+
+            // Top-of-book L1 Bid/Ask ladder for Spot FX/Gold/Indices
+            setBids([{ price: bid, qty: 1 }]);
+            setAsks([{ price: ask, qty: 1 }]);
+
+            const mid = (bid + ask) / 2;
+            const side: "buy" | "sell" = prevMid === 0 || mid >= prevMid ? "buy" : "sell";
+            prevMid = mid;
+            if (side === "buy") setBuyCount((c) => c + 1);
+            else setSellCount((c) => c + 1);
+            const nextItem: TradeTapeItem = { ts, price: side === "buy" ? ask : bid, qty: 1, side };
+            const nextTape = [nextItem, ...tapeRef.current.slice(0, 7)];
+            tapeRef.current = nextTape;
+            setTape(nextTape);
+          } catch {
+            // ignore
+          }
+        };
+      }
+
       ws.onclose = () => {
         if (!disposed) setFeedLive(false);
       };
@@ -154,6 +204,7 @@ export function OrderBookAndTicks({ symbol }: { symbol: string }) {
 
     return () => {
       disposed = true;
+      if (pingTimer !== undefined) window.clearInterval(pingTimer);
       if (ws && ws.readyState < WebSocket.CLOSING) {
         ws.close();
       }
