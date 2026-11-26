@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import html
 import re
+import time
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -221,9 +223,55 @@ def _render_symbol_logo_svg(raw_symbol: str) -> str:
     )
 
 
+_LOGO_MIME_BY_EXT: dict[str, str] = {
+    ".svg": "image/svg+xml; charset=utf-8",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+}
+_EXT_BY_LOGO_MIME: dict[str, str] = {
+    "image/svg+xml": ".svg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/jpeg": ".jpg",
+}
+
+
+def _logo_storage_dir(settings: Settings) -> Path:
+    for candidate in (
+        settings.config_dir.parent / "data" / "asset_logos",
+        Path("/tmp/huseynovlar_asset_logos"),
+    ):
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+        except OSError:
+            continue
+    return Path("/tmp")
+
+
 @router.get("/logo/{symbol}")
-async def get_asset_logo(symbol: str) -> Response:
-    """Same-origin CSP-safe logo SVG generator/proxy guaranteed to return 200 OK for every symbol."""
+async def get_asset_logo(
+    symbol: str,
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """Same-origin CSP-safe logo endpoint: serves custom uploaded logo if present, else crisp SVG."""
+    clean = re.sub(r"[^A-Z0-9]", "", symbol.strip().upper())[:24]
+    if clean:
+        logo_dir = _logo_storage_dir(settings)
+        for ext, mime in _LOGO_MIME_BY_EXT.items():
+            candidate = logo_dir / f"{clean}{ext}"
+            if candidate.is_file():
+                return Response(
+                    content=candidate.read_bytes(),
+                    media_type=mime,
+                    headers={
+                        "Cache-Control": "public, max-age=3600",
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                )
+
     svg = _render_symbol_logo_svg(symbol)
     return Response(
         content=svg,
@@ -233,6 +281,44 @@ async def get_asset_logo(symbol: str) -> Response:
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.post("/{id_or_code}/logo")
+async def upload_asset_logo(
+    id_or_code: str,
+    file: UploadFile = File(...),
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Upload a custom PNG/WebP/JPEG/SVG logo for a catalog asset."""
+    asset = await _resolve_asset(db, id_or_code)
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+
+    ct = (file.content_type or "").split(";")[0].strip().lower()
+    ext = _EXT_BY_LOGO_MIME.get(ct)
+    if not ext:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported file type. Upload PNG, WebP, JPEG, or SVG.",
+        )
+
+    raw = await file.read()
+    if not raw or len(raw) > 1_048_576:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Logo must be between 1 byte and 1 MB")
+
+    clean = re.sub(r"[^A-Z0-9]", "", asset.code.strip().upper())[:24] or "ASSET"
+    logo_dir = _logo_storage_dir(settings)
+    for old_ext in _LOGO_MIME_BY_EXT:
+        old_file = logo_dir / f"{clean}{old_ext}"
+        if old_file.exists():
+            old_file.unlink(missing_ok=True)
+    (logo_dir / f"{clean}{ext}").write_bytes(raw)
+
+    asset.logo_url = f"/api/v1/assets/logo/{clean}?v={int(time.time())}"
+    await db.commit()
+    return _serialize_asset(asset)
 
 
 @router.post("/seed-defaults")

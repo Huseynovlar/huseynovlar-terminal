@@ -33,6 +33,27 @@ const OFFLINE_SVG_MAP: Record<string, string> = {
   BNBUSD: "/logos/bnb.svg",
   BNBUSDT: "/logos/bnb.svg",
   BNB: "/logos/bnb.svg",
+  XRPUSD: "/logos/xrp.svg",
+  XRPUSDT: "/logos/xrp.svg",
+  XRP: "/logos/xrp.svg",
+  ADAUSD: "/logos/ada.svg",
+  ADA: "/logos/ada.svg",
+  DOGEUSD: "/logos/doge.svg",
+  DOGE: "/logos/doge.svg",
+  TONUSD: "/logos/ton.svg",
+  TON: "/logos/ton.svg",
+  LTCUSD: "/logos/ltc.svg",
+  LTC: "/logos/ltc.svg",
+  NGAS: "/logos/ngas.svg",
+  US10Y: "/logos/us10y.svg",
+  AAPL: "/logos/aapl.svg",
+  NVDA: "/logos/nvda.svg",
+  TSLA: "/logos/tsla.svg",
+  MSFT: "/logos/msft.svg",
+  AMZN: "/logos/amzn.svg",
+  META: "/logos/meta.svg",
+  GOOGL: "/logos/googl.svg",
+  GOOG: "/logos/googl.svg",
 };
 
 const FX_COUNTRY_MAP: Record<string, string> = {
@@ -68,19 +89,36 @@ function hashHue(str: string): number {
 export interface AssetLogoProps {
   symbol: string;
   size?: number;
+  logoUrl?: string | null;
   className?: string;
 }
 
 /**
  * Same-origin CSP-safe AssetLogo:
- * 1. Dual FX flags via bundled flags.css for 6-char FX pairs (EURUSD, GBPUSD, etc.)
- * 2. Crisp offline SVG badges in /public/logos/ for core indices/metals/crypto
- * 3. Same-origin /api/v1/assets/logo/{symbol} proxy for equities/ETFs/other symbols
+ * 0. Custom uploaded/configured logoUrl if provided (e.g. from Asset Catalog CRUD)
+ * 1. Crisp offline SVG badges in /public/logos/ (26+ symbols)
+ * 2. Dual FX flags via bundled flags.css for 6-char FX pairs (EURUSD, GBPUSD, etc.)
+ * 3. Same-origin /api/v1/assets/logo/{symbol} proxy for other symbols
  * 4. Clean deterministic monogram fallback if image fails to load
  */
-export function AssetLogo({ symbol, size = 24, className = "" }: AssetLogoProps) {
+export function AssetLogo({ symbol, size = 24, logoUrl, className = "" }: AssetLogoProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const norm = cleanSymbol(symbol || "ASSET");
+
+  // 0. Explicit custom logoUrl (uploaded file or selected local icon)
+  if (logoUrl && !imgFailed && (logoUrl.startsWith("/logos/") || logoUrl.includes("?v="))) {
+    return (
+      <img
+        src={logoUrl}
+        alt={norm}
+        width={size}
+        height={size}
+        onError={() => setImgFailed(true)}
+        className={`inline-block shrink-0 rounded-md object-contain ${className}`}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
 
   // 1. Offline SVG badge
   const offlineUrl = OFFLINE_SVG_MAP[norm];

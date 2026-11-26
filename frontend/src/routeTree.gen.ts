@@ -30,6 +30,7 @@ import { Route as mainDashboardAccountsIndexRouteImport } from './routes/(main)/
 import { Route as mainDashboardAccountsNewRouteImport } from './routes/(main)/dashboard/accounts/new'
 import { Route as mainDashboardAuditIndexRouteImport } from './routes/(main)/dashboard/audit/index'
 import { Route as mainDashboardCalendarIndexRouteImport } from './routes/(main)/dashboard/calendar/index'
+import { Route as mainDashboardCatalogIndexRouteImport } from './routes/(main)/dashboard/catalog/index'
 import { Route as mainDashboardContainersIndexRouteImport } from './routes/(main)/dashboard/containers/index'
 import { Route as mainDashboardContainersNewRouteImport } from './routes/(main)/dashboard/containers/new'
 import { Route as mainDashboardExplorerIndexRouteImport } from './routes/(main)/dashboard/explorer/index'
@@ -194,6 +195,12 @@ const mainDashboardCalendarIndexRoute =
   mainDashboardCalendarIndexRouteImport.update({
     id: '/calendar/',
     path: '/calendar/',
+    getParentRoute: () => mainDashboardRouteRoute,
+  } as any)
+const mainDashboardCatalogIndexRoute =
+  mainDashboardCatalogIndexRouteImport.update({
+    id: '/catalog/',
+    path: '/catalog/',
     getParentRoute: () => mainDashboardRouteRoute,
   } as any)
 const mainDashboardContainersIndexRoute =
@@ -510,6 +517,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/accounts/': typeof mainDashboardAccountsIndexRoute
   '/dashboard/audit/': typeof mainDashboardAuditIndexRoute
   '/dashboard/calendar/': typeof mainDashboardCalendarIndexRoute
+  '/dashboard/catalog/': typeof mainDashboardCatalogIndexRoute
   '/dashboard/containers/': typeof mainDashboardContainersIndexRoute
   '/dashboard/explorer/': typeof mainDashboardExplorerIndexRoute
   '/dashboard/home/': typeof mainDashboardHomeIndexRoute
@@ -581,6 +589,7 @@ export interface FileRoutesByTo {
   '/dashboard/accounts': typeof mainDashboardAccountsIndexRoute
   '/dashboard/audit': typeof mainDashboardAuditIndexRoute
   '/dashboard/calendar': typeof mainDashboardCalendarIndexRoute
+  '/dashboard/catalog': typeof mainDashboardCatalogIndexRoute
   '/dashboard/containers': typeof mainDashboardContainersIndexRoute
   '/dashboard/explorer': typeof mainDashboardExplorerIndexRoute
   '/dashboard/home': typeof mainDashboardHomeIndexRoute
@@ -654,6 +663,7 @@ export interface FileRoutesById {
   '/(main)/dashboard/accounts/': typeof mainDashboardAccountsIndexRoute
   '/(main)/dashboard/audit/': typeof mainDashboardAuditIndexRoute
   '/(main)/dashboard/calendar/': typeof mainDashboardCalendarIndexRoute
+  '/(main)/dashboard/catalog/': typeof mainDashboardCatalogIndexRoute
   '/(main)/dashboard/containers/': typeof mainDashboardContainersIndexRoute
   '/(main)/dashboard/explorer/': typeof mainDashboardExplorerIndexRoute
   '/(main)/dashboard/home/': typeof mainDashboardHomeIndexRoute
@@ -728,6 +738,7 @@ export interface FileRouteTypes {
     | '/dashboard/accounts/'
     | '/dashboard/audit/'
     | '/dashboard/calendar/'
+    | '/dashboard/catalog/'
     | '/dashboard/containers/'
     | '/dashboard/explorer/'
     | '/dashboard/home/'
@@ -799,6 +810,7 @@ export interface FileRouteTypes {
     | '/dashboard/accounts'
     | '/dashboard/audit'
     | '/dashboard/calendar'
+    | '/dashboard/catalog'
     | '/dashboard/containers'
     | '/dashboard/explorer'
     | '/dashboard/home'
@@ -871,6 +883,7 @@ export interface FileRouteTypes {
     | '/(main)/dashboard/accounts/'
     | '/(main)/dashboard/audit/'
     | '/(main)/dashboard/calendar/'
+    | '/(main)/dashboard/catalog/'
     | '/(main)/dashboard/containers/'
     | '/(main)/dashboard/explorer/'
     | '/(main)/dashboard/home/'
@@ -1069,6 +1082,13 @@ declare module '@tanstack/react-router' {
       path: '/calendar'
       fullPath: '/dashboard/calendar/'
       preLoaderRoute: typeof mainDashboardCalendarIndexRouteImport
+      parentRoute: typeof mainDashboardRouteRoute
+    }
+    '/(main)/dashboard/catalog/': {
+      id: '/(main)/dashboard/catalog/'
+      path: '/catalog'
+      fullPath: '/dashboard/catalog/'
+      preLoaderRoute: typeof mainDashboardCatalogIndexRouteImport
       parentRoute: typeof mainDashboardRouteRoute
     }
     '/(main)/dashboard/containers/': {
@@ -1441,6 +1461,7 @@ interface mainDashboardRouteRouteChildren {
   mainDashboardAccountsIndexRoute: typeof mainDashboardAccountsIndexRoute
   mainDashboardAuditIndexRoute: typeof mainDashboardAuditIndexRoute
   mainDashboardCalendarIndexRoute: typeof mainDashboardCalendarIndexRoute
+  mainDashboardCatalogIndexRoute: typeof mainDashboardCatalogIndexRoute
   mainDashboardContainersIndexRoute: typeof mainDashboardContainersIndexRoute
   mainDashboardExplorerIndexRoute: typeof mainDashboardExplorerIndexRoute
   mainDashboardHomeIndexRoute: typeof mainDashboardHomeIndexRoute
@@ -1509,6 +1530,7 @@ const mainDashboardRouteRouteChildren: mainDashboardRouteRouteChildren = {
   mainDashboardAccountsIndexRoute: mainDashboardAccountsIndexRoute,
   mainDashboardAuditIndexRoute: mainDashboardAuditIndexRoute,
   mainDashboardCalendarIndexRoute: mainDashboardCalendarIndexRoute,
+  mainDashboardCatalogIndexRoute: mainDashboardCatalogIndexRoute,
   mainDashboardContainersIndexRoute: mainDashboardContainersIndexRoute,
   mainDashboardExplorerIndexRoute: mainDashboardExplorerIndexRoute,
   mainDashboardHomeIndexRoute: mainDashboardHomeIndexRoute,
