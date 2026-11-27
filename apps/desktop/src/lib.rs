@@ -6,8 +6,35 @@ use keep_awake::KeepAwakeState;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager, RunEvent,
+    AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder,
 };
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_EXTERNAL_WINDOW_ID: AtomicU64 = AtomicU64::new(1);
+
+#[tauri::command]
+fn open_external_window(app: AppHandle, url: String) -> Result<(), String> {
+    let parsed = url::Url::parse(&url).map_err(|error| format!("Invalid URL: {error}"))?;
+    if parsed.scheme() != "https" && parsed.scheme() != "http" {
+        return Err("Only HTTP and HTTPS links can be opened".to_string());
+    }
+
+    let host = parsed.host_str().unwrap_or("External link");
+    let label = format!(
+        "external-{}",
+        NEXT_EXTERNAL_WINDOW_ID.fetch_add(1, Ordering::Relaxed)
+    );
+
+    WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
+        .title(host)
+        .inner_size(1180.0, 820.0)
+        .min_inner_size(640.0, 480.0)
+        .resizable(true)
+        .center()
+        .build()
+        .map(|_| ())
+        .map_err(|error| format!("Could not create external window: {error}"))
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -75,6 +102,7 @@ pub fn run() {
             secure_store::secure_store_set,
             secure_store::secure_store_get,
             secure_store::secure_store_delete,
+            open_external_window,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Huseynovlar Terminal desktop");
