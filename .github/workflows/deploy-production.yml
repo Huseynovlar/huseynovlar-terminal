@@ -15,11 +15,10 @@ concurrency:
 env:
   DEPLOY_HOST: 100.104.116.58
   DEPLOY_USER: deploy-bot
-  NETBIRD_MANAGEMENT_URL: https://vpn.huseynovlar.org
 
 jobs:
   deploy:
-    name: Test, build and deploy over NetBird
+    name: Test, build and deploy over SSH
     runs-on: self-hosted
     timeout-minutes: 25
     environment: production
@@ -71,33 +70,16 @@ jobs:
           cp -r mql5 bundle/mql5
           tar -czf release.tgz -C bundle .
 
-      - name: Install NetBird
-        run: |
-          sudo install -d -m 755 /etc/apt/keyrings
-          curl -fsSL https://pkgs.netbird.io/debian/public.key | sudo gpg --dearmor -o /etc/apt/keyrings/netbird.gpg
-          echo "deb [signed-by=/etc/apt/keyrings/netbird.gpg] https://pkgs.netbird.io/debian stable main" | sudo tee /etc/apt/sources.list.d/netbird.list >/dev/null
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq netbird
-
-      - name: Join private deployment network
-        env:
-          NETBIRD_SETUP_KEY: "${{ secrets.NETBIRD_SETUP_KEY }}"
-        run: |
-          test -n "$NETBIRD_SETUP_KEY"
-          sudo netbird up --setup-key "$NETBIRD_SETUP_KEY" --management-url "$NETBIRD_MANAGEMENT_URL"
-          sudo netbird status --check startup
-
       - name: Wait for deployment server
         shell: bash
         run: |
           set -euo pipefail
           for attempt in $(seq 1 30); do
-            echo "Waiting for $DEPLOY_HOST:22 via NetBird ($attempt/30)..."
+            echo "Waiting for direct SSH access to $DEPLOY_HOST:22 from the self-hosted runner ($attempt/30)..."
             if timeout 3 bash -c "</dev/tcp/$DEPLOY_HOST/22" 2>/dev/null; then exit 0; fi
             sleep 2
           done
-          echo "SSH never became reachable over NetBird." >&2
-          sudo netbird status --detail || true
+          echo "SSH never became reachable from the self-hosted runner. Confirm that the runner is already connected to the private network." >&2
           exit 1
 
       - name: Configure SSH
@@ -112,11 +94,9 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Deploy over NetBird SSH
+      - name: Upload bundle and deploy over SSH
         run: |
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \
             "$DEPLOY_USER@$DEPLOY_HOST" "$TAG" < release.tgz
 
-      - name: Leave NetBird
-        if: always()
-        run: sudo netbird down || true
+
