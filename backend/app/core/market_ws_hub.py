@@ -545,8 +545,7 @@ class ServerMarketWsHub:
             except Exception:
                 pass
 
-        # 4. Universal fallback for Indices (USTEC, US500, US30, DE40), Commodities (USOIL, UKOIL, NGAS),
-        #    Metals (XAUUSD, XAGUSD), and Equities via Yahoo v8 fast meta quote
+        # 4. Universal fallback for Indices (USTEC, US500, US30, DE40, US10Y), Commodities, Metals via Yahoo v8
         y_sym = _YAHOO_QUOTE_MAP.get(sym, sym)
         try:
             r = await http.get(
@@ -562,6 +561,59 @@ class ServerMarketWsHub:
                     if px > 0:
                         hs = _estimate_half_spread(sym, px)
                         return round(px - hs, 5), round(px + hs, 5), 1.0, 1.0, "yahoo_live"
+        except Exception:
+            pass
+
+        # 5. Alpaca IEX live quote/trade fallback for Indices (scaled ETF proxy) & US Equities when Yahoo is 429
+        try:
+            from app.core.config import get_settings
+            from app.core.market_data import _INDEX_ETF_PROXY, _INDEX_ETF_SCALE
+
+            settings = get_settings()
+            if settings.alpaca_api_key and settings.alpaca_api_secret:
+                proxy_etf = _INDEX_ETF_PROXY.get(y_sym.upper())
+                target_tk = proxy_etf or (sym if sym.isalpha() and 1 <= len(sym) <= 5 else None)
+                scale = _INDEX_ETF_SCALE.get(y_sym.upper(), 1.0) if proxy_etf else 1.0
+                if target_tk:
+                    hdrs = {
+                        "APCA-API-KEY-ID": settings.alpaca_api_key,
+                        "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
+                    }
+                    rq = await http.get(
+                        f"https://data.alpaca.markets/v2/stocks/{target_tk}/quotes/latest",
+                        params={"feed": "iex"},
+                        headers=hdrs,
+                    )
+                    if rq.status_code == 200:
+                        q = (rq.json() or {}).get("quote") or {}
+                        bp = float(q.get("bp") or 0.0) * scale
+                        ap = float(q.get("ap") or 0.0) * scale
+                        if bp > 0:
+                            ap_eff = max(bp, ap) if ap > 0 else bp + _estimate_half_spread(sym, bp) * 2
+                            return (
+                                round(bp, 4),
+                                round(ap_eff, 4),
+                                float(q.get("bs") or 1.0),
+                                float(q.get("as") or 1.0),
+                                f"alpaca_{target_tk.lower()}",
+                            )
+                    rt = await http.get(
+                        f"https://data.alpaca.markets/v2/stocks/{target_tk}/trades/latest",
+                        params={"feed": "iex"},
+                        headers=hdrs,
+                    )
+                    if rt.status_code == 200:
+                        tr = (rt.json() or {}).get("trade") or {}
+                        px = float(tr.get("p") or 0.0) * scale
+                        if px > 0:
+                            hs = _estimate_half_spread(sym, px)
+                            return (
+                                round(px - hs, 4),
+                                round(px + hs, 4),
+                                float(tr.get("s") or 1.0),
+                                float(tr.get("s") or 1.0),
+                                f"alpaca_{target_tk.lower()}",
+                            )
         except Exception:
             pass
         return None

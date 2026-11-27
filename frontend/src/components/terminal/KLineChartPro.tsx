@@ -1112,53 +1112,70 @@ export function KLineChartPro({
         <div className="relative min-h-0 min-w-0 flex-1 bg-[var(--bg-panel)]">
           <div ref={containerRef} className="h-full w-full" />
 
-          {/* Initial chart loading skeleton (clean candlestick silhouettes + axis placeholders) */}
+          {/* Clean institutional chart loading skeleton (grid + smooth shimmer wave + price/time axes) */}
           {loadingBars ? (
             <div className="pointer-events-none absolute inset-0 z-20 flex bg-[var(--bg-panel)]">
-              <div className="relative flex flex-1 flex-col justify-between p-4 pr-2">
-                <div className="flex items-center gap-3">
-                  <div className="h-3 w-28 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
-                  <div className="h-3 w-16 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
-                  <div className="h-3 w-16 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+              <div className="relative flex flex-1 flex-col justify-between p-3 pr-2">
+                {/* Subtle OHLC header placeholders */}
+                <div className="flex items-center gap-2.5">
+                  <div className="h-2.5 w-24 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                  <div className="h-2.5 w-14 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                  <div className="h-2.5 w-14 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
                 </div>
-                <div className="flex flex-1 items-center justify-around gap-2 px-4 py-8">
-                  {[
-                    { top: 28, h: 24 },
-                    { top: 22, h: 30 },
-                    { top: 34, h: 18 },
-                    { top: 18, h: 26 },
-                    { top: 26, h: 34 },
-                    { top: 38, h: 20 },
-                    { top: 20, h: 28 },
-                    { top: 14, h: 22 },
-                    { top: 30, h: 32 },
-                    { top: 24, h: 18 },
-                    { top: 16, h: 28 },
-                    { top: 28, h: 24 },
-                    { top: 20, h: 30 },
-                    { top: 32, h: 22 },
-                  ].map((c, idx) => (
-                    <div key={idx} className="relative flex h-full flex-col items-center justify-center">
-                      <div
-                        className="w-px bg-[var(--border-subtle)]"
-                        style={{ height: `${c.h + 18}%`, marginTop: `${c.top - 25}%` }}
-                      />
-                      <div
-                        className="absolute w-2.5 rounded-[1px] bg-[var(--bg-elevated)] ht-shimmer-bar"
-                        style={{ top: `${c.top}%`, height: `${c.h}%` }}
-                      />
+
+                {/* Crisp horizontal grid + smooth area wave silhouette */}
+                <div className="relative my-3 flex-1 overflow-hidden">
+                  <div className="absolute inset-0 flex flex-col justify-between">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="h-px w-full bg-[var(--border-subtle)]/45" />
+                    ))}
+                  </div>
+                  <svg
+                    viewBox="0 0 600 180"
+                    preserveAspectRatio="none"
+                    className="absolute inset-0 h-full w-full opacity-55"
+                  >
+                    <defs>
+                      <linearGradient id="htChartSkelGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--accent-blue)" stopOpacity="0.22" />
+                        <stop offset="100%" stopColor="var(--accent-blue)" stopOpacity="0.0" />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      d="M0,130 C50,120 90,95 140,105 C190,115 230,70 290,78 C350,86 390,48 450,58 C510,68 555,40 600,46 L600,180 L0,180 Z"
+                      fill="url(#htChartSkelGrad)"
+                      className="animate-pulse"
+                    />
+                    <path
+                      d="M0,130 C50,120 90,95 140,105 C190,115 230,70 290,78 C350,86 390,48 450,58 C510,68 555,40 600,46"
+                      fill="none"
+                      stroke="var(--border-strong)"
+                      strokeWidth="1.5"
+                      className="animate-pulse"
+                    />
+                  </svg>
+
+                  {/* Centered clean loading pill */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="inline-flex items-center gap-2 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)]/90 px-3 py-1.5 text-[11px] font-medium text-[var(--text-secondary)]">
+                      <Loader2 className="size-3.5 animate-spin text-[var(--accent-blue)]" />
+                      Загрузка графика...
                     </div>
-                  ))}
+                  </div>
                 </div>
+
+                {/* Bottom time axis ticks */}
                 <div className="flex items-center justify-between border-t border-[var(--border-subtle)] pt-2">
                   {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-2.5 w-12 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                    <div key={i} className="h-2 w-10 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
                   ))}
                 </div>
               </div>
+
+              {/* Right price axis ticks */}
               <div className="flex w-16 shrink-0 flex-col justify-between border-l border-[var(--border-subtle)] px-2 py-8">
-                {Array.from({ length: 7 }).map((_, i) => (
-                  <div key={i} className="h-2.5 w-full rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="h-2 w-full rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
                 ))}
               </div>
             </div>

@@ -604,6 +604,7 @@ _INDEX_ETF_PROXY: dict[str, str] = {
     "^STOXX50E": "FEZ",
     "DX-Y.NYB": "UUP",
     "^VIX": "VIXY",
+    "^TNX": "IEF",
     "CL=F": "USO",
     "NG=F": "UNG",
 }
@@ -618,6 +619,7 @@ _STOOQ_INDEX_MAP: dict[str, str] = {
     "^FCHI": "^cac",
     "^HSI": "^hsi",
     "^STOXX50E": "^sx5e",
+    "^TNX": "10usy.b",
 }
 
 _INDEX_ETF_SCALE: dict[str, float] = {
