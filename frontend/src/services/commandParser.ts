@@ -1,6 +1,7 @@
 export type ParsedCommand =
   | { kind: "ticker"; symbol: string; mode: "market" | "portfolio" }
   | { kind: "stat_arb"; symA?: string; symB?: string }
+  | { kind: "multi"; symbols?: string[]; timeframes?: string[] }
   | { kind: "news"; query: string }
   | { kind: "alert_price"; symbol: string; price: number }
   | { kind: "alert_arb"; symA: string; symB: string; zScore: number }
@@ -185,6 +186,22 @@ export function parseBloombergCommand(rawInput: string): ParsedCommand {
       return { kind: "stat_arb", symA: second, symB: tokens[2].toUpperCase() };
     }
     return { kind: "stat_arb", symA: second };
+  }
+
+  // Multi-Chart: MULTI XAUUSD USTEC BTCUSD DXY | MULTI XAUUSD M5 M15 H1 H4
+  if (first === "MULTI" || first === "SPLIT") {
+    if (tokens.length === 1) {
+      return { kind: "multi" };
+    }
+    const tfSet = new Set(["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"]);
+    const rest = tokens.slice(1).map((t) => t.toUpperCase());
+    const tfs = rest.filter((t) => tfSet.has(t));
+    const syms = rest.filter((t) => !tfSet.has(t));
+    return {
+      kind: "multi",
+      symbols: syms.length > 0 ? syms : undefined,
+      timeframes: tfs.length > 0 ? tfs : undefined,
+    };
   }
 
   // Section routes

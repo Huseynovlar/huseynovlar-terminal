@@ -168,6 +168,20 @@ export function BloombergCommandBar({
         goToPath(`/dashboard/stat-arb${qs}`);
         break;
       }
+      case "multi": {
+        const params = new URLSearchParams();
+        if (parsed.symbols?.length === 1 && parsed.timeframes?.length) {
+          params.set("symbol", parsed.symbols[0]);
+          params.set("tfs", parsed.timeframes.join(","));
+          params.set("syncSymbol", "1");
+          params.set("syncCrosshair", "1");
+        } else if (parsed.symbols?.length) {
+          params.set("symbols", parsed.symbols.join(","));
+        }
+        const qs = params.toString() ? `?${params.toString()}` : "";
+        goToPath(`/dashboard/multichart${qs}`);
+        break;
+      }
       case "news": {
         const qs = parsed.query ? `?q=${encodeURIComponent(parsed.query)}` : "";
         goToPath(`/dashboard/news${qs}`);
