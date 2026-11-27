@@ -9,10 +9,12 @@ import {
   registerIndicator,
 } from "klinecharts";
 import {
+  ChevronsRight,
   Eye,
   EyeOff,
   GitBranch,
   Layers,
+  Loader2,
   Lock,
   Magnet,
   Minus,
@@ -427,6 +429,7 @@ export function KLineChartPro({
   const [bundleLatencyMs, setBundleLatencyMs] = useState<number | null>(null);
   const [loadingBars, setLoadingBars] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [scrolledAway, setScrolledAway] = useState(false);
   const dealOverlayIdsRef = useRef<string[]>([]);
 
   const onBundleLoadedRef = useRef(onBundleLoaded);
@@ -449,6 +452,22 @@ export function KLineChartPro({
     chartRef.current = chart;
     chart.setTimezone("UTC");
 
+    // Protect against dragging too far forward into empty future space or past oldest bar
+    chart.setOffsetRightDistance(64);
+    chart.setMaxOffsetRightDistance(120);
+    chart.setMaxOffsetLeftDistance(80);
+
+    const handleVisibleRangeChange = (range: unknown) => {
+      const r = range as { from?: number; to?: number } | null;
+      const total = chart.getDataList().length;
+      if (!r || typeof r.to !== "number" || total === 0) {
+        setScrolledAway(false);
+        return;
+      }
+      setScrolledAway(r.to < total - 3);
+    };
+    chart.subscribeAction("onVisibleRangeChange", handleVisibleRangeChange);
+
     const saved = loadSavedIndicators();
     for (const name of saved) {
       const isMainOverlay = name === "EMA" || name === "MA" || name === "BOLL";
@@ -461,6 +480,7 @@ export function KLineChartPro({
     ro.observe(el);
 
     return () => {
+      chart.unsubscribeAction("onVisibleRangeChange", handleVisibleRangeChange);
       ro.disconnect();
       liveCallbackRef.current = null;
       chartRef.current = null;
@@ -1039,24 +1059,28 @@ export function KLineChartPro({
         <div className="relative min-h-0 min-w-0 flex-1 bg-[var(--bg-panel)]">
           <div ref={containerRef} className="h-full w-full" />
 
-          {/* Left-edge skeleton shimmer overlay when dynamically loading older historical candles */}
+          {/* Subtle chart-level pill when dynamically loading older history */}
           {loadingOlder ? (
-            <div className="pointer-events-none absolute inset-y-0 left-0 z-20 flex w-28 flex-col justify-between border-r border-[var(--border-subtle)] bg-[var(--bg-panel)]/90 px-2.5 py-3">
-              <div className="inline-flex items-center gap-1.5 rounded-[3px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">
-                <span className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--accent-blue)]" />
-                История...
-              </div>
-              <div className="flex flex-1 items-end justify-between gap-1.5 py-6">
-                {[38, 62, 48, 74, 54, 68, 44].map((h, idx) => (
-                  <div
-                    key={idx}
-                    className="w-2 rounded-[1px] bg-[var(--bg-elevated)] ht-shimmer-bar"
-                    style={{ height: `${h}%` }}
-                  />
-                ))}
-              </div>
-              <div className="h-2.5 w-full rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+            <div className="pointer-events-none absolute bottom-10 left-3 z-20 inline-flex items-center gap-1.5 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)]/95 px-2.5 py-1 font-mono text-[11px] text-[var(--text-secondary)]">
+              <Loader2 className="size-3 animate-spin text-[var(--accent-blue)]" />
+              Подгрузка истории...
             </div>
+          ) : null}
+
+          {/* Jump back to latest live candle button (appears when user scrolls into history) */}
+          {scrolledAway ? (
+            <button
+              type="button"
+              onClick={() => {
+                chartRef.current?.scrollToRealTime(200);
+                setScrolledAway(false);
+              }}
+              className="absolute right-[72px] bottom-10 z-20 inline-flex h-7 items-center gap-1 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)]/95 px-2.5 font-mono text-[11px] font-medium text-[var(--text-primary)] transition-colors duration-75 hover:border-[var(--accent-blue)] hover:text-[var(--accent-blue)]"
+              title="Вернуться к последней live-свече"
+            >
+              <span>К текущим</span>
+              <ChevronsRight className="size-3.5" />
+            </button>
           ) : null}
         </div>
       </div>
