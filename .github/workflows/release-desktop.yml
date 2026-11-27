@@ -111,12 +111,14 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Publish only after all platform builds pass
+      - name: Verify current release and remove obsolete releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           set -euo pipefail
-          TAG="v$(node -p "require('./apps/desktop/tauri.conf.json').version")"
+          VERSION="$(sed -nE 's/.*"version": "([^"]+)".*/\1/p' apps/desktop/tauri.conf.json | head -n 1)"
+          TAG="v$VERSION"
           REPO="$GITHUB_REPOSITORY"
 
           RELEASE_JSON="$(gh api "repos/$REPO/releases/tags/$TAG")"
@@ -130,9 +132,16 @@ jobs:
             echo "::error::Only $ASSET_COUNT assets are attached to $TAG; refusing to remove previous releases."
             exit 1
           fi
-          echo "Verified $TAG (release $CURRENT_ID) with $ASSET_COUNT assets."
+          for ARCH in aarch64 x64; do
+            DMG="Huseynovlar.Terminal_${VERSION}_${ARCH}.dmg"
+            if ! jq -e --arg name "$DMG" '[.assets[].name] | index($name) != null' <<< "$RELEASE_JSON" >/dev/null; then
+              echo "::error::The required macOS installer $DMG is missing."
+              exit 1
+            fi
+          done
+          echo "Verified $TAG (release $CURRENT_ID) with $ASSET_COUNT assets and both Mac installers."
 
-          OLD_RELEASES="$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[] | [.id, .tag_name] | @tsv')"
+          OLD_RELEASES="$(gh api "repos/$REPO/releases?per_page=100" --jq '.[] | [.id, .tag_name] | @tsv')"
           while IFS=$'\t' read -r OLD_ID OLD_TAG; do
             [ -z "$OLD_ID" ] && continue
             if [ "$OLD_ID" = "$CURRENT_ID" ]; then
@@ -151,123 +160,3 @@ jobs:
             exit 1
           fi
           echo "Cleanup complete. Only $TAG remains."
-
-on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*.*.*"
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-jobs:
-  build-desktop:
-    # A main-branch commit with this marker starts a deliberate release.
-    if: >-
-      github.event_name != 'push' ||
-      startsWith(github.ref, 'refs/tags/v') ||
-      contains(github.event.head_commit.message, '[release-desktop]')
-    environment: production
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        include:
-          - platform: macos-latest
-            args: "--target aarch64-apple-darwin"
-          - platform: macos-latest
-            args: "--target x86_64-apple-darwin"
-          - platform: windows-latest
-            args: ""
-          - platform: ubuntu-22.04
-            args: ""
-
-    runs-on: ${{ matrix.platform }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Setup Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: Install Linux WebKitGTK / AppImage dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Install Desktop Dependencies
-        working-directory: apps/desktop
-        run: npm install
-
-      # Verify the Tauri updater key/password pair before any native build.
-      - name: Validate updater signing key
-        working-directory: apps/desktop
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY is empty. Add it to the production Environment secrets."
-            exit 1
-          fi
-          printf 'Huseynovlar Terminal updater signing preflight\n' > "$RUNNER_TEMP/tauri-signing-preflight.txt"
-          npx tauri signer sign "$RUNNER_TEMP/tauri-signing-preflight.txt"
-          test -s "$RUNNER_TEMP/tauri-signing-preflight.txt.sig"
-          rm -f "$RUNNER_TEMP/tauri-signing-preflight.txt" "$RUNNER_TEMP/tauri-signing-preflight.txt.sig"
-        shell: bash
-
-      - name: Build & Sign Tauri v2 Installers
-        uses: tauri-apps/tauri-action@v1.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: apps/desktop
-          tagName: v__VERSION__
-          releaseName: "Huseynovlar Terminal v__VERSION__"
-          releaseBody: "Huseynovlar Terminal desktop release. macOS builds use an ad-hoc code signature for personal use; macOS may require manual approval in Privacy & Security. Tauri updater artifacts are signed."
-          releaseDraft: false
-          prerelease: false
-          args: ${{ matrix.args }}
-
-      - name: Verify ad-hoc macOS code signature
-        if: matrix.platform == 'macos-latest'
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP_PATH="$(find apps/desktop/target -type d -path '*/bundle/macos/*.app' -print -quit)"
-          if [ -z "$APP_PATH" ]; then
-            echo "::error::The macOS .app bundle was not found after building."
-            exit 1
-          fi
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          codesign --display --verbose=4 "$APP_PATH" 2>&1
-
-  publish-release:
-    name: Keep only the current complete release
-    needs: build-desktop
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Publish only after all platform builds pass
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="v$(node -p "require('./apps/desktop/tauri.conf.json').version")"
-          gh release edit "$TAG" --draft=false
-          gh release view "$TAG" --json isDraft,assets --jq '"Published " + .tagName + " with " + ([.assets[].name] | length | tostring) + " assets."'
