@@ -2,6 +2,8 @@ name: Release Desktop (Tauri v2)
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"
   workflow_dispatch:
@@ -11,6 +13,13 @@ permissions:
 
 jobs:
   build-desktop:
+    # The [release-desktop] marker allows a one-time release from main without
+    # making every ordinary main push publish a desktop release.
+    if: >-
+      github.event_name != 'push' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(github.event.head_commit.message, '[release-desktop]')
+    environment: production
     strategy:
       fail-fast: false
       matrix:
@@ -48,8 +57,27 @@ jobs:
         working-directory: apps/desktop
         run: npm install
 
+      # Fail before the lengthy native compilation if the secret is not injected
+      # from the production environment or if the key/password pair is invalid.
+      - name: Validate updater signing key
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is empty. Add it as an Environment secret under Settings > Environments > production."
+            exit 1
+          fi
+          printf 'Huseynovlar Terminal updater signing preflight\n' > "$RUNNER_TEMP/tauri-signing-preflight.txt"
+          npx tauri signer sign "$RUNNER_TEMP/tauri-signing-preflight.txt"
+          test -s "$RUNNER_TEMP/tauri-signing-preflight.txt.sig"
+          rm -f "$RUNNER_TEMP/tauri-signing-preflight.txt" "$RUNNER_TEMP/tauri-signing-preflight.txt.sig"
+        shell: bash
+
       - name: Build & Sign Tauri v2 Installers
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -58,7 +86,7 @@ jobs:
           projectPath: apps/desktop
           tagName: v__VERSION__
           releaseName: "Huseynovlar Terminal v__VERSION__"
-          releaseBody: "Automated signed Tauri v2 release (macOS DMG, Windows NSIS/MSI, Linux AppImage/DEB) with latest.json updater manifest."
-          releaseDraft: true
+          releaseBody: "Huseynovlar Terminal desktop release for macOS Apple Silicon, macOS Intel, Windows and Linux. Includes signed updater artifacts."
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
