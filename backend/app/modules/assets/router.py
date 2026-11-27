@@ -1008,6 +1008,8 @@ async def seed_default_assets(
 
 def _is_bridge_robot(robot: Robot) -> bool:
     """Identify ExnessPanelBridge / non-strategy sibling chart handles so they are never shown as trading EAs."""
+    if bool((robot.params_json or {}).get("is_bridge")):
+        return True
     name_l = (robot.name or "").strip().lower()
     st = robot.live_state_json or {}
     ea_l = str(st.get("ea_name") or "").strip().lower()

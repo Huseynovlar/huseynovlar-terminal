@@ -236,6 +236,8 @@ def _is_internal_transfer_deal(d: Deal) -> bool:
 
 
 def _is_bridge_robot_row(r: Robot) -> bool:
+    if bool((r.params_json or {}).get("is_bridge")):
+        return True
     name_l = (r.name or "").strip().lower()
     st = r.live_state_json or {}
     ea_l = str(st.get("ea_name") or "").strip().lower()

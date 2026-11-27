@@ -115,6 +115,8 @@ async def _resolve_account(db: AsyncSession, id_or_login: str) -> TradingAccount
 
 
 def _is_bridge_robot(r: Robot) -> bool:
+    if bool((r.params_json or {}).get("is_bridge")):
+        return True
     name_l = (r.name or "").strip().lower()
     prog_l = (r.program_name or "").strip().lower()
     st = r.live_state_json or {}
@@ -700,6 +702,7 @@ async def list_robots(
     account_id: str | None = None,
     asset_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
+    include_bridges: bool = Query(default=False),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     page: Page = Depends(),
@@ -731,7 +734,7 @@ async def list_robots(
         stmt = stmt.where(or_(*conds))
 
     raw_rows = (await db.execute(stmt)).scalars().all()
-    rows = [r for r in raw_rows if not _is_bridge_robot(r)]
+    rows = raw_rows if include_bridges else [r for r in raw_rows if not _is_bridge_robot(r)]
 
     # Pre-aggregate open positions and closed trading deals per (account_id, magic_number)
     open_positions = (await db.execute(select(OpenPositionLive))).scalars().all()

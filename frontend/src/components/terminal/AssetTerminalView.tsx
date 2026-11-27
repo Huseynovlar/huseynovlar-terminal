@@ -826,12 +826,19 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
               {!marketSession.isOpen ? (
                 <span
                   title={marketSession.detail}
-                  className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] font-medium ${
+                  className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[4px] border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                     marketSession.tone === "extended"
-                      ? "border-[var(--accent-amber)]/40 bg-[var(--accent-amber)]/10 text-[var(--accent-amber)]"
-                      : "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]"
+                      ? "border-[var(--accent-amber)]/60 bg-[var(--accent-amber)]/15 text-[var(--accent-amber)]"
+                      : "border-[var(--bear)]/60 bg-[var(--bear)]/15 text-[var(--bear)]"
                   }`}
                 >
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{
+                      backgroundColor:
+                        marketSession.tone === "extended" ? "var(--accent-amber)" : "var(--bear)",
+                    }}
+                  />
                   {marketSession.label}
                 </span>
               ) : null}
@@ -1122,10 +1129,61 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
         {!dockCollapsed ? (
           <div className="pro-scroll min-h-0 flex-1 overflow-auto bg-[var(--bg-canvas)]">
             {dockTab === "robots" && mode === "portfolio" ? (
+              <div className="flex flex-col">
+                {activeRobot ? (() => {
+                  const ast = activeRobot.live_state_json ?? {};
+                  const aZones = (ast.zones && typeof ast.zones === "object" ? ast.zones : {}) as Record<string, unknown>;
+                  const hbTs = Date.parse(activeRobot.updated_at_utc || activeRobot.last_heartbeat_at || "");
+                  const ageSec = Number.isNaN(hbTs) ? 99999 : Math.max(0, Math.floor((Date.now() - hbTs) / 1000));
+                  const stUp = String(activeRobot.live_status || "").toUpperCase();
+                  const isPaused = stUp.includes("PAUSE") || stUp.includes("OFF") || stUp.includes("STOP");
+                  const isOffline = !activeRobot.is_active || ageSec > 60 || stUp.includes("OFF");
+                  const isStale = !isOffline && ageSec > 15;
+                  const hudStatus = isOffline
+                    ? { label: "OFFLINE", color: "var(--bear)" }
+                    : isPaused
+                      ? { label: "PAUSED", color: "var(--accent-amber)" }
+                      : isStale
+                        ? { label: `STALE (${ageSec}s)`, color: "var(--accent-amber)" }
+                        : { label: "ONLINE", color: "var(--bull)" };
+                  return (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 py-1.5 text-[10px] tabular-nums">
+                      <span className="font-semibold text-[var(--text-primary)]">
+                        HUD · {activeRobot.name}
+                      </span>
+                      <span
+                        className="rounded-[3px] border px-1.5 py-0.5 font-semibold"
+                        style={{ borderColor: hudStatus.color, color: hudStatus.color }}
+                      >
+                        ● {hudStatus.label}
+                      </span>
+                      {aZones.sell != null ? (
+                        <span className="text-[var(--text-secondary)]">
+                          Sell <strong className="text-[var(--bear)]">{Number(aZones.sell).toFixed(2)}</strong>
+                        </span>
+                      ) : null}
+                      {aZones.fair != null ? (
+                        <span className="text-[var(--text-secondary)]">
+                          Fair <strong className="text-[var(--text-primary)]">{Number(aZones.fair).toFixed(2)}</strong>
+                        </span>
+                      ) : null}
+                      {aZones.buy != null ? (
+                        <span className="text-[var(--text-secondary)]">
+                          Buy <strong className="text-[var(--bull)]">{Number(aZones.buy).toFixed(2)}</strong>
+                        </span>
+                      ) : null}
+                      {ast.wait_reason || ast.day_reason ? (
+                        <span className="truncate text-[var(--accent-amber)]">
+                          Причина: {String(ast.wait_reason ?? ast.day_reason)}
+                        </span>
+                      ) : null}
+                    </div>
+                  );
+                })() : null}
               <table className="w-full border-collapse text-[11px]">
                 <thead className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)]">
                   <tr className="h-7">
-                    <th className="px-3 text-left font-medium">Робот MT5</th>
+                    <th className="px-3 text-left font-medium">Робот MT5 / Статус</th>
                     <th className="px-3 text-left font-medium">Режим / Тренд</th>
                     <th className="px-3 text-left font-medium">Условие входа</th>
                     <th className="px-3 text-right font-medium">RSI / ER</th>
@@ -1155,13 +1213,26 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                       const workBal = extractTelemetryNum(st, "work_balance");
                       const bankBal = extractTelemetryNum(st, "bank_balance");
                       const dayPnl = extractTelemetryNum(st, "day_pnl");
-                      const regime = String(st.regime ?? r.live_status ?? "RUNNING");
+                      const regime = String(st.regime ?? r.live_status ?? "IDLE");
                       const bias = String(st.signal_bias ?? "");
                       const waitReason = String(st.wait_reason ?? st.day_reason ?? "—");
                       const riskMode = String(st.risk_mode ?? "");
                       const label = r.name.includes(String(r.magic_number))
                         ? r.name
                         : `${r.name} #${r.magic_number}`;
+                      const hbTs = Date.parse(r.updated_at_utc || r.last_heartbeat_at || "");
+                      const ageSec = Number.isNaN(hbTs) ? 99999 : Math.max(0, Math.floor((Date.now() - hbTs) / 1000));
+                      const stUp = String(r.live_status || "").toUpperCase();
+                      const isOff = !r.is_active || ageSec > 60 || stUp.includes("OFF");
+                      const isPaused = !isOff && (stUp.includes("PAUSE") || stUp.includes("STOP"));
+                      const isStale = !isOff && !isPaused && ageSec > 15;
+                      const stBadge = isOff
+                        ? { text: "OFFLINE", color: "var(--bear)" }
+                        : isPaused
+                          ? { text: "PAUSED", color: "var(--accent-amber)" }
+                          : isStale
+                            ? { text: "STALE", color: "var(--accent-amber)" }
+                            : { text: "ONLINE", color: "var(--bull)" };
 
                       return (
                         <tr
@@ -1172,23 +1243,33 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                           }`}
                         >
                           <td className="px-3 text-left font-medium text-[var(--text-primary)]">
-                            <div>{label}</div>
-                            <div className="font-mono text-[10px] text-[var(--text-muted)]">
+                            <div className="flex items-center gap-1.5">
+                              <span>{label}</span>
+                              <span
+                                className="rounded-[3px] border px-1 py-0.2 text-[9px] font-semibold"
+                                style={{ borderColor: stBadge.color, color: stBadge.color }}
+                              >
+                                {stBadge.text}
+                              </span>
+                            </div>
+                            <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
                               {r.symbol}
                               {r.account_login ? ` · MT5 ${r.account_login}` : ""}
                               {r.seq ? ` · seq #${r.seq}` : ""} ·{" "}
                               {formatRelativeAge(r.updated_at_utc || r.last_heartbeat_at)}
                             </div>
                           </td>
-                          <td className="px-3 text-left font-mono">
-                            <div className="text-[var(--bull)]">{regime}</div>
+                          <td className="px-3 text-left">
+                            <div style={{ color: isOff ? "var(--bear)" : isPaused ? "var(--accent-amber)" : "var(--bull)" }}>
+                              {isOff ? "OFF" : regime}
+                            </div>
                             <div className="text-[10px] text-[var(--text-secondary)]">
                               {bias || "—"}
                               {riskMode ? ` · ${riskMode}` : ""}
                             </div>
                           </td>
                           <td
-                            className="max-w-[220px] truncate px-3 text-left font-mono text-[10px] text-[var(--text-secondary)]"
+                            className="max-w-[220px] truncate px-3 text-left text-[10px] text-[var(--text-secondary)]"
                             title={waitReason}
                           >
                             {waitReason}
@@ -1221,6 +1302,7 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                   )}
                 </tbody>
               </table>
+              </div>
             ) : dockTab === "positions" && mode === "portfolio" ? (
               <table className="w-full border-collapse text-[11px]">
                 <thead className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)]">

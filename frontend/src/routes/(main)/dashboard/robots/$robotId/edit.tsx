@@ -32,6 +32,8 @@ function RobotEditPage() {
   const [version, setVersion] = useState("");
   const [strategyNotes, setStrategyNotes] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [isBridge, setIsBridge] = useState(false);
+  const [paramsJson, setParamsJson] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
     apiRequest<RobotItem>(`/robots/${encodeURIComponent(robotId)}`)
@@ -42,6 +44,9 @@ function RobotEditPage() {
         setVersion(r.version || "");
         setStrategyNotes(r.strategy_notes || "");
         setIsActive(r.is_active);
+        const pj = (r.params_json && typeof r.params_json === "object" ? r.params_json : {}) as Record<string, unknown>;
+        setParamsJson(pj);
+        setIsBridge(Boolean(pj.is_bridge));
       })
       .catch((err) => notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
@@ -60,10 +65,11 @@ function RobotEditPage() {
           version: version.trim(),
           strategy_notes: strategyNotes.trim(),
           is_active: isActive,
+          params_json: { ...paramsJson, is_bridge: isBridge },
         }),
       });
       notify.success(t.common.savedSuccess, name);
-      void navigate({ to: "/dashboard/robots/$robotId", params: { robotId } });
+      void navigate({ to: "/dashboard/robots" });
     } catch (err) {
       notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
     } finally {
@@ -116,6 +122,12 @@ function RobotEditPage() {
             <div className="flex items-center gap-2 sm:col-span-2">
               <input id="re-act" type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
               <Label htmlFor="re-act">{t.common.active}</Label>
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <input id="re-bridge" type="checkbox" checked={isBridge} onChange={(e) => setIsBridge(e.target.checked)} />
+              <Label htmlFor="re-bridge" className="text-xs">
+                Это системный мост (ExnessPanelBridge — скрыть из списков роботов и активов)
+              </Label>
             </div>
             <div className="sm:col-span-2">
               <AsyncButton type="submit" loading={saving} loadingText={t.common.saving}>
