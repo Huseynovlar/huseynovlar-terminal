@@ -3,6 +3,7 @@ import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 
 import { Toaster } from "@/components/ui/toast";
+import { ExternalLinkHandler } from "@/components/desktop/ExternalLinkHandler";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { APP_CONFIG } from "@/config/app-config";
 import { fontRegistry } from "@/lib/fonts/registry";
@@ -127,6 +128,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <PreferencesStoreProvider initialValues={PREFERENCE_DEFAULTS}>
             {children}
             <Toaster />
+            <ExternalLinkHandler />
           </PreferencesStoreProvider>
         </TooltipProvider>
         {import.meta.env.DEV ? (
