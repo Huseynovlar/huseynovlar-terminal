@@ -25,15 +25,69 @@ fn open_external_window(app: AppHandle, url: String) -> Result<(), String> {
         NEXT_EXTERNAL_WINDOW_ID.fetch_add(1, Ordering::Relaxed)
     );
 
-    WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
+    let builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed));
+
+    // On macOS, attach the external window to the main window so it stays in
+    // the same Space. FullScreenAuxiliary lets it appear above a native
+    // fullscreen main window without forcing that window out of fullscreen.
+    #[cfg(target_os = "macos")]
+    let builder = {
+        let main_window = app
+            .get_webview_window("main")
+            .ok_or_else(|| "Main application window is unavailable".to_string())?;
+        builder
+            .parent(&main_window)
+            .map_err(|error| format!("Could not attach external window to main window: {error}"))?
+    };
+
+    let window = builder
         .title(host)
         .inner_size(1180.0, 820.0)
         .min_inner_size(640.0, 480.0)
         .resizable(true)
         .center()
+        .visible(false)
         .build()
-        .map(|_| ())
-        .map_err(|error| format!("Could not create external window: {error}"))
+        .map_err(|error| format!("Could not create external window: {error}"))?;
+
+    #[cfg(target_os = "macos")]
+    {
+        let window_on_main_thread = window.clone();
+        window
+            .run_on_main_thread(move || {
+                use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+
+                if let Ok(native_ptr) = window_on_main_thread.ns_window() {
+                    if !native_ptr.is_null() {
+                        let native_window = unsafe { &*(native_ptr as *mut NSWindow) };
+                        let mut behavior = native_window.collectionBehavior();
+                        behavior.insert(NSWindowCollectionBehavior::FullScreenAuxiliary);
+                        native_window.setCollectionBehavior(behavior);
+                    }
+                }
+
+                if let Err(error) = window_on_main_thread.show() {
+                    eprintln!("Could not show external window: {error}");
+                    return;
+                }
+                if let Err(error) = window_on_main_thread.set_focus() {
+                    eprintln!("Could not focus external window: {error}");
+                }
+            })
+            .map_err(|error| format!("Could not configure external window: {error}"))?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        window
+            .show()
+            .map_err(|error| format!("Could not show external window: {error}"))?;
+        window
+            .set_focus()
+            .map_err(|error| format!("Could not focus external window: {error}"))?;
+    }
+
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
