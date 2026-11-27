@@ -1,7 +1,5 @@
 export interface VpnStatusResult {
   connected: boolean;
-  tunnel_detected: boolean;
-  interface_name?: string | null;
   latency_ms?: number | null;
   endpoint?: string;
   message: string;
@@ -37,38 +35,42 @@ export async function checkVpnStatus(endpoint?: string): Promise<VpnStatusResult
     } catch (err) {
       return {
         connected: false,
-        tunnel_detected: false,
-        message: err instanceof Error ? err.message : "Ошибка проверки VPN",
+        message: err instanceof Error ? err.message : "Ошибка проверки доступности сервера",
       };
     }
   }
 
-  // Browser mode fallback: fast /healthz check
+  // Browser fallback: use the same /healthz-only access criterion.
   const started = performance.now();
+  const ctrl = new AbortController();
+  const timer = window.setTimeout(() => ctrl.abort(), 5000);
   try {
-    const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), 2500);
-    const resp = await fetch("/healthz", { signal: ctrl.signal, credentials: "same-origin" });
-    window.clearTimeout(timer);
+    const resp = await fetch(endpoint ?? "/healthz", {
+      method: "GET",
+      signal: ctrl.signal,
+      credentials: "same-origin",
+    });
     if (resp.ok) {
       return {
         connected: true,
-        tunnel_detected: true,
         latency_ms: Math.round(performance.now() - started),
-        message: "VPN: OK",
+        endpoint: endpoint ?? "/healthz",
+        message: "Сервер доступен — /healthz вернул успешный ответ",
       };
     }
     return {
       connected: false,
-      tunnel_detected: false,
-      message: `Сервер недоступен (HTTP ${resp.status})`,
+      endpoint: endpoint ?? "/healthz",
+      message: `Сервер ответил HTTP ${resp.status} на /healthz`,
     };
   } catch {
     return {
       connected: false,
-      tunnel_detected: false,
-      message: "Нет доступа к закрытому серверу — проверьте подключение к VPN",
+      endpoint: endpoint ?? "/healthz",
+      message: "Сервер недоступен: проверьте сеть и доступ к /healthz",
     };
+  } finally {
+    window.clearTimeout(timer);
   }
 }
 
