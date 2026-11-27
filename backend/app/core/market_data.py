@@ -260,17 +260,45 @@ def _parse_yahoo_chart(data: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-async def yahoo_chart(http: httpx.AsyncClient, sym: str, interval: str, rng: str) -> dict[str, Any] | None:
+_YAHOO_WINDOW_SEC: dict[str, int] = {
+    "1m": 5 * 86400,
+    "5m": 25 * 86400,
+    "15m": 45 * 86400,
+    "30m": 45 * 86400,
+    "60m": 180 * 86400,
+    "1d": 365 * 86400,
+    "1wk": 3 * 365 * 86400,
+}
+
+
+async def yahoo_chart(
+    http: httpx.AsyncClient,
+    sym: str,
+    interval: str,
+    rng: str,
+    *,
+    before_ts: int | None = None,
+) -> dict[str, Any] | None:
     async def _go() -> dict[str, Any] | None:
+        if before_ts is not None and before_ts > 0:
+            win = _YAHOO_WINDOW_SEC.get(interval, 90 * 86400)
+            params: dict[str, Any] = {
+                "interval": interval,
+                "period1": max(0, int(before_ts) - win),
+                "period2": max(1, int(before_ts) - 1),
+            }
+        else:
+            params = {"interval": interval, "range": rng}
         data = await yahoo_get_json(
             http,
             f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}",
-            {"interval": interval, "range": rng},
+            params,
         )
         return _parse_yahoo_chart(data) if data else None
 
     ttl = CHART_TTL_SEC if interval not in ("1d", "1wk") else QUOTE_TTL_SEC
-    return await cached_call(f"y:chart:{sym}:{interval}:{rng}", ttl, _go)
+    cursor_tag = f":b{int(before_ts) // 300}" if before_ts else ""
+    return await cached_call(f"y:chart:{sym}:{interval}:{rng}{cursor_tag}", ttl, _go)
 
 
 async def _yahoo_quote_via_chart(http: httpx.AsyncClient, sym: str, period: str) -> dict[str, Any] | None:
@@ -573,7 +601,12 @@ _INDEX_ETF_PROXY: dict[str, str] = {
 
 
 async def binance_bars(
-    http: httpx.AsyncClient, sym: str, timeframe: str, limit: int = 500
+    http: httpx.AsyncClient,
+    sym: str,
+    timeframe: str,
+    limit: int = 1000,
+    *,
+    before_ts: int | None = None,
 ) -> list[dict[str, Any]] | None:
     pair = to_binance_symbol(sym)
     interval = _TF_TO_BINANCE.get(timeframe)
@@ -581,12 +614,12 @@ async def binance_bars(
         return None
 
     async def _go() -> list[dict[str, Any]] | None:
+        params: dict[str, Any] = {"symbol": pair, "interval": interval, "limit": min(1000, max(50, limit))}
+        if before_ts is not None and before_ts > 0:
+            params["endTime"] = (int(before_ts) - 1) * 1000
         for base in ("https://data-api.binance.vision/api/v3/klines", "https://api.binance.com/api/v3/klines"):
             try:
-                resp = await http.get(
-                    base,
-                    params={"symbol": pair, "interval": interval, "limit": limit},
-                )
+                resp = await http.get(base, params=params)
                 if resp.status_code != 200:
                     continue
                 rows = [
@@ -599,6 +632,7 @@ async def binance_bars(
                         "volume": float(r[5]),
                     }
                     for r in resp.json()
+                    if before_ts is None or (int(r[0]) // 1000) < int(before_ts)
                 ]
                 if rows:
                     return rows
@@ -606,11 +640,17 @@ async def binance_bars(
                 continue
         return None
 
-    return await cached_call(f"b:bars:{pair}:{interval}:{limit}", CHART_TTL_SEC, _go)
+    cursor_tag = f":b{int(before_ts)}" if before_ts else ""
+    return await cached_call(f"b:bars:{pair}:{interval}:{limit}{cursor_tag}", CHART_TTL_SEC, _go)
 
 
 async def alpaca_stock_bars(
-    http: httpx.AsyncClient, sym: str, timeframe: str, limit: int = 500
+    http: httpx.AsyncClient,
+    sym: str,
+    timeframe: str,
+    limit: int = 1000,
+    *,
+    before_ts: int | None = None,
 ) -> list[dict[str, Any]] | None:
     """Fetch historical US Equity / ETF OHLCV bars via Alpaca Market Data v2 (works 24/7 even on weekends)."""
     from app.core.config import get_settings
@@ -621,14 +661,27 @@ async def alpaca_stock_bars(
     settings = get_settings()
     if not settings.alpaca_api_key or not settings.alpaca_api_secret:
         return None
-    alp_tf, lookback_days = _TF_TO_ALPACA.get(timeframe, ("1Hour", 90))
+    alp_tf, lookback_days = _TF_TO_ALPACA.get(timeframe, ("1Hour", 180))
 
     async def _go() -> list[dict[str, Any]] | None:
-        start_iso = (datetime.now(UTC) - timedelta(days=lookback_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_dt = (
+            datetime.fromtimestamp(int(before_ts) - 1, tz=UTC)
+            if before_ts is not None and before_ts > 0
+            else datetime.now(UTC)
+        )
+        start_dt = end_dt - timedelta(days=lookback_days)
+        params: dict[str, Any] = {
+            "timeframe": alp_tf,
+            "start": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "limit": min(1000, max(50, limit)),
+            "feed": "iex",
+            "sort": "desc",
+        }
         try:
             resp = await http.get(
                 f"https://data.alpaca.markets/v2/stocks/{clean}/bars",
-                params={"timeframe": alp_tf, "start": start_iso, "limit": limit, "feed": "iex", "sort": "asc"},
+                params=params,
                 headers={
                     "APCA-API-KEY-ID": settings.alpaca_api_key,
                     "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
@@ -638,14 +691,17 @@ async def alpaca_stock_bars(
                 return None
             raw_bars = resp.json().get("bars") or []
             out: list[dict[str, Any]] = []
-            for b in raw_bars:
+            for b in reversed(raw_bars):
                 ts_str = str(b.get("t") or "")
                 if not ts_str:
                     continue
                 dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                ts_sec = int(dt.timestamp())
+                if before_ts is not None and ts_sec >= int(before_ts):
+                    continue
                 out.append(
                     {
-                        "time": int(dt.timestamp()),
+                        "time": ts_sec,
                         "open": float(b["o"]),
                         "high": float(b["h"]),
                         "low": float(b["l"]),
@@ -657,11 +713,17 @@ async def alpaca_stock_bars(
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             return None
 
-    return await cached_call(f"alpaca:bars:{clean}:{alp_tf}:{limit}", CHART_TTL_SEC, _go)
+    cursor_tag = f":b{int(before_ts) // 300}" if before_ts else ""
+    return await cached_call(f"alpaca:bars:{clean}:{alp_tf}:{limit}{cursor_tag}", CHART_TTL_SEC, _go)
 
 
 async def tiingo_fx_bars(
-    http: httpx.AsyncClient, yahoo_sym: str, timeframe: str, limit: int = 500
+    http: httpx.AsyncClient,
+    yahoo_sym: str,
+    timeframe: str,
+    limit: int = 1000,
+    *,
+    before_ts: int | None = None,
 ) -> list[dict[str, Any]] | None:
     """Fetch historical intraday Metals (XAUUSD, XAGUSD) & Forex OHLC bars via Tiingo FX API."""
     from app.core.config import get_settings
@@ -672,29 +734,41 @@ async def tiingo_fx_bars(
     settings = get_settings()
     if not settings.tiingo_api_key:
         return None
-    freq, lookback_days = _TF_TO_TIINGO_FX.get(timeframe, ("1hour", 30))
+    freq, lookback_days = _TF_TO_TIINGO_FX.get(timeframe, ("1hour", 90))
 
     async def _go() -> list[dict[str, Any]] | None:
-        start_str = (datetime.now(UTC) - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+        end_dt = (
+            datetime.fromtimestamp(int(before_ts) - 1, tz=UTC)
+            if before_ts is not None and before_ts > 0
+            else datetime.now(UTC)
+        )
+        start_dt = end_dt - timedelta(days=lookback_days)
+        params: dict[str, Any] = {
+            "startDate": start_dt.strftime("%Y-%m-%d"),
+            "resampleFreq": freq,
+            "token": settings.tiingo_api_key,
+        }
+        if before_ts is not None and before_ts > 0:
+            params["endDate"] = end_dt.strftime("%Y-%m-%d")
         try:
-            resp = await http.get(
-                f"https://api.tiingo.com/tiingo/fx/{tk}/prices",
-                params={"startDate": start_str, "resampleFreq": freq, "token": settings.tiingo_api_key},
-            )
+            resp = await http.get(f"https://api.tiingo.com/tiingo/fx/{tk}/prices", params=params)
             if resp.status_code != 200:
                 return None
             rows = resp.json()
             if not isinstance(rows, list):
                 return None
             out: list[dict[str, Any]] = []
-            for r in rows[-limit:]:
+            for r in rows:
                 ts_str = str(r.get("date") or "")
                 if not ts_str:
                     continue
                 dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                ts_sec = int(dt.timestamp())
+                if before_ts is not None and ts_sec >= int(before_ts):
+                    continue
                 out.append(
                     {
-                        "time": int(dt.timestamp()),
+                        "time": ts_sec,
                         "open": float(r["open"]),
                         "high": float(r["high"]),
                         "low": float(r["low"]),
@@ -702,11 +776,12 @@ async def tiingo_fx_bars(
                         "volume": 0.0,
                     }
                 )
-            return out or None
+            return out[-limit:] or None
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             return None
 
-    return await cached_call(f"tiingo:fx:{tk}:{freq}:{limit}", CHART_TTL_SEC, _go)
+    cursor_tag = f":b{int(before_ts) // 300}" if before_ts else ""
+    return await cached_call(f"tiingo:fx:{tk}:{freq}:{limit}{cursor_tag}", CHART_TTL_SEC, _go)
 
 
 async def fetch_chart_with_fallback(
@@ -716,6 +791,7 @@ async def fetch_chart_with_fallback(
     rng: str,
     *,
     provider: str = "auto",
+    before_ts: int | None = None,
     http: httpx.AsyncClient | None = None,
 ) -> dict[str, Any] | None:
     """Return {"bars","price","prev_close","name","currency","source","timeframe"} or None if all providers fail."""
@@ -727,12 +803,12 @@ async def fetch_chart_with_fallback(
         sym = "PAXG-USD" if yahoo_sym.upper() == "GC=F" else yahoo_sym
         if not to_binance_symbol(sym):
             return None
-        b_bars = await binance_bars(client, sym, timeframe)
+        b_bars = await binance_bars(client, sym, timeframe, limit=1000, before_ts=before_ts)
         if not b_bars:
             return None
         prev = b_bars[-2]["close"] if len(b_bars) >= 2 else None
         return {
-            "bars": b_bars[-500:],
+            "bars": b_bars[-1000:],
             "price": b_bars[-1]["close"],
             "prev_close": prev,
             "name": None,
@@ -742,12 +818,12 @@ async def fetch_chart_with_fallback(
         }
 
     async def _try_tiingo() -> dict[str, Any] | None:
-        t_bars = await tiingo_fx_bars(client, yahoo_sym, timeframe)
+        t_bars = await tiingo_fx_bars(client, yahoo_sym, timeframe, limit=1000, before_ts=before_ts)
         if not t_bars:
             return None
         prev = t_bars[-2]["close"] if len(t_bars) >= 2 else None
         return {
-            "bars": t_bars[-500:],
+            "bars": t_bars[-1000:],
             "price": t_bars[-1]["close"],
             "prev_close": prev,
             "name": None,
@@ -757,18 +833,18 @@ async def fetch_chart_with_fallback(
         }
 
     async def _try_alpaca() -> dict[str, Any] | None:
-        a_bars = await alpaca_stock_bars(client, yahoo_sym, timeframe)
+        a_bars = await alpaca_stock_bars(client, yahoo_sym, timeframe, limit=1000, before_ts=before_ts)
         src = "alpaca_iex"
         if not a_bars:
             proxy_etf = _INDEX_ETF_PROXY.get(yahoo_sym.upper())
             if proxy_etf:
-                a_bars = await alpaca_stock_bars(client, proxy_etf, timeframe)
+                a_bars = await alpaca_stock_bars(client, proxy_etf, timeframe, limit=1000, before_ts=before_ts)
                 src = f"alpaca_{proxy_etf.lower()}"
         if not a_bars:
             return None
         prev = a_bars[-2]["close"] if len(a_bars) >= 2 else None
         return {
-            "bars": a_bars[-500:],
+            "bars": a_bars[-1000:],
             "price": a_bars[-1]["close"],
             "prev_close": prev,
             "name": None,
@@ -778,11 +854,17 @@ async def fetch_chart_with_fallback(
         }
 
     async def _try_yahoo() -> dict[str, Any] | None:
-        parsed = await yahoo_chart(client, yahoo_sym, interval, rng) if not yahoo_in_cooldown() else None
+        parsed = (
+            await yahoo_chart(client, yahoo_sym, interval, rng, before_ts=before_ts)
+            if not yahoo_in_cooldown()
+            else None
+        )
         if not parsed:
             return None
         bars: list[dict[str, Any]] = []
         for idx, ts in enumerate(parsed["timestamps"]):
+            if before_ts is not None and int(ts) >= int(before_ts):
+                continue
             try:
                 o, h, lo, c = (parsed[k][idx] for k in ("open", "high", "low", "close"))
             except IndexError:
@@ -804,7 +886,7 @@ async def fetch_chart_with_fallback(
             return None
         meta = parsed["meta"]
         return {
-            "bars": bars,
+            "bars": bars[-1000:],
             "price": float(meta.get("regularMarketPrice") or bars[-1]["close"]),
             "prev_close": float(meta.get("chartPreviousClose") or meta.get("previousClose") or 0) or None,
             "name": meta.get("longName") or meta.get("shortName"),
@@ -817,9 +899,13 @@ async def fetch_chart_with_fallback(
         bars_fb = await stooq_daily_bars(client, yahoo_sym)
         if not bars_fb:
             return None
+        if before_ts is not None:
+            bars_fb = [b for b in bars_fb if b["time"] < int(before_ts)]
+        if not bars_fb:
+            return None
         prev = bars_fb[-2]["close"] if len(bars_fb) >= 2 else None
         return {
-            "bars": bars_fb[-500:],
+            "bars": bars_fb[-1000:],
             "price": bars_fb[-1]["close"],
             "prev_close": prev,
             "name": None,
@@ -832,10 +918,16 @@ async def fetch_chart_with_fallback(
         fx = await frankfurter_daily_series(client, yahoo_sym)
         if not fx:
             return None
-        bars_fb = [{"time": t, "open": c, "high": c, "low": c, "close": c, "volume": 0.0} for t, c in fx]
+        bars_fb = [
+            {"time": t, "open": c, "high": c, "low": c, "close": c, "volume": 0.0}
+            for t, c in fx
+            if before_ts is None or t < int(before_ts)
+        ]
+        if not bars_fb:
+            return None
         prev = bars_fb[-2]["close"] if len(bars_fb) >= 2 else None
         return {
-            "bars": bars_fb[-500:],
+            "bars": bars_fb[-1000:],
             "price": bars_fb[-1]["close"],
             "prev_close": prev,
             "name": None,

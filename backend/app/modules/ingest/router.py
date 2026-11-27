@@ -14,6 +14,7 @@ from app.core.crypto import hash_api_key
 from app.core.database import get_db, get_session_factory
 from app.core.deps import verify_account_api_key
 from app.core.market_ws_hub import market_ws_hub
+from app.core.mt5_zones_store import record_zone_point
 from app.core.symbols import canonical_asset_code
 from app.core.ws_hub import ws_hub
 from app.db.models import (
@@ -468,7 +469,38 @@ async def ingest_snapshot(
                 "last_heartbeat_at": now.isoformat(),
             },
         )
+        raw_zones = r_state.get("zones")
+        z_sell = z_mean = z_fair = z_buy = 0.0
+        z_bar_time = 0
+        if isinstance(raw_zones, dict):
+            z_bar_time = int(raw_zones.get("bar_time") or 0)
+            z_sell = float(raw_zones.get("sell") or 0.0)
+            z_mean = float(raw_zones.get("mean") or 0.0)
+            z_fair = float(raw_zones.get("fair") or 0.0)
+            z_buy = float(raw_zones.get("buy") or 0.0)
+        elif any(float(r_state.get(k) or 0.0) > 0 for k in ("bb_upper", "bb_mid", "bb_lower")):
+            z_bar_time = (int(now.timestamp()) // 300) * 300
+            z_sell = float(r_state.get("bb_upper") or 0.0)
+            z_mean = float(r_state.get("bb_mid") or 0.0)
+            z_fair = float(r_state.get("vwap") or z_mean or 0.0)
+            z_buy = float(r_state.get("bb_lower") or 0.0)
 
+        if z_bar_time > 0 and (z_sell > 0 or z_buy > 0 or z_mean > 0):
+            z_tf = str(r_state.get("timeframe") or r_state.get("tf") or "M5")
+            zone_evt = await record_zone_point(
+                robot.symbol or body.symbol,
+                z_tf,
+                z_bar_time,
+                z_sell,
+                z_mean,
+                z_fair,
+                z_buy,
+                db=db,
+            )
+            if zone_evt:
+                await ws_hub.broadcast("mt5_zones.update", zone_evt)
+
+    await db.commit()
     return {"status": "ok", "pending_commands": cmd_list, "robots_updated": len(updated_robots)}
 
 

@@ -19,6 +19,7 @@ import {
   type ChartMarketStats,
   KLineChartPro,
   type Mt5ZoneLevels,
+  type Mt5ZonePoint,
 } from "@/components/terminal/KLineChartPro";
 import {
   formatDynamicVolume,
@@ -253,7 +254,12 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
   const [liquidations, setLiquidations] = useState<MarketLiquidationEvent[]>([]);
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [priceFlash, setPriceFlash] = useState<"bull" | "bear" | null>(null);
+  const [liveZoneSeries, setLiveZoneSeries] = useState<Mt5ZonePoint[]>([]);
   const prevPriceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setLiveZoneSeries([]);
+  }, [canonSym]);
 
   // UI controls
   const [selectedRobotId, setSelectedRobotId] = useState<string | null>(null);
@@ -510,6 +516,27 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
       return;
     }
 
+    if (evt.type === "mt5_zones.update" && mode === "portfolio") {
+      const d = (evt.data ?? {}) as Record<string, unknown>;
+      const evSym = canonicalMarketSymbol(String(d.symbol ?? ""));
+      if (evSym === canonSym && Number(d.bar_time ?? 0) > 0) {
+        const pt: Mt5ZonePoint = {
+          bar_time: Number(d.bar_time),
+          sell: d.sell != null ? Number(d.sell) : null,
+          mean: d.mean != null ? Number(d.mean) : null,
+          fair: d.fair != null ? Number(d.fair) : null,
+          buy: d.buy != null ? Number(d.buy) : null,
+        };
+        setLiveZoneSeries((prev) => {
+          const next = prev.filter((x) => x.bar_time !== pt.bar_time);
+          next.push(pt);
+          next.sort((a, b) => a.bar_time - b.bar_time);
+          return next.slice(-2000);
+        });
+      }
+      return;
+    }
+
     if (evt.type === "trade_event" || evt.type === "breaking_news") {
       void loadData();
     }
@@ -546,10 +573,11 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
   const mt5Zones: Mt5ZoneLevels | null = useMemo(() => {
     if (mode !== "portfolio" || !activeRobot) return null;
     const st = activeRobot.live_state_json;
-    const sellZone = extractTelemetryNum(st, "bb_upper");
-    const fair = extractTelemetryNum(st, "vwap");
-    const mean = extractTelemetryNum(st, "bb_mid");
-    const buyZone = extractTelemetryNum(st, "bb_lower");
+    const zObj = st?.zones && typeof st.zones === "object" ? (st.zones as Record<string, unknown>) : null;
+    const sellZone = zObj?.sell != null ? Number(zObj.sell) : extractTelemetryNum(st, "bb_upper");
+    const fair = zObj?.fair != null ? Number(zObj.fair) : extractTelemetryNum(st, "vwap");
+    const mean = zObj?.mean != null ? Number(zObj.mean) : extractTelemetryNum(st, "bb_mid");
+    const buyZone = zObj?.buy != null ? Number(zObj.buy) : extractTelemetryNum(st, "bb_lower");
     return {
       sellZone: sellZone && sellZone > 0 ? sellZone : null,
       fair: fair && fair > 0 ? fair : null,
@@ -950,6 +978,7 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
           symbol={displayCode}
           mode={mode}
           mt5Zones={mt5Zones}
+          mt5ZonesSeries={liveZoneSeries}
           latestTick={latestTick}
           feedHealth={feedHealth}
           feedProvider={feedProvider}

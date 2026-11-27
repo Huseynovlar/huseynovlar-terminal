@@ -11,6 +11,7 @@
 #property strict
 
 #define EP_IPC_FOLDER "ep_ipc"
+double g_epLastFairPx = 0.0;
 
 string EP_EscapeJson(const string src)
   {
@@ -78,6 +79,25 @@ void EP_ReportState(const long magic, const string state_json)
    EP_WriteIpcEvent("robot_state", magic, EP_SafeJsonObject(state_json));
   }
 
+// Format single current-bar zones object (zero-overhead: 4 already-computed doubles + bar_time)
+string EP_BuildZonesJson(
+   const long bar_time,
+   const double sell,
+   const double mean,
+   const double fair,
+   const double buy
+)
+  {
+   return StringFormat(
+      "\"zones\":{\"bar_time\":%I64d,\"sell\":%.5f,\"mean\":%.5f,\"fair\":%.5f,\"buy\":%.5f}",
+      bar_time,
+      sell,
+      mean,
+      fair,
+      buy
+   );
+  }
+
 // Zero-overhead throttled indicator snapshot (call from OnTimer or new M5 bar; max 1 write / min_interval_ms)
 // Compatible with GoldPulseReversion v8.x & NasdaqPulseReversion v3.x
 void EP_ReportIndicators(
@@ -107,10 +127,12 @@ void EP_ReportIndicators(
       return;
    s_last_emit_ms = now_ms;
 
+   long bar_time = (long)iTime(_Symbol, PERIOD_CURRENT, 0);
+   double fair_px = (vwap > 0.0) ? vwap : bb_mid;
    string payload = StringFormat(
       "{\"regime\":\"%s\",\"signal_bias\":\"%s\",\"er_h1\":%.4f,\"vwap\":%.5f,\"vwap_z\":%.3f,"
       "\"bb_upper\":%.5f,\"bb_mid\":%.5f,\"bb_lower\":%.5f,\"vol_ratio\":%.3f,"
-      "\"atr5\":%.5f,\"atr20\":%.5f,\"work_balance\":%.2f,\"bank_balance\":%.2f,\"dd_pct\":%.2f}",
+      "\"atr5\":%.5f,\"atr20\":%.5f,\"work_balance\":%.2f,\"bank_balance\":%.2f,\"dd_pct\":%.2f,%s}",
       EP_EscapeJson(regime),
       EP_EscapeJson(signal_bias),
       er_h1,
@@ -124,7 +146,8 @@ void EP_ReportIndicators(
       atr20,
       work_balance,
       bank_balance,
-      dd_pct
+      dd_pct,
+      EP_BuildZonesJson(bar_time, bb_upper, bb_mid, fair_px, bb_lower)
    );
    EP_WriteIpcEvent("robot_state", magic, payload);
   }

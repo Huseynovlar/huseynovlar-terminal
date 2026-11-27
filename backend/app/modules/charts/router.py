@@ -17,6 +17,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db, get_session_factory
 from app.core.deps import get_current_user
 from app.core.market_ws_hub import market_ws_hub
+from app.core.mt5_zones_store import get_zone_series
 from app.core.security import decode_token
 from app.core.symbols import canonical_asset_code, expand_symbol_variants, sql_symbol_match
 from app.core.ws_hub import ws_hub
@@ -106,14 +107,24 @@ class ChartStateUpsert(BaseModel):
     filters_json: dict[str, Any] = Field(default_factory=dict)
 
 
-async def fetch_yahoo_chart(symbol: str, timeframe: str = "H1", provider: str = "auto") -> dict[str, Any]:
-    """OHLC bars with 429-resistant caching and multi-provider routing."""
+async def fetch_yahoo_chart(
+    symbol: str,
+    timeframe: str = "H1",
+    provider: str = "auto",
+    before_ts: int | None = None,
+) -> dict[str, Any]:
+    """OHLC bars with 429-resistant caching, multi-provider routing, and backward pagination."""
     clean = canonical_asset_code(symbol) or symbol.strip().upper().replace(" ", "")
     yahoo_sym = _YAHOO_SYMBOL_ALIASES.get(clean, clean)
     interval, range_str = _TF_TO_YAHOO.get(timeframe, ("60m", "3mo"))
 
     res = await market_data.fetch_chart_with_fallback(
-        yahoo_sym, timeframe, interval, range_str, provider=provider
+        yahoo_sym,
+        timeframe,
+        interval,
+        range_str,
+        provider=provider,
+        before_ts=before_ts,
     )
     if not res:
         raise ValueError(f"Symbol '{clean}' unavailable: all market data providers failed or rate-limited")
@@ -533,6 +544,7 @@ async def get_asset_chart_bundle(
     limit: int = Query(default=1000, ge=20, le=2000),
     market_only: bool = Query(default=False),
     provider: str = Query(default="auto"),
+    before: int | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
@@ -547,7 +559,7 @@ async def get_asset_chart_bundle(
     symbols = expand_symbol_variants(code, broker_syms)
 
     mt5_bars: list[dict[str, Any]] = []
-    if not market_only:
+    if not market_only and before is None:
         # 1. Candles from MT5 DB (legacy backward-compat mode when market_only=False)
         bars = (
             (
@@ -581,9 +593,9 @@ async def get_asset_chart_bundle(
     source = "mt5_live" if mt5_bars else "market_history"
     ydata_meta: dict[str, Any] = {}
     min_history_bars = min(limit, 320)
-    if market_only or len(mt5_bars) < min_history_bars:
+    if market_only or before is not None or len(mt5_bars) < min_history_bars:
         try:
-            ydata = await fetch_yahoo_chart(code, timeframe, provider=provider)
+            ydata = await fetch_yahoo_chart(code, timeframe, provider=provider, before_ts=before)
             ydata_meta = ydata
             up_raw = [
                 {
@@ -595,9 +607,9 @@ async def get_asset_chart_bundle(
                     "volume": float(ub.get("volume") or 0),
                 }
                 for ub in (ydata.get("bars") or [])
-                if ub.get("time") and ub.get("close")
+                if ub.get("time") and ub.get("close") and (before is None or int(ub["time"]) < int(before))
             ]
-            if market_only or not mt5_bars:
+            if market_only or before is not None or not mt5_bars:
                 dedup_up: dict[int, dict[str, Any]] = {ub["time"]: ub for ub in up_raw}
                 bars_out = [dedup_up[t] for t in sorted(dedup_up.keys())][-limit:]
                 source = str(ydata.get("source") or "market_history")
@@ -760,6 +772,8 @@ async def get_asset_chart_bundle(
             }
             for d in deals
         ],
+        "has_more": len(bars_out) >= 20,
+        "mt5_zones_series": await get_zone_series(code, timeframe, db=db) if before is None else [],
     }
 
 

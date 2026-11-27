@@ -2640,6 +2640,7 @@ void UpdateChartOverlay(const bool force = false)
                           pBrd[0] = cUp;   pBg[0] = C'48,24,32'; pFg[0] = C'255,175,185'; pFixedW[0] = 0;   pActive[0] = true;
    pPrices[1] = trigPx;   pLabels[1] = StringFormat(isBear ? "SELL TRIG %.2f" : "BUY TRIG %.2f", trigPx);
                           pBrd[1] = cTrig; pBg[1] = C'54,32,14'; pFg[1] = C'255,200,120'; pFixedW[1] = 0;   pActive[1] = (trigPx > 0.0);
+   if(hasVw && vwapPx > 0.0) g_epLastFairPx = vwapPx;
    pPrices[2] = vwapPx;   pLabels[2] = StringFormat("FAIR %.2f", vwapPx);
                           pBrd[2] = cVwap; pBg[2] = C'46,38,18'; pFg[2] = C'255,220,110'; pFixedW[2] = 0;   pActive[2] = hasVw;
    pPrices[3] = bMid[0];  pLabels[3] = StringFormat("MEAN %.2f", bMid[0]);
@@ -3019,6 +3020,8 @@ void EP_EmitGoldTelemetry(const string statusTxt, const int openPos)
       if(CopyBuffer(g_hBbSig, 2, 0, 1, bL) == 1) bbLo  = bL[0];
      }
 
+   long barTime = (long)iTime(_Symbol, PERIOD_M5, 0);
+   double fairPx = (g_epLastFairPx > 0.0) ? g_epLastFairPx : bbMid;
    string payload = StringFormat(
       "{\"regime\":\"%s\",\"signal_bias\":\"%s\",\"wait_reason\":\"%s\",\"risk_mode\":\"%s\","
       "\"rsi_m5\":%.2f,\"er_h1\":%.4f,\"vwap_z\":%.3f,\"atr_pct\":%.4f,\"atr_val\":%.5f,"
@@ -3028,7 +3031,7 @@ void EP_EmitGoldTelemetry(const string statusTxt, const int openPos)
       "\"balance\":%.2f,\"work_balance\":%.2f,\"bank_balance\":%.2f,\"bank_active\":%s,\"dd_pct\":%.2f,"
       "\"open_positions\":%d,\"day_pnl\":%.2f,\"day_trades\":%d,\"day_wins\":%d,"
       "\"day_blocked\":%s,\"day_reason\":\"%s\",\"consec_wins\":%d,\"consec_loss\":%d,"
-      "\"paused\":%s,\"algo_enabled\":%s,\"market_open\":%s}",
+      "\"paused\":%s,\"algo_enabled\":%s,\"market_open\":%s,%s}",
       EP_EscapeJson(statusTxt), EP_EscapeJson(g_biasTxt), EP_EscapeJson(g_waitTxt), EP_EscapeJson(riskModeTxt),
       g_lastRsiVal, g_lastH1Er, g_lastVwapZ, g_lastAtrPct, g_lastAtrVal,
       bbUp, bbMid, bbLo,
@@ -3037,7 +3040,8 @@ void EP_EmitGoldTelemetry(const string statusTxt, const int openPos)
       balVal, workCap, bankVal, bankOn ? "true" : "false", g_lastDdPct,
       openPos, g_day.closedPnl, g_day.trades, g_day.wins,
       g_day.blocked ? "true" : "false", EP_EscapeJson(g_day.reason), g_runConsecWins, g_runConsecLoss,
-      g_paused ? "true" : "false", IsAlgoTradingOn() ? "true" : "false", IsMarketOpenNow() ? "true" : "false"
+      g_paused ? "true" : "false", IsAlgoTradingOn() ? "true" : "false", IsMarketOpenNow() ? "true" : "false",
+      EP_BuildZonesJson(barTime, bbUp, bbMid, fairPx, bbLo)
    );
    EP_ReportState(InpMagicNumber, payload);
   }

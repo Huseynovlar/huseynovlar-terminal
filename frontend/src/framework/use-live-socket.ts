@@ -21,6 +21,8 @@ export type LiveWsEventType =
   | "calendar_alert"
   | "container_event"
   | "macro_quotes"
+  | "robot_state"
+  | "mt5_zones.update"
   | "alert";
 
 export interface LiveWsEvent {

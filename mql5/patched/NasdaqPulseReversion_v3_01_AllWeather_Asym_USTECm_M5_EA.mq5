@@ -2407,7 +2407,10 @@ void UpdateChartOverlay(const bool force)
 
    double fairVwap = ComputeVisualFairVwap(curBar);
    if(fairVwap > 0.0)
+     {
+      g_epLastFairPx = fairVwap;
       DrawOvlHLine("NP301_OVL_L_FAIR", fairVwap, cFairLine, 1, STYLE_DASH);
+     }
 
    bool showSellTrig = (StringFind(g_biasTxt, "BEAR") >= 0 || StringFind(g_biasTxt, "2-WAY") >= 0);
    bool showBuyTrig  = (StringFind(g_biasTxt, "BULL") >= 0 || StringFind(g_biasTxt, "2-WAY") >= 0);
@@ -2909,6 +2912,8 @@ void EP_EmitNasdaqTelemetry(const string statusTxt, const int openPos)
       if(CopyBuffer(g_hBbSig, 2, 0, 1, bL) == 1) bbLo  = bL[0];
      }
 
+   long barTime = (long)iTime(_Symbol, PERIOD_M5, 0);
+   double fairPx = (g_epLastFairPx > 0.0) ? g_epLastFairPx : bbMid;
    string payload = StringFormat(
       "{\"regime\":\"%s\",\"signal_bias\":\"%s\",\"wait_reason\":\"%s\",\"risk_mode\":\"ASYM_ALLWEATHER\","
       "\"rsi_m5\":%.2f,\"er_h1\":%.4f,\"atr_pct\":%.4f,\"atr_val\":%.5f,\"d1_dir\":%d,"
@@ -2917,7 +2922,7 @@ void EP_EmitNasdaqTelemetry(const string statusTxt, const int openPos)
       "\"balance\":%.2f,\"work_balance\":%.2f,\"bank_balance\":%.2f,\"bank_active\":%s,\"dd_pct\":%.2f,"
       "\"open_positions\":%d,\"day_pnl\":%.2f,\"day_trades\":%d,\"day_wins\":%d,"
       "\"day_blocked\":%s,\"day_reason\":\"%s\",\"consec_wins\":%d,\"consec_loss\":%d,"
-      "\"paused\":%s,\"algo_enabled\":%s,\"market_open\":%s}",
+      "\"paused\":%s,\"algo_enabled\":%s,\"market_open\":%s,%s}",
       EP_EscapeJson(statusTxt), EP_EscapeJson(g_biasTxt), EP_EscapeJson(waitTxt),
       g_lastRsiVal, g_lastErVal, g_lastAtrPct, g_lastAtrVal, g_lastD1Dir,
       bbUp, bbMid, bbLo,
@@ -2925,7 +2930,8 @@ void EP_EmitNasdaqTelemetry(const string statusTxt, const int openPos)
       balVal, workCap, bankVal, bankOn ? "true" : "false", g_lastDdPct,
       openPos, g_day.closedPnl, g_day.trades, g_day.wins,
       g_day.blocked ? "true" : "false", EP_EscapeJson(g_day.reason), g_runConsecWins, g_runConsecLoss,
-      g_paused ? "true" : "false", IsAlgoTradingOn() ? "true" : "false", IsMarketOpenNow() ? "true" : "false"
+      g_paused ? "true" : "false", IsAlgoTradingOn() ? "true" : "false", IsMarketOpenNow() ? "true" : "false",
+      EP_BuildZonesJson(barTime, bbUp, bbMid, fairPx, bbLo)
    );
    EP_ReportState(InpMagicNumber, payload);
   }

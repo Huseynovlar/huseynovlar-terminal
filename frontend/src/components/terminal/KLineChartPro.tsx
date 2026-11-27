@@ -176,6 +176,14 @@ export interface Mt5ZoneLevels {
   label?: string;
 }
 
+export interface Mt5ZonePoint {
+  bar_time: number;
+  sell: number | null;
+  mean: number | null;
+  fair: number | null;
+  buy: number | null;
+}
+
 export interface ChartMarketStats {
   price: number;
   change_pct: number;
@@ -200,6 +208,8 @@ export interface ChartBundleResponse {
     close: number;
     volume?: number;
   }>;
+  has_more?: boolean;
+  mt5_zones_series?: Mt5ZonePoint[];
   market_stats?: ChartMarketStats;
   deals?: Array<{
     id: string;
@@ -244,6 +254,36 @@ const TF_SECONDS: Record<ChartTimeframe, number> = {
   W1: 604800,
 };
 
+const INDICATORS_STORAGE_KEY = "ht_chart_indicators_v1";
+const ALLOWED_INDICATORS = new Set(["EMA", "MA", "BOLL", "VOL", "RSI", "MACD"]);
+
+function loadSavedIndicators(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(INDICATORS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x): x is string => typeof x === "string" && ALLOWED_INDICATORS.has(x));
+  } catch {
+    return [];
+  }
+}
+
+function saveIndicators(list: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(INDICATORS_STORAGE_KEY, JSON.stringify(list));
+  } catch {
+    // ignore storage quota / private mode
+  }
+}
+
+interface Mt5ZonesExtendData {
+  levels?: Mt5ZoneLevels | null;
+  series?: Mt5ZonePoint[];
+}
+
 let mt5ZonesRegistered = false;
 
 function ensureMt5ZonesIndicator() {
@@ -262,20 +302,69 @@ function ensureMt5ZonesIndicator() {
     ],
     styles: {
       lines: [
-        { style: "solid", smooth: false, size: 1, dashedValue: [2, 2], color: "#F43F5E" },
+        { style: "solid", smooth: false, size: 1.5, dashedValue: [2, 2], color: "#F43F5E" },
         { style: "dashed", smooth: false, size: 1, dashedValue: [2, 3], color: "#F59E0B" },
         { style: "dashed", smooth: false, size: 1, dashedValue: [6, 4], color: "#94A3B8" },
-        { style: "solid", smooth: false, size: 1, dashedValue: [2, 2], color: "#10B981" },
+        { style: "solid", smooth: false, size: 1.5, dashedValue: [2, 2], color: "#10B981" },
       ],
+      lastValueMark: {
+        show: true,
+        text: {
+          show: true,
+          color: "#FFFFFF",
+          size: 10,
+          family: "IBM Plex Mono, monospace",
+          weight: "normal",
+          paddingLeft: 4,
+          paddingRight: 4,
+          paddingTop: 2,
+          paddingBottom: 2,
+          borderRadius: 2,
+        },
+      },
     },
     calc: (dataList, indicator) => {
-      const ext = (indicator.extendData ?? {}) as Mt5ZoneLevels;
-      return dataList.map(() => ({
-        sell: ext.sellZone ?? undefined,
-        fair: ext.fair ?? undefined,
-        mean: ext.mean ?? undefined,
-        buy: ext.buyZone ?? undefined,
-      }));
+      const ext = (indicator.extendData ?? {}) as Mt5ZonesExtendData;
+      const levels = ext.levels ?? null;
+      const series = ext.series ?? [];
+
+      if (series.length > 0) {
+        const sorted = [...series].sort((a, b) => a.bar_time - b.bar_time);
+        let cursor = 0;
+        let lastMatched: Mt5ZonePoint | null = null;
+        return dataList.map((bar) => {
+          const barSec = Math.floor(bar.timestamp / 1000);
+          while (cursor < sorted.length && sorted[cursor]!.bar_time <= barSec) {
+            lastMatched = sorted[cursor]!;
+            cursor += 1;
+          }
+          if (lastMatched) {
+            return {
+              sell: lastMatched.sell ?? undefined,
+              fair: lastMatched.fair ?? undefined,
+              mean: lastMatched.mean ?? undefined,
+              buy: lastMatched.buy ?? undefined,
+            };
+          }
+          return {
+            sell: undefined,
+            fair: undefined,
+            mean: undefined,
+            buy: undefined,
+          };
+        });
+      }
+
+      if (levels && (levels.sellZone || levels.fair || levels.mean || levels.buyZone)) {
+        return dataList.map(() => ({
+          sell: levels.sellZone ?? undefined,
+          fair: levels.fair ?? undefined,
+          mean: levels.mean ?? undefined,
+          buy: levels.buyZone ?? undefined,
+        }));
+      }
+
+      return dataList.map(() => ({}));
     },
   });
 }
@@ -284,6 +373,7 @@ interface KLineChartProProps {
   symbol: string;
   mode: "portfolio" | "market";
   mt5Zones?: Mt5ZoneLevels | null;
+  mt5ZonesSeries?: Mt5ZonePoint[];
   latestTick?: MarketTickEvent | null;
   feedHealth: MarketFeedHealth;
   feedProvider: string;
@@ -304,6 +394,7 @@ export function KLineChartPro({
   symbol,
   mode,
   mt5Zones,
+  mt5ZonesSeries,
   latestTick,
   feedHealth,
   feedProvider,
@@ -325,13 +416,16 @@ export function KLineChartPro({
   const [drawingsLocked, setDrawingsLocked] = useState(false);
   const [drawingsHidden, setDrawingsHidden] = useState(false);
   const [indicatorsMenuOpen, setIndicatorsMenuOpen] = useState(false);
-  const [activeIndicators, setActiveIndicators] = useState<string[]>(["VOL", "EMA"]);
+  // Clean chart by default (zero built-in EMA/VOL unless explicitly enabled by user in localStorage)
+  const [activeIndicators, setActiveIndicators] = useState<string[]>(() => loadSavedIndicators());
   const [showMt5Zones, setShowMt5Zones] = useState<boolean>(mode === "portfolio");
   const [showDealMarkers, setShowDealMarkers] = useState<boolean>(mode === "portfolio");
   const [bundleDeals, setBundleDeals] = useState<NonNullable<ChartBundleResponse["deals"]>>([]);
+  const [bundleZoneSeries, setBundleZoneSeries] = useState<Mt5ZonePoint[]>([]);
   const [resolvedSource, setResolvedSource] = useState<string>("");
   const [bundleLatencyMs, setBundleLatencyMs] = useState<number | null>(null);
   const [loadingBars, setLoadingBars] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const dealOverlayIdsRef = useRef<string[]>([]);
 
   const onBundleLoadedRef = useRef(onBundleLoaded);
@@ -340,7 +434,7 @@ export function KLineChartPro({
   const resolvedThemeMode = usePreferencesStore((s) => s.resolvedThemeMode);
   const isDark = resolvedThemeMode !== "light";
 
-  // Initialize KLineChart v10 instance once
+  // Initialize KLineChart v10 instance once (clean candles only, restoring user-saved indicators if any)
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -353,8 +447,12 @@ export function KLineChartPro({
     if (!chart) return;
     chartRef.current = chart;
     chart.setTimezone("UTC");
-    chart.createIndicator("VOL", false);
-    chart.createIndicator({ name: "EMA", paneId: "candle_pane" }, true);
+
+    const saved = loadSavedIndicators();
+    for (const name of saved) {
+      const isMainOverlay = name === "EMA" || name === "MA" || name === "BOLL";
+      chart.createIndicator(isMainOverlay ? { name, paneId: "candle_pane" } : name, isMainOverlay);
+    }
 
     const ro = new ResizeObserver(() => {
       chart.resize();
@@ -374,19 +472,26 @@ export function KLineChartPro({
     chartRef.current?.setStyles(buildKLineChartStyles(isDark));
   }, [isDark]);
 
-  // Configure DataLoader and reload when symbol, timeframe, or provider changes
+  // Configure DataLoader with initial load + dynamic older-history scroll pagination (type === "forward")
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !symbol) return;
 
     const precision = getSymbolPricePrecision(symbol);
     setLoadingBars(true);
+    setLoadingOlder(false);
 
     chart.setDataLoader({
-      getBars: async ({ type, callback }) => {
+      getBars: async ({ type, timestamp, callback }) => {
         if (type === "backward") {
-          callback([], false);
+          callback([], { forward: true, backward: false });
           return;
+        }
+        const isOlderChunk = type === "forward" && typeof timestamp === "number" && timestamp > 0;
+        if (isOlderChunk) {
+          setLoadingOlder(true);
+        } else {
+          setLoadingBars(true);
         }
         try {
           const qs = new URLSearchParams({
@@ -395,6 +500,9 @@ export function KLineChartPro({
             market_only: "true",
             provider,
           });
+          if (isOlderChunk) {
+            qs.set("before", String(Math.floor(timestamp / 1000)));
+          }
           const bundle = await apiRequest<ChartBundleResponse>(
             `/charts/${encodeURIComponent(symbol)}?${qs.toString()}`,
           );
@@ -406,16 +514,26 @@ export function KLineChartPro({
             close: Number(b.close),
             volume: Number(b.volume ?? 0),
           }));
-          lastBarRef.current = klineBars.length > 0 ? { ...klineBars[klineBars.length - 1]! } : null;
-          setResolvedSource(bundle.market_stats?.provider || bundle.source || "market_ws");
-          setBundleLatencyMs(bundle.market_stats?.latency_ms ?? null);
-          setBundleDeals(Array.isArray(bundle.deals) ? bundle.deals : []);
-          onBundleLoadedRef.current?.(bundle);
-          callback(klineBars, false);
+
+          if (!isOlderChunk) {
+            lastBarRef.current = klineBars.length > 0 ? { ...klineBars[klineBars.length - 1]! } : null;
+            setResolvedSource(bundle.market_stats?.provider || bundle.source || "market_ws");
+            setBundleLatencyMs(bundle.market_stats?.latency_ms ?? null);
+            setBundleDeals(Array.isArray(bundle.deals) ? bundle.deals : []);
+            setBundleZoneSeries(Array.isArray(bundle.mt5_zones_series) ? bundle.mt5_zones_series : []);
+            onBundleLoadedRef.current?.(bundle);
+          }
+
+          const hasMore = Boolean(bundle.has_more && klineBars.length > 0);
+          callback(klineBars, { forward: hasMore, backward: false });
         } catch {
-          callback([], false);
+          callback([], { forward: false, backward: false });
         } finally {
-          setLoadingBars(false);
+          if (isOlderChunk) {
+            setLoadingOlder(false);
+          } else {
+            setLoadingBars(false);
+          }
         }
       },
       subscribeBar: ({ callback }) => {
@@ -513,28 +631,36 @@ export function KLineChartPro({
     liveCallbackRef.current(nextBar);
   }, [latestTick, timeframe]);
 
-  // Sync MT5 Zones custom indicator in portfolio mode
+  // Sync MT5 Zones custom indicator in portfolio mode (supports both continuous series & scalar levels)
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+    const mergedMap = new Map<number, Mt5ZonePoint>();
+    for (const pt of bundleZoneSeries) {
+      mergedMap.set(pt.bar_time, pt);
+    }
+    for (const pt of mt5ZonesSeries ?? []) {
+      mergedMap.set(pt.bar_time, pt);
+    }
+    const mergedSeries = Array.from(mergedMap.values()).sort((a, b) => a.bar_time - b.bar_time);
     const hasLevels =
       mode === "portfolio" &&
       showMt5Zones &&
-      mt5Zones &&
-      (mt5Zones.sellZone || mt5Zones.fair || mt5Zones.mean || mt5Zones.buyZone);
+      (mergedSeries.length > 0 ||
+        Boolean(mt5Zones && (mt5Zones.sellZone || mt5Zones.fair || mt5Zones.mean || mt5Zones.buyZone)));
 
     chart.removeIndicator({ name: "MT5_ZONES" });
-    if (hasLevels && mt5Zones) {
+    if (hasLevels) {
       chart.createIndicator(
         {
           name: "MT5_ZONES",
           paneId: "candle_pane",
-          extendData: mt5Zones,
+          extendData: { levels: mt5Zones ?? null, series: mergedSeries } satisfies Mt5ZonesExtendData,
         },
         true,
       );
     }
-  }, [mode, showMt5Zones, mt5Zones]);
+  }, [mode, showMt5Zones, mt5Zones, mt5ZonesSeries, bundleZoneSeries]);
 
   // Drawing tool actions
   const activateDrawingTool = useCallback(
@@ -585,11 +711,19 @@ export function KLineChartPro({
     if (!chart) return;
     if (activeIndicators.includes(name)) {
       chart.removeIndicator({ name });
-      setActiveIndicators((prev) => prev.filter((x) => x !== name));
+      setActiveIndicators((prev) => {
+        const next = prev.filter((x) => x !== name);
+        saveIndicators(next);
+        return next;
+      });
     } else {
       const isMainOverlay = name === "EMA" || name === "MA" || name === "BOLL";
       chart.createIndicator(isMainOverlay ? { name, paneId: "candle_pane" } : name, isMainOverlay);
-      setActiveIndicators((prev) => [...prev, name]);
+      setActiveIndicators((prev) => {
+        const next = [...prev, name];
+        saveIndicators(next);
+        return next;
+      });
     }
   };
 
@@ -695,7 +829,7 @@ export function KLineChartPro({
               className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-[3px] px-2 text-[11px] text-[var(--text-secondary)] transition-colors duration-75 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               <SlidersHorizontal className="size-3 shrink-0" />
-              Индикаторы
+              + Индикаторы{activeIndicators.length > 0 ? ` (${activeIndicators.length})` : ""}
             </button>
             {indicatorsMenuOpen ? (
               <div className="absolute top-7 left-0 z-40 w-44 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1">
@@ -896,6 +1030,26 @@ export function KLineChartPro({
         {/* KLineChart v10 Canvas */}
         <div className="relative min-h-0 min-w-0 flex-1 bg-[var(--bg-panel)]">
           <div ref={containerRef} className="h-full w-full" />
+
+          {/* Left-edge skeleton shimmer overlay when dynamically loading older historical candles */}
+          {loadingOlder ? (
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-20 flex w-28 flex-col justify-between border-r border-[var(--border-subtle)] bg-[var(--bg-panel)]/90 px-2.5 py-3">
+              <div className="inline-flex items-center gap-1.5 rounded-[3px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">
+                <span className="inline-block size-1.5 animate-pulse rounded-full bg-[var(--accent-blue)]" />
+                История...
+              </div>
+              <div className="flex flex-1 items-end justify-between gap-1.5 py-6">
+                {[38, 62, 48, 74, 54, 68, 44].map((h, idx) => (
+                  <div
+                    key={idx}
+                    className="w-2 rounded-[1px] bg-[var(--bg-elevated)] ht-shimmer-bar"
+                    style={{ height: `${h}%` }}
+                  />
+                ))}
+              </div>
+              <div className="h-2.5 w-full rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
