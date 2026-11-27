@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Clock, Fingerprint, KeyRound, Languages, ShieldAlert } from "lucide-react";
 
+import { AppLogo } from "@/components/app-logo";
 import { AsyncButton } from "@/components/ui/async-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,7 +58,7 @@ function LoginV2() {
         : await authApi.bootstrap({ username, email, password, display_name: displayName || username });
       setAccessToken(res.access_token);
       notify.success(t.auth.loginSuccess);
-      await navigate({ to: "/dashboard/crypto" });
+      await navigate({ to: "/dashboard/home" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : t.common.errorTitle;
       if (msg.toLowerCase().includes("totp")) {
@@ -87,7 +88,7 @@ function LoginV2() {
       const res = await authApi.webauthnLoginVerify(challenge_key, serializeCredential(cred));
       setAccessToken(res.access_token);
       notify.success(t.auth.loginSuccess);
-      await navigate({ to: "/dashboard/crypto" });
+      await navigate({ to: "/dashboard/home" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : t.common.errorTitle;
       setError(msg);
@@ -104,7 +105,7 @@ function LoginV2() {
           type="button"
           variant="outline"
           size="sm"
-          className="h-7 gap-1.5 text-xs uppercase"
+          className="h-7 gap-1.5 rounded-[4px] border-[var(--border-subtle)] bg-[var(--bg-panel)] text-xs uppercase"
           onClick={cycleLanguage}
         >
           <Languages className="size-3.5" />
@@ -112,12 +113,13 @@ function LoginV2() {
         </Button>
       </div>
 
-      <div className="mx-auto flex w-full flex-col justify-center space-y-6 px-4 sm:w-[370px]">
-        <div className="space-y-1.5 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">
+      <div className="mx-auto flex w-full max-w-[380px] flex-col justify-center space-y-5 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-6">
+        <div className="flex flex-col items-center space-y-2 text-center">
+          <AppLogo className="size-16" />
+          <h1 className="text-lg font-semibold tracking-tight text-[var(--text-primary)]">
             {initialized ? t.auth.loginTitle : t.auth.bootstrapTitle}
           </h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-xs text-[var(--text-muted)]">
             {initialized ? t.auth.loginSubtitle : t.auth.bootstrapSubtitle}
           </p>
         </div>

@@ -1,10 +1,24 @@
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 import { Link } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, Check, ExternalLink, Link2, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ExternalLink,
+  Link2,
+  Moon,
+  Pencil,
+  Plus,
+  Sun,
+  Trash2,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
 import { AppLogo } from "@/components/app-logo";
+import { soundEngine } from "@/framework/sound-engine";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -56,6 +70,36 @@ export function AppSidebar({
   const [editMode, setEditMode] = useState(false);
   const [linkTitle, setLinkTitle] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [soundMuted, setSoundMuted] = useState(() => soundEngine.getConfig().muted);
+  const [isLightTheme, setIsLightTheme] = useState(() =>
+    typeof document !== "undefined" ? document.documentElement.getAttribute("data-theme") === "light" : false,
+  );
+
+  useEffect(() => {
+    const unsubSound = soundEngine.subscribe(() => setSoundMuted(soundEngine.getConfig().muted));
+    const syncTheme = () => setIsLightTheme(document.documentElement.getAttribute("data-theme") === "light");
+    const obs = new MutationObserver(syncTheme);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class"] });
+    return () => {
+      unsubSound();
+      obs.disconnect();
+    };
+  }, []);
+
+  function toggleTheme() {
+    const nextLight = !isLightTheme;
+    const root = document.documentElement;
+    if (nextLight) {
+      root.setAttribute("data-theme", "light");
+      root.classList.remove("dark");
+      root.classList.add("light");
+    } else {
+      root.setAttribute("data-theme", "dark");
+      root.classList.remove("light");
+      root.classList.add("dark");
+    }
+    setIsLightTheme(nextLight);
+  }
 
   const { sidebarVariant, sidebarCollapsible, isSynced } = usePreferencesStore(
     useShallow((s) => ({
@@ -222,17 +266,43 @@ export function AppSidebar({
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border/60 p-2 group-data-[collapsible=icon]:hidden">
-        <Button
-          type="button"
-          size="xs"
-          variant={editMode ? "default" : "ghost"}
-          className="w-full justify-start gap-1.5 text-xs"
-          onClick={() => setEditMode((v) => !v)}
-        >
-          {editMode ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
-          {editMode ? t.common.save : "Edit menu"}
-        </Button>
+      <SidebarFooter className="border-t border-sidebar-border/60 p-2">
+        <SidebarMenu className="gap-1">
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip={isLightTheme ? "Тёмная тема" : "Светлая тема"}
+              onClick={toggleTheme}
+            >
+              {isLightTheme ? <Moon className="size-4" /> : <Sun className="size-4" />}
+              <span>{isLightTheme ? "Тёмная тема" : "Светлая тема"}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip={soundMuted ? "Включить звук (Unmute)" : "Выключить звук (Mute)"}
+              onClick={() => setSoundMuted(soundEngine.toggleMute())}
+            >
+              {soundMuted ? (
+                <VolumeX className="size-4 text-[var(--text-muted)]" />
+              ) : (
+                <Volume2 className="size-4 text-[var(--bull)]" />
+              )}
+              <span>{soundMuted ? "Звук выключен" : "Звук включён"}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <div className="mt-1 group-data-[collapsible=icon]:hidden">
+          <Button
+            type="button"
+            size="xs"
+            variant={editMode ? "default" : "ghost"}
+            className="w-full justify-start gap-1.5 text-xs"
+            onClick={() => setEditMode((v) => !v)}
+          >
+            {editMode ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
+            {editMode ? t.common.save : "Edit menu"}
+          </Button>
+        </div>
       </SidebarFooter>
     </Sidebar>
   );
