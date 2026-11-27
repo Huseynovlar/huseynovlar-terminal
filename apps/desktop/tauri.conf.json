@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "freezePrototype": true,
+      "freezePrototype": false,
       "csp": "default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; img-src 'self' data: blob: https:; font-src 'self' data:;"
     }
   },
