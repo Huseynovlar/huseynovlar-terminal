@@ -1,6 +1,6 @@
 [package]
 name = "huseynovlar-terminal-desktop"
-version = "2.0.8"
+version = "2.0.9"
 description = "Huseynovlar Terminal — Institutional Tauri v2 Desktop Client"
 authors = ["Huseynovlar"]
 edition = "2021"
@@ -24,4 +24,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
+
+[target."cfg(target_os = \"macos\")".dependencies]
+objc2-app-kit = { version = "0.3.2", features = ["NSWindow"] }
 tokio = { version = "1", features = ["time"] }
