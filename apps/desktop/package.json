@@ -1,0 +1,21 @@
+{
+  "name": "huseynovlar-terminal-desktop",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Huseynovlar Terminal — Native Tauri v2 Desktop Client (macOS / Windows / Linux)",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icons": "tauri icon ../../frontend/public/app-icon-1024.png",
+    "signer:generate": "tauri signer generate -w ~/.tauri/huseynovlar.key"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.2.0",
+    "@tauri-apps/plugin-notification": "^2.2.0",
+    "@tauri-apps/plugin-updater": "^2.4.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0"
+  }
+}

@@ -1,13 +1,15 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { Calculator, PanelRight, Sun } from "lucide-react";
+import { Calculator, Maximize2, Minimize2, PanelRight, ShieldCheck, Sun } from "lucide-react";
 
 import { cn } from "cn";
 
 import { BloombergCommandBar } from "@/components/pro/BloombergCommandBar";
+import { DesktopUpdateBanner } from "@/components/pro/DesktopUpdateBanner";
 import { HotkeysHelpModal } from "@/components/pro/HotkeysHelpModal";
 import { Mt5RiskCalcModal } from "@/components/pro/Mt5RiskCalcModal";
+import { VpnPreFlightGate } from "@/components/pro/VpnPreFlightGate";
 import { WatchlistAlertsDock } from "@/components/pro/WatchlistAlertsDock";
 import { WorkspacesBar } from "@/components/pro/WorkspacesBar";
 import { Button } from "@/components/ui/button";
@@ -24,6 +26,13 @@ import { TerminalFooter } from "@/framework/components/TerminalFooter";
 import { queueServerPreferenceSync, useTerminalStore } from "@/framework/terminal-store";
 import { LiveSocketProvider } from "@/framework/use-live-socket";
 import { getDashboardLayout } from "@/server/server-actions";
+import {
+  isTauriDesktop,
+  setNativeKeepAwake,
+  syncNativeWindowTheme,
+  toggleNativeFullscreen,
+  type VpnStatusResult,
+} from "@/services/tauriBridge";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 import { registerPreferencesServerSync } from "@/stores/preferences/preferences-store";
 
@@ -44,6 +53,7 @@ function DashboardLayout() {
   const toggleSound = useTerminalStore((s) => s.toggleSound);
   const hydratePreferences = usePreferencesStore((s) => s.hydrateFromServer);
   const themeMode = usePreferencesStore((s) => s.values.theme_mode);
+  const resolvedThemeMode = usePreferencesStore((s) => s.resolvedThemeMode);
   const setPreference = usePreferencesStore((s) => s.setPreference);
 
   // Pro Terminal shell state
@@ -53,23 +63,49 @@ function DashboardLayout() {
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcSymbol, setCalcSymbol] = useState<string | undefined>(undefined);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [keepAwake, setKeepAwake] = useState(false);
+  const [keepAwake, setKeepAwake] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("ht_keep_awake_v1") === "1";
+  });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [vpnStatus, setVpnStatus] = useState<VpnStatusResult | null>(null);
   const wakeLockRef = useRef<{ release: () => Promise<void> } | null>(null);
+
+  // Sync native OS titlebar theme (macOS/Windows) whenever Dark/Light changes
+  useEffect(() => {
+    void syncNativeWindowTheme(resolvedThemeMode === "light" ? "light" : "dark");
+  }, [resolvedThemeMode]);
+
+  // Restore saved Keep-Awake state on desktop startup
+  useEffect(() => {
+    if (keepAwake) {
+      void setNativeKeepAwake(true);
+    }
+  }, []);
 
   const handleToggleAwake = useCallback(async (nextState: boolean) => {
     setKeepAwake(nextState);
     try {
-      const nav = navigator as Navigator & {
-        wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
-      };
-      if (nextState && nav.wakeLock) {
-        wakeLockRef.current = await nav.wakeLock.request("screen");
-      } else if (!nextState && wakeLockRef.current) {
-        await wakeLockRef.current.release();
-        wakeLockRef.current = null;
-      }
+      window.localStorage.setItem("ht_keep_awake_v1", nextState ? "1" : "0");
     } catch {
-      // fallback state only
+      // ignore
+    }
+    if (isTauriDesktop()) {
+      await setNativeKeepAwake(nextState);
+    } else {
+      try {
+        const nav = navigator as Navigator & {
+          wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
+        };
+        if (nextState && nav.wakeLock) {
+          wakeLockRef.current = await nav.wakeLock.request("screen");
+        } else if (!nextState && wakeLockRef.current) {
+          await wakeLockRef.current.release();
+          wakeLockRef.current = null;
+        }
+      } catch {
+        // fallback state only
+      }
     }
     notify.info(
       "Режим «Не гасить экран»",
@@ -77,12 +113,23 @@ function DashboardLayout() {
     );
   }, []);
 
-  // Global Pro Hotkeys: Cmd/Ctrl+M (Mute), Cmd/Ctrl+Shift+L (Theme), Cmd/Ctrl+Shift+A (Keep-Awake), ? (Help), Esc
+  const handleToggleFullscreen = useCallback(async () => {
+    const next = await toggleNativeFullscreen();
+    setIsFullscreen(next);
+  }, []);
+
+  // Global Pro Hotkeys: Cmd/Ctrl+M (Mute), Cmd/Ctrl+Shift+L (Theme), Cmd/Ctrl+Shift+A (Keep-Awake), F11 / Ctrl+Cmd+F (Fullscreen), ? (Help), Esc
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const inInput =
         target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+
+      if (e.key === "F11" || (e.ctrlKey && e.metaKey && e.key.toLowerCase() === "f")) {
+        e.preventDefault();
+        void handleToggleFullscreen();
+        return;
+      }
 
       if (e.key === "Escape") {
         if (calcOpen) {
@@ -126,7 +173,7 @@ function DashboardLayout() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [calcOpen, helpOpen, keepAwake, themeMode, toggleSound, setPreference, handleToggleAwake]);
+  }, [calcOpen, helpOpen, keepAwake, themeMode, toggleSound, setPreference, handleToggleAwake, handleToggleFullscreen]);
 
   useEffect(() => {
     registerPreferencesServerSync((patch) => {
@@ -238,6 +285,8 @@ function DashboardLayout() {
           }
         >
           <HotkeyEngine />
+          <VpnPreFlightGate onStatusChange={setVpnStatus} />
+          <DesktopUpdateBanner />
           <LockScreenOverlay user={currentUser} />
           <Mt5RiskCalcModal
             open={calcOpen}
@@ -291,17 +340,42 @@ function DashboardLayout() {
                 </div>
 
                 <div className="flex shrink-0 items-center gap-1.5">
-                  {keepAwake && (
-                    <button
-                      type="button"
-                      onClick={() => void handleToggleAwake(false)}
-                      title="Keep-Awake активен (Cmd/Ctrl+Shift+A)"
-                      className="hidden h-7 items-center gap-1 rounded-[4px] border border-amber-500/40 bg-amber-500/10 px-2 font-mono text-[10px] font-semibold text-amber-500 lg:inline-flex"
+                  {vpnStatus && (
+                    <span
+                      title={vpnStatus.message}
+                      className={`hidden h-7 items-center gap-1 rounded-[4px] border px-2 font-mono text-[10px] font-semibold xl:inline-flex ${
+                        vpnStatus.connected
+                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500"
+                          : "border-amber-500/40 bg-amber-500/10 text-amber-500"
+                      }`}
                     >
-                      <Sun className="size-3" />
-                      AWAKE
-                    </button>
+                      <ShieldCheck className="size-3" />
+                      {vpnStatus.connected ? "VPN: OK" : "VPN: Ожидание"}
+                    </span>
                   )}
+                  <Button
+                    type="button"
+                    variant={keepAwake ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => void handleToggleAwake(!keepAwake)}
+                    title="Не гасить экран (Keep-Awake · Cmd/Ctrl+Shift+A)"
+                    className={`h-7 gap-1 px-2 font-mono text-[10px] font-semibold ${
+                      keepAwake ? "border border-amber-500/40 bg-amber-500/10 text-amber-500" : ""
+                    }`}
+                  >
+                    <Sun className="size-3.5" />
+                    <span className="hidden xl:inline">{keepAwake ? "AWAKE" : ""}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void handleToggleFullscreen()}
+                    title="На весь экран (F11 / Ctrl+Cmd+F)"
+                    className="hidden h-7 px-2 sm:inline-flex"
+                  >
+                    {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+                  </Button>
                   <Button
                     type="button"
                     variant="ghost"

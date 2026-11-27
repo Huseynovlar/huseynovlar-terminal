@@ -1322,3 +1322,29 @@ async def get_etc_diagnostics(
             },
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# 5. Private VPN Tauri v2 Auto-Updater Manifest (/api/v1/pro/releases/latest.json)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/releases/latest.json")
+async def get_desktop_latest_release() -> dict[str, Any]:
+    """Tauri v2 updater manifest served behind private VPN (no GitHub token needed on clients)."""
+    raw_override = os.getenv("DESKTOP_LATEST_RELEASE_JSON", "").strip()
+    if raw_override:
+        with contextlib.suppress(Exception):
+            parsed = json.loads(raw_override)
+            if isinstance(parsed, dict) and parsed.get("version"):
+                return parsed
+
+    return {
+        "version": "2.0.0",
+        "notes": (
+            "Huseynovlar Terminal v2.0.0 — Bloomberg Command Bar, Multi-Chart + Bar Replay, "
+            "Native Keep-Awake, VPN Gate."
+        ),
+        "pub_date": datetime.now(UTC).isoformat(),
+        "platforms": {},
+    }

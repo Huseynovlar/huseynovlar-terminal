@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-main-capability",
+  "description": "Strict least-privilege ACL for Huseynovlar Terminal Desktop. No shell execution and no arbitrary filesystem access.",
+  "windows": ["main", "popout-*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-minimize",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "notification:default",
+    "window-state:default",
+    "updater:default"
+  ]
+}
