@@ -19,7 +19,7 @@ fn open_external_window(app: AppHandle, url: String) -> Result<(), String> {
         return Err("Only HTTP and HTTPS links can be opened".to_string());
     }
 
-    let host = parsed.host_str().unwrap_or("External link");
+    let host = parsed.host_str().unwrap_or("External link").to_string();
     let label = format!(
         "external-{}",
         NEXT_EXTERNAL_WINDOW_ID.fetch_add(1, Ordering::Relaxed)
