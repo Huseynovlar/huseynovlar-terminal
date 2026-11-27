@@ -58,8 +58,8 @@ jobs:
         run: |
           TAG="${GITHUB_SHA:0:12}"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
-          docker build -f backend/Dockerfile -t "huseynovlar-terminal-backend:$TAG" .
-          docker build -f frontend/Dockerfile -t "huseynovlar-terminal-frontend:$TAG" .
+          docker build --network=huseynovlar-terminal_panel_egress -f backend/Dockerfile -t "huseynovlar-terminal-backend:$TAG" .
+          docker build --network=huseynovlar-terminal_panel_egress -f frontend/Dockerfile -t "huseynovlar-terminal-frontend:$TAG" .
 
       - name: Create release bundle (images + compose + configs + mql5)
         run: |
