@@ -693,6 +693,85 @@ async def _ensure_core_tickers(db: AsyncSession) -> None:
     await db.commit()
 
 
+_TICKER_24H_CACHE: dict[str, dict[str, Any]] = {}
+_TICKER_24H_BINANCE_TS = 0.0
+_TICKER_24H_ALPACA_TS: dict[str, float] = {}
+
+
+async def _fetch_batch_24h_stats(symbols: list[str], settings: Settings) -> dict[str, dict[str, Any]]:
+    """Lightweight 60s-cached 24h volume/high/low/change batch loader (Binance Vision + Alpaca Snapshots)."""
+    global _TICKER_24H_BINANCE_TS
+    now_m = time.monotonic()
+
+    need_binance = now_m - _TICKER_24H_BINANCE_TS >= 60.0
+    stock_syms = [
+        s.upper()
+        for s in symbols
+        if s.isalpha() and 1 <= len(s) <= 5 and not s.upper().endswith("USD")
+        and (now_m - _TICKER_24H_ALPACA_TS.get(s.upper(), 0.0) >= 60.0)
+    ][:30]
+
+    if need_binance or (stock_syms and settings.alpaca_api_key and settings.alpaca_api_secret):
+        async with httpx.AsyncClient(timeout=5.0) as http:
+            if need_binance:
+                try:
+                    resp = await http.get("https://data-api.binance.vision/api/v3/ticker/24hr")
+                    if resp.status_code == 200 and isinstance(resp.json(), list):
+                        for row in resp.json():
+                            sym = str(row.get("symbol") or "").upper()
+                            if not sym.endswith("USDT"):
+                                continue
+                            base = sym[:-4]
+                            canon = f"{base}USD"
+                            _TICKER_24H_CACHE[canon] = {
+                                "price": float(row.get("lastPrice") or 0.0) or None,
+                                "change_pct_24h": float(row.get("priceChangePercent") or 0.0),
+                                "high_24h": float(row.get("highPrice") or 0.0) or None,
+                                "low_24h": float(row.get("lowPrice") or 0.0) or None,
+                                "volume_24h": float(row.get("quoteVolume") or 0.0) or None,
+                                "ws_source": "Binance Vision",
+                            }
+                        _TICKER_24H_BINANCE_TS = now_m
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if stock_syms and settings.alpaca_api_key and settings.alpaca_api_secret:
+                try:
+                    resp = await http.get(
+                        "https://data.alpaca.markets/v2/stocks/snapshots",
+                        params={"symbols": ",".join(stock_syms), "feed": "iex"},
+                        headers={
+                            "APCA-API-KEY-ID": settings.alpaca_api_key,
+                            "APCA-API-SECRET-KEY": settings.alpaca_api_secret,
+                        },
+                    )
+                    if resp.status_code == 200 and isinstance(resp.json(), dict):
+                        for sym, snap in resp.json().items():
+                            if not isinstance(snap, dict):
+                                continue
+                            db_bar = snap.get("dailyBar") or {}
+                            prev_bar = snap.get("prevDailyBar") or {}
+                            lt = snap.get("latestTrade") or {}
+                            px = float(lt.get("p") or db_bar.get("c") or 0.0) or None
+                            prev_c = float(prev_bar.get("c") or 0.0)
+                            vol_sh = float(db_bar.get("v") or 0.0)
+                            vol_usd = round(vol_sh * (px or prev_c), 2) if vol_sh > 0 and (px or prev_c) else None
+                            chg = round(((px - prev_c) / prev_c) * 100.0, 2) if px and prev_c > 0 else None
+                            _TICKER_24H_CACHE[sym.upper()] = {
+                                "price": px,
+                                "change_pct_24h": chg,
+                                "high_24h": float(db_bar.get("h") or 0.0) or None,
+                                "low_24h": float(db_bar.get("l") or 0.0) or None,
+                                "volume_24h": vol_usd,
+                                "ws_source": "Alpaca IEX",
+                            }
+                            _TICKER_24H_ALPACA_TS[sym.upper()] = now_m
+                except Exception:  # noqa: BLE001
+                    pass
+
+    return _TICKER_24H_CACHE
+
+
 @router.get("/tickers")
 async def list_market_tickers(
     response: Response,
@@ -701,6 +780,7 @@ async def list_market_tickers(
     page: Page = Depends(),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> list[dict[str, Any]]:
     """Master reference directory of all available market tickers with news_keywords & broker_symbols."""
     await _ensure_core_tickers(db)
@@ -737,6 +817,7 @@ async def list_market_tickers(
         ordered_stmt = stmt.order_by(core_rank, MarketTicker.symbol.asc()).limit(page.limit).offset(page.offset)
 
     rows = (await db.execute(ordered_stmt)).scalars().all()
+    stats_24h = await _fetch_batch_24h_stats([r.symbol for r in rows], settings)
     out_tickers: list[dict[str, Any]] = []
     for idx, r in enumerate(rows):
         canon = canonical_asset_code(r.symbol) or r.symbol.upper()
@@ -745,6 +826,7 @@ async def list_market_tickers(
         bid = float(last_tick.get("bid") or 0.0) if isinstance(last_tick, dict) else 0.0
         ask = float(last_tick.get("ask") or 0.0) if isinstance(last_tick, dict) else 0.0
         spread_bps = round(((ask - bid) / ((ask + bid) / 2)) * 10_000, 2) if bid > 0 and ask >= bid else None
+        st24 = stats_24h.get(canon) or stats_24h.get(r.symbol.upper()) or {}
         out_tickers.append(
             {
                 "id": page.offset + idx + 1,
@@ -756,9 +838,14 @@ async def list_market_tickers(
                 "logo_url": f"/api/v1/assets/logo/{r.symbol}",
                 "broker_symbols": build_ticker_broker_symbols(r.symbol, r.asset_class),
                 "news_keywords": build_ticker_news_keywords(r.symbol, r.name, r.asset_class, r.exchange),
-                "price": last_tick.get("price") if isinstance(last_tick, dict) else None,
+                "price": (last_tick.get("price") if isinstance(last_tick, dict) else None) or st24.get("price"),
+                "change_pct_24h": st24.get("change_pct_24h"),
+                "high_24h": st24.get("high_24h"),
+                "low_24h": st24.get("low_24h"),
+                "volume_24h": st24.get("volume_24h"),
                 "spread_bps": spread_bps,
-                "ws_source": last_tick.get("source") if isinstance(last_tick, dict) else None,
+                "ws_source": (last_tick.get("source") if isinstance(last_tick, dict) else None)
+                or st24.get("ws_source"),
             }
         )
     return out_tickers
@@ -943,13 +1030,15 @@ async def list_assets(
     accounts = (await db.execute(select(TradingAccount))).scalars().all()
     robots = (await db.execute(select(Robot))).scalars().all()
     open_positions = (await db.execute(select(OpenPositionLive))).scalars().all()
-    since_24h = datetime.now(UTC) - timedelta(hours=24)
-    since_24h_msc = int(since_24h.timestamp() * 1000)
+    now_utc = datetime.now(UTC)
+    today_start_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_msc = int(today_start_utc.timestamp() * 1000)
+    since_24h = now_utc - timedelta(hours=24)
     recent_deals = (
         await db.execute(
             select(Deal.account_id, Deal.symbol, Deal.net_profit_usd, Deal.time_msc).where(
                 Deal.deal_type.in_([0, 1]),
-                Deal.time_msc >= since_24h_msc,
+                Deal.time_msc >= today_start_msc,
             )
         )
     ).all()
@@ -961,7 +1050,6 @@ async def list_assets(
         )
     ).all()
 
-    now_utc = datetime.now(UTC)
     out_items: list[dict[str, Any]] = []
     for hub in rows:
         matched_robots = [
@@ -1179,7 +1267,8 @@ async def get_asset_detail(
     total_trades = len(deal_pnls)
     wins = sum(1 for _, pnl in deal_pnls if pnl > 0)
     net_pnl_usd = round(sum(pnl for _, pnl in deal_pnls), 2)
-    pnl_24h_usd = round(sum(pnl for ts, pnl in deal_pnls if now_msc - ts <= day_msc), 2)
+    today_start_msc = int(datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+    pnl_24h_usd = round(sum(pnl for ts, pnl in deal_pnls if ts >= today_start_msc), 2)
     pnl_7d_usd = round(sum(pnl for ts, pnl in deal_pnls if now_msc - ts <= 7 * day_msc), 2)
     pnl_30d_usd = round(sum(pnl for ts, pnl in deal_pnls if now_msc - ts <= 30 * day_msc), 2)
     win_rate_pct = round((wins / total_trades) * 100.0, 2) if total_trades else 0.0

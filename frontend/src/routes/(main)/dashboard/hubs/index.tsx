@@ -367,7 +367,7 @@ function MyAssetsListPage() {
           </span>
           <span className="hidden h-3.5 w-px bg-[var(--border-subtle)] sm:inline-block" />
           <span>
-            <span className="text-[var(--text-muted)]">PnL 24ч: </span>
+            <span className="text-[var(--text-muted)]">PnL сегодня: </span>
             <span className={kpi.pnl24h >= 0 ? "font-semibold text-[var(--bull)]" : "font-semibold text-[var(--bear)]"}>
               {formatSignedUsd(kpi.pnl24h, privacyMode)}
             </span>
@@ -443,7 +443,7 @@ function MyAssetsListPage() {
                   </th>
                   <th className="px-3 text-right font-medium">
                     <button type="button" onClick={() => toggleSort("pnl_24h_usd")} className="inline-flex items-center gap-1 whitespace-nowrap hover:text-[var(--text-primary)]">
-                      PnL 24ч <ArrowUpDown className="size-3" />
+                      PnL сегодня <ArrowUpDown className="size-3" />
                     </button>
                   </th>
                   <th className="px-3 text-center font-medium">

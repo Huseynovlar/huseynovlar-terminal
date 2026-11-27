@@ -51,7 +51,7 @@ export function TerminalWorkspaceShell({
   return (
     <div
       data-content-padding="false"
-      className="flex min-h-[calc(100dvh-72px)] w-full flex-col bg-[var(--bg-canvas)] text-[var(--text-primary)] lg:h-[calc(100dvh-72px)] lg:min-h-[480px] lg:overflow-hidden"
+      className="flex min-h-[calc(100dvh-104px)] w-full flex-col bg-[var(--bg-canvas)] text-[var(--text-primary)] lg:h-[calc(100dvh-104px)] lg:min-h-[520px] lg:overflow-hidden"
     >
       {/* 1. TOP BAR */}
       <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 py-1.5 lg:h-12 lg:flex-nowrap lg:py-0">
@@ -63,7 +63,7 @@ export function TerminalWorkspaceShell({
 
       {/* 2. MAIN WORKSPACE: CHART + RESIZE HANDLE + SIDE PANE */}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row lg:overflow-hidden">
-        <div className="h-[440px] min-h-[340px] min-w-0 shrink-0 lg:h-auto lg:min-h-0 lg:flex-1 lg:shrink">
+        <div className="h-[440px] min-h-[320px] min-w-0 shrink-0 lg:h-auto lg:min-h-0 lg:flex-1 lg:shrink">
           {mainPane}
         </div>
 
@@ -106,8 +106,8 @@ export function TerminalWorkspaceShell({
           )}
 
           <div
-            className="flex shrink-0 flex-col border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] lg:max-h-[42vh] lg:border-t-0"
-            style={{ height: dockCollapsed ? 36 : dockHeight }}
+            className="flex shrink-0 flex-col border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] pb-2 lg:max-h-[45vh] lg:border-t-0"
+            style={{ height: dockCollapsed ? 36 : Math.max(220, dockHeight) }}
           >
             {bottomDock}
           </div>

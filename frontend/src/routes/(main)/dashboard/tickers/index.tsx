@@ -28,6 +28,10 @@ export interface MarketTickerItem {
   broker_symbols?: string[];
   news_keywords?: string[];
   price?: number | null;
+  change_pct_24h?: number | null;
+  high_24h?: number | null;
+  low_24h?: number | null;
+  volume_24h?: number | null;
   spread_bps?: number | null;
   ws_source?: string | null;
 }
@@ -146,14 +150,16 @@ function MarketTickersPage() {
         case "price":
           return ((qa?.price ?? a.price ?? 0) - (qb?.price ?? b.price ?? 0)) * effDir;
         case "change": {
-          const ca = preset === "top_recent" ? Math.abs(qa?.changePct ?? 0) : (qa?.changePct ?? 0);
-          const cb = preset === "top_recent" ? Math.abs(qb?.changePct ?? 0) : (qb?.changePct ?? 0);
+          const rawA = qa?.changePct ?? a.change_pct_24h ?? 0;
+          const rawB = qb?.changePct ?? b.change_pct_24h ?? 0;
+          const ca = preset === "top_recent" ? Math.abs(rawA) : rawA;
+          const cb = preset === "top_recent" ? Math.abs(rawB) : rawB;
           return (ca - cb) * effDir;
         }
         case "high":
-          return ((qa?.high24h ?? 0) - (qb?.high24h ?? 0)) * effDir;
+          return ((qa?.high24h ?? a.high_24h ?? 0) - (qb?.high24h ?? b.high_24h ?? 0)) * effDir;
         case "volume":
-          return ((qa?.volume24h ?? 0) - (qb?.volume24h ?? 0)) * effDir;
+          return ((qa?.volume24h ?? a.volume_24h ?? 0) - (qb?.volume24h ?? b.volume_24h ?? 0)) * effDir;
         case "spread":
           return ((qa?.spreadBps ?? a.spread_bps ?? 0) - (qb?.spreadBps ?? b.spread_bps ?? 0)) * effDir;
       }
@@ -455,6 +461,10 @@ function MarketTickersPage() {
                 const q = liveQuotes[canon];
                 const inPortfolio = portfolioSet.has(canon);
                 const displayPrice = q?.price ?? tk.price ?? null;
+                const displayChange = q?.changePct ?? tk.change_pct_24h ?? null;
+                const displayHigh = q?.high24h ?? tk.high_24h ?? null;
+                const displayLow = q?.low24h ?? tk.low_24h ?? null;
+                const displayVol = q?.volume24h ?? tk.volume_24h ?? null;
                 const displaySpread = q?.spreadBps ?? tk.spread_bps ?? null;
 
                 return (
@@ -503,10 +513,10 @@ function MarketTickersPage() {
                     </td>
 
                     <td className="px-3 text-right font-mono tabular-nums">
-                      {q ? (
-                        <span className={q.changePct >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"}>
-                          {q.changePct >= 0 ? "+" : ""}
-                          {q.changePct.toFixed(2)}%
+                      {displayChange !== null ? (
+                        <span className={displayChange >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"}>
+                          {displayChange >= 0 ? "+" : ""}
+                          {displayChange.toFixed(2)}%
                         </span>
                       ) : (
                         <span className="text-[var(--text-muted)]">—</span>
@@ -514,9 +524,9 @@ function MarketTickersPage() {
                     </td>
 
                     <td className="px-3 text-right font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
-                      {q?.high24h && q?.low24h ? (
+                      {displayHigh && displayLow ? (
                         <span className="whitespace-nowrap">
-                          {formatPrice(q.high24h)} / {formatPrice(q.low24h)}
+                          {formatPrice(displayHigh)} / {formatPrice(displayLow)}
                         </span>
                       ) : (
                         <span className="text-[var(--text-muted)]">—</span>
@@ -524,7 +534,7 @@ function MarketTickersPage() {
                     </td>
 
                     <td className="px-3 text-right font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
-                      {q?.volume24h ? `$${formatDynamicVolume(q.volume24h)}` : <span className="text-[var(--text-muted)]">—</span>}
+                      {displayVol ? `$${formatDynamicVolume(displayVol)}` : <span className="text-[var(--text-muted)]">—</span>}
                     </td>
 
                     <td className="px-3 text-right font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">

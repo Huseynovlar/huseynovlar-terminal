@@ -12,6 +12,7 @@ import { BloombergTickerTape } from "@/framework/components/BloombergTickerTape"
 import { HotkeyEngine } from "@/framework/components/HotkeyEngine";
 import { LockScreenOverlay } from "@/framework/components/LockScreenOverlay";
 import { HeaderUtcClock, TerminalHeaderControls } from "@/framework/components/TerminalHeaderControls";
+import { TerminalFooter } from "@/framework/components/TerminalFooter";
 import { queueServerPreferenceSync, useTerminalStore } from "@/framework/terminal-store";
 import { LiveSocketProvider } from "@/framework/use-live-socket";
 import { getDashboardLayout } from "@/server/server-actions";
@@ -188,6 +189,7 @@ function DashboardLayout() {
           <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-3 has-data-[content-padding=false]:p-0">
             <Outlet />
           </div>
+          <TerminalFooter />
         </SidebarInset>
       </SidebarProvider>
       )}
