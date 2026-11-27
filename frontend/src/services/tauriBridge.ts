@@ -76,7 +76,17 @@ export async function checkVpnStatus(endpoint?: string): Promise<VpnStatusResult
 
   if (invoke) {
     try {
-      return await invoke<VpnStatusResult>("check_vpn_status", { endpoint: target });
+      const nativeResult = await invoke<VpnStatusResult>("check_vpn_status", { endpoint: target });
+      if (nativeResult.connected) return nativeResult;
+
+      // Retry through the WebView as well: the native HTTP client and WebView
+      // can have different DNS, proxy, and TLS paths on the user's Mac.
+      const webResult = await checkHealthOverHttp(target);
+      if (webResult.connected) return webResult;
+      return {
+        ...webResult,
+        message: `Нативная проверка: ${nativeResult.message}. Проверка WebView: ${webResult.message}`,
+      };
     } catch (err) {
       // Keep the app usable if the native command is unavailable in an older
       // desktop build; perform the same /healthz check from the WebView instead.
