@@ -414,3 +414,122 @@ export function StablecoinsMcapChart({
 
   return <div ref={elRef} className="h-[220px] w-full" />;
 }
+
+export function NetLiquidityChart({
+  dates,
+  walcl,
+  tga,
+  rrp,
+  netLiq,
+}: {
+  dates: string[];
+  walcl: number[];
+  tga: number[];
+  rrp: number[];
+  netLiq: number[];
+}) {
+  const elRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+  const isDark = usePreferencesStore((s) => s.resolvedThemeMode) !== "light";
+
+  useEffect(() => {
+    if (!elRef.current) return;
+    const c = echarts.init(elRef.current, undefined, { renderer: "canvas" });
+    chartRef.current = c;
+    const ro = new ResizeObserver(() => c.resize());
+    ro.observe(elRef.current);
+    return () => {
+      ro.disconnect();
+      c.dispose();
+    };
+  }, []);
+
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c) return;
+    const font = getRootFont();
+    const gridColor = isDark ? "#1E2634" : "#E2E8F0";
+    const textMuted = isDark ? "#8B949E" : "#475569";
+
+    c.setOption(
+      {
+        animation: false,
+        backgroundColor: "transparent",
+        textStyle: { fontFamily: font, color: textMuted },
+        legend: {
+          top: 0,
+          right: 8,
+          textStyle: { color: textMuted, fontSize: 10, fontFamily: font },
+        },
+        tooltip: {
+          trigger: "axis",
+          backgroundColor: isDark ? "#161C26" : "#FFFFFF",
+          borderColor: isDark ? "#2A3446" : "#CBD5E1",
+          borderWidth: 1,
+          textStyle: { color: isDark ? "#E8EDF5" : "#0F172A", fontSize: 11, fontFamily: font },
+        },
+        grid: { left: 46, right: 44, top: 26, bottom: 22 },
+        xAxis: {
+          type: "category",
+          data: dates,
+          axisLine: { lineStyle: { color: gridColor } },
+          axisLabel: { color: textMuted, fontSize: 10 },
+        },
+        yAxis: [
+          {
+            type: "value",
+            name: "$T",
+            scale: true,
+            splitLine: { lineStyle: { color: gridColor, type: "dashed" } },
+            axisLabel: { color: textMuted, fontSize: 10 },
+          },
+          {
+            type: "value",
+            name: "TGA/RRP $T",
+            scale: true,
+            splitLine: { show: false },
+            axisLabel: { color: textMuted, fontSize: 10 },
+          },
+        ],
+        series: [
+          {
+            name: "Net Liquidity ($T)",
+            type: "line",
+            yAxisIndex: 0,
+            data: netLiq,
+            showSymbol: false,
+            lineStyle: { width: 2.2, color: "#00D488" },
+            areaStyle: { color: "rgba(0,212,136,0.10)" },
+          },
+          {
+            name: "Fed Assets WALCL ($T)",
+            type: "line",
+            yAxisIndex: 0,
+            data: walcl,
+            showSymbol: false,
+            lineStyle: { width: 1.5, color: "#3B82F6", type: "dashed" },
+          },
+          {
+            name: "TGA ($T)",
+            type: "bar",
+            yAxisIndex: 1,
+            data: tga,
+            barMaxWidth: 10,
+            itemStyle: { color: "rgba(245,158,11,0.55)" },
+          },
+          {
+            name: "RRP ($T)",
+            type: "bar",
+            yAxisIndex: 1,
+            data: rrp,
+            barMaxWidth: 10,
+            itemStyle: { color: "rgba(168,85,247,0.55)" },
+          },
+        ],
+      },
+      true,
+    );
+  }, [dates, walcl, tga, rrp, netLiq, isDark]);
+
+  return <div ref={elRef} className="h-[220px] w-full" />;
+}
