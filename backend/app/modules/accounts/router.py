@@ -114,13 +114,56 @@ async def _resolve_account(db: AsyncSession, id_or_login: str) -> TradingAccount
     ).scalar_one_or_none()
 
 
-def _serialize_profile(p: ExnessProfile, accounts_count: int = 0) -> dict[str, Any]:
+def _is_bridge_robot(r: Robot) -> bool:
+    name_l = (r.name or "").strip().lower()
+    prog_l = (r.program_name or "").strip().lower()
+    st = r.live_state_json or {}
+    ea_l = str(st.get("ea_name") or "").strip().lower()
+    if "bridge" in name_l or "bridge" in prog_l or "bridge" in ea_l:
+        return True
+    has_strat = any(
+        st.get(k) is not None
+        for k in ("rsi_m5", "er_h1", "regime", "signal_bias", "bb_upper", "zones", "risk_mode")
+    )
+    if not has_strat and int(r.magic_number or 0) == 0 and st.get("discovery_source") == "sibling_chart":
+        return True
+    return not has_strat and name_l.startswith("ea #") and int(r.magic_number or 0) < 1_000_000
+
+
+def _is_internal_transfer_deal(d: Deal) -> bool:
+    if d.deal_type not in (0, 1):
+        return True
+    c = (d.comment or "").upper()
+    return "ALLINT" in c or "INTERNAL" in c or "TRANSFER" in c
+
+
+def _mask_encrypted_key(enc: str | None, master_key: str | None) -> str | None:
+    if not enc:
+        return None
+    if not master_key:
+        return "••••••"
+    try:
+        raw = decrypt_secret(enc, master_key)
+        tail = raw[-4:] if len(raw) >= 4 else ""
+        return f"••••••{tail}"
+    except Exception:  # noqa: BLE001
+        return "••••••"
+
+
+def _serialize_profile(
+    p: ExnessProfile,
+    accounts_count: int = 0,
+    *,
+    master_key: str | None = None,
+) -> dict[str, Any]:
     return {
         "id": p.id,
         "name": p.name,
         "notes": p.notes,
         "has_external_api": bool(p.external_api_key_enc),
         "has_external_secret": bool(p.external_api_secret_enc),
+        "external_api_key_mask": _mask_encrypted_key(p.external_api_key_enc, master_key),
+        "external_secret_mask": "••••••Ed25519" if p.external_api_secret_enc else None,
         "external_gateway_url": p.external_gateway_url or "",
         "accounts_count": accounts_count,
         "created_at": p.created_at.isoformat(),
@@ -132,11 +175,26 @@ def _serialize_account(
     plaintext_api_key: str | None = None,
     *,
     robots_count: int | None = None,
+    open_positions_count: int = 0,
+    open_volume_lots: float = 0.0,
+    profile: ExnessProfile | None = None,
+    master_key: str | None = None,
 ) -> dict[str, Any]:
-    div = a.currency_divisor or 1.0
+    div = a.currency_divisor or (100.0 if (a.currency or "").upper() == "USC" else 1.0)
+    bal_usd = round(a.last_balance / div, 2)
+    eq_usd = round(a.last_equity / div, 2)
+    flt_usd = round(a.last_floating_pnl / div, 2)
+    ml = round(a.last_margin_level, 2)
+    margin_usd = round(eq_usd / (ml / 100.0), 2) if ml > 0 and open_positions_count > 0 else 0.0
+    free_margin_usd = round(max(0.0, eq_usd - margin_usd), 2)
+
     data: dict[str, Any] = {
         "id": a.id,
         "profile_id": a.profile_id,
+        "profile_name": profile.name if profile else "",
+        "profile_gateway_url": (profile.external_gateway_url or "") if profile else "",
+        "profile_has_api": bool(profile and profile.external_api_key_enc),
+        "profile_api_key_mask": _mask_encrypted_key(profile.external_api_key_enc, master_key) if profile else None,
         "primary_asset_id": a.primary_asset_id,
         "container_id": a.container_id,
         "name": a.name,
@@ -156,12 +214,16 @@ def _serialize_account(
         "last_ping_ms": getattr(a, "last_ping_ms", 0),
         "last_seen_at": a.last_seen_at.isoformat() if a.last_seen_at else None,
         "last_balance": a.last_balance,
-        "last_balance_usd": round(a.last_balance / div, 2),
+        "last_balance_usd": bal_usd,
         "last_equity": a.last_equity,
-        "last_equity_usd": round(a.last_equity / div, 2),
+        "last_equity_usd": eq_usd,
         "last_floating_pnl": a.last_floating_pnl,
-        "last_floating_pnl_usd": round(a.last_floating_pnl / div, 2),
-        "last_margin_level": round(a.last_margin_level, 2),
+        "last_floating_pnl_usd": flt_usd,
+        "margin_usd": margin_usd,
+        "free_margin_usd": free_margin_usd,
+        "last_margin_level": ml,
+        "open_positions_count": open_positions_count,
+        "open_volume_lots": round(open_volume_lots, 2),
         "created_at": a.created_at.isoformat(),
     }
     if robots_count is not None:
@@ -171,7 +233,12 @@ def _serialize_account(
     return data
 
 
-def _serialize_robot(r: Robot, account: TradingAccount | None = None) -> dict[str, Any]:
+def _serialize_robot(
+    r: Robot,
+    account: TradingAccount | None = None,
+    *,
+    stats: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     hb = _as_utc(r.last_heartbeat_at)
     now = datetime.now(UTC)
     heartbeat_age_sec = int((now - hb).total_seconds()) if hb else None
@@ -182,6 +249,7 @@ def _serialize_robot(r: Robot, account: TradingAccount | None = None) -> dict[st
         "account_name": account.name if account else "",
         "account_login": account.mt5_login if account else "",
         "account_currency": account.currency if account else "USD",
+        "account_type": account.account_type if account else "PRO",
         "asset_id": r.asset_id,
         "magic_number": r.magic_number,
         "name": r.name,
@@ -197,6 +265,17 @@ def _serialize_robot(r: Robot, account: TradingAccount | None = None) -> dict[st
         "heartbeat_age_sec": heartbeat_age_sec,
         "is_online": is_online,
         "is_active": r.is_active,
+        "stats": stats
+        or {
+            "open_positions_count": 0,
+            "open_volume_lots": 0.0,
+            "floating_pnl_usd": 0.0,
+            "today_pnl_usd": 0.0,
+            "total_pnl_usd": 0.0,
+            "total_trades": 0,
+            "win_rate_pct": 0.0,
+            "profit_factor": 0.0,
+        },
         "created_at": r.created_at.isoformat(),
     }
 
@@ -495,6 +574,7 @@ async def list_accounts(
     asset_id: str | None = None,
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
     page: Page = Depends(),
 ) -> list[dict[str, Any]]:
     stmt = select(TradingAccount).order_by(TradingAccount.created_at.asc())
@@ -512,9 +592,33 @@ async def list_accounts(
             | TradingAccount.platform.ilike(pat)
         )
     rows = (await db.execute(stmt)).scalars().all()
-    rc_q = await db.execute(select(Robot.account_id, func.count(Robot.id)).group_by(Robot.account_id))
-    rc_map = {aid: int(cnt) for aid, cnt in rc_q.all()}
-    return page.apply([_serialize_account(r, robots_count=rc_map.get(r.id, 0)) for r in rows])
+    all_robots = (await db.execute(select(Robot))).scalars().all()
+    rc_map: dict[str, int] = {}
+    for r in all_robots:
+        if not _is_bridge_robot(r):
+            rc_map[r.account_id] = rc_map.get(r.account_id, 0) + 1
+
+    open_pos = (await db.execute(select(OpenPositionLive))).scalars().all()
+    pos_cnt_map: dict[str, int] = {}
+    pos_vol_map: dict[str, float] = {}
+    for p in open_pos:
+        pos_cnt_map[p.account_id] = pos_cnt_map.get(p.account_id, 0) + 1
+        pos_vol_map[p.account_id] = pos_vol_map.get(p.account_id, 0.0) + float(p.volume or 0.0)
+
+    profiles = {p.id: p for p in (await db.execute(select(ExnessProfile))).scalars().all()}
+    return page.apply(
+        [
+            _serialize_account(
+                r,
+                robots_count=rc_map.get(r.id, 0),
+                open_positions_count=pos_cnt_map.get(r.id, 0),
+                open_volume_lots=pos_vol_map.get(r.id, 0.0),
+                profile=profiles.get(r.profile_id),
+                master_key=settings.vault_master_key,
+            )
+            for r in rows
+        ]
+    )
 
 
 @router.post("/accounts", status_code=status.HTTP_201_CREATED)
@@ -595,29 +699,119 @@ async def list_robots(
     q: str | None = Query(default=None),
     account_id: str | None = None,
     asset_id: str | None = None,
+    status_filter: str | None = Query(default=None, alias="status"),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     page: Page = Depends(),
 ) -> list[dict[str, Any]]:
+    accounts_list = (await db.execute(select(TradingAccount))).scalars().all()
+    accounts = {a.id: a for a in accounts_list}
+
     stmt = select(Robot).order_by(Robot.created_at.asc())
     if account_id:
         stmt = stmt.where(Robot.account_id == account_id)
     if asset_id:
         stmt = stmt.where(Robot.asset_id == asset_id)
     if q and q.strip():
-        pat = f"%{q.strip()}%"
-        stmt = stmt.where(
-            or_(
-                Robot.id.ilike(pat),
-                Robot.name.ilike(pat),
-                Robot.symbol.ilike(pat),
-                Robot.strategy_label.ilike(pat),
-                sql_symbol_match(Robot.symbol, q.strip()),
+        q_clean = q.strip()
+        pat = f"%{q_clean}%"
+        matched_acc_ids = [a.id for a in accounts_list if q_clean.lower() in (a.mt5_login or "").lower()]
+        conds: list[Any] = [
+            Robot.id.ilike(pat),
+            Robot.name.ilike(pat),
+            Robot.symbol.ilike(pat),
+            Robot.program_name.ilike(pat),
+            Robot.strategy_notes.ilike(pat),
+            sql_symbol_match(Robot.symbol, q_clean),
+        ]
+        if q_clean.isdigit():
+            conds.append(Robot.magic_number == int(q_clean))
+        if matched_acc_ids:
+            conds.append(Robot.account_id.in_(matched_acc_ids))
+        stmt = stmt.where(or_(*conds))
+
+    raw_rows = (await db.execute(stmt)).scalars().all()
+    rows = [r for r in raw_rows if not _is_bridge_robot(r)]
+
+    # Pre-aggregate open positions and closed trading deals per (account_id, magic_number)
+    open_positions = (await db.execute(select(OpenPositionLive))).scalars().all()
+    pos_by_key: dict[tuple[str, int], list[OpenPositionLive]] = {}
+    for p in open_positions:
+        pos_by_key.setdefault((p.account_id, int(p.magic_number or 0)), []).append(p)
+
+    now = datetime.now(UTC)
+    start_today_msc = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+    closed_deals = (
+        (
+            await db.execute(
+                select(Deal).where(Deal.entry_type.in_([1, 2]), Deal.deal_type.in_([0, 1]))
             )
         )
-    rows = (await db.execute(stmt)).scalars().all()
-    accounts = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}
-    return page.apply([_serialize_robot(r, accounts.get(r.account_id)) for r in rows])
+        .scalars()
+        .all()
+    )
+    deals_by_key: dict[tuple[str, int], list[Deal]] = {}
+    for d in closed_deals:
+        if _is_internal_transfer_deal(d):
+            continue
+        deals_by_key.setdefault((d.account_id, int(d.magic_number or 0)), []).append(d)
+
+    serialized: list[dict[str, Any]] = []
+    for r in rows:
+        acc = accounts.get(r.account_id)
+        div = (acc.currency_divisor if acc and acc.currency_divisor else 1.0)
+        key = (r.account_id, int(r.magic_number or 0))
+        r_pos = pos_by_key.get(key, [])
+        r_deals = deals_by_key.get(key, [])
+
+        flt_usd = round(sum(float(p.profit_usd or (p.profit / div)) for p in r_pos), 2)
+        vol_lots = round(sum(float(p.volume or 0.0) for p in r_pos), 2)
+
+        def _net_usd(d: Deal, divisor: float = div) -> float:
+            if d.net_profit_usd != 0.0:
+                return float(d.net_profit_usd)
+            return (d.profit + d.commission + d.swap + d.fee) / divisor
+
+        pnls = [_net_usd(d) for d in r_deals]
+        today_realized = sum(_net_usd(d) for d in r_deals if d.time_msc >= start_today_msc)
+        gross_win = sum(p for p in pnls if p > 0)
+        gross_loss = abs(sum(p for p in pnls if p < 0))
+        wins = sum(1 for p in pnls if p > 0)
+        pf = round(gross_win / gross_loss, 2) if gross_loss > 0 else (99.99 if gross_win > 0 else 0.0)
+        wr = round((wins / len(pnls)) * 100.0, 1) if pnls else 0.0
+
+        item = _serialize_robot(
+            r,
+            acc,
+            stats={
+                "open_positions_count": len(r_pos),
+                "open_volume_lots": vol_lots,
+                "floating_pnl_usd": flt_usd,
+                "today_pnl_usd": round(today_realized + flt_usd, 2),
+                "total_pnl_usd": round(sum(pnls), 2),
+                "total_trades": len(pnls),
+                "win_rate_pct": wr,
+                "profit_factor": pf,
+            },
+        )
+
+        if status_filter:
+            sf = status_filter.strip().upper()
+            st_up = str(item["live_status"] or "").upper()
+            if sf in ("IN_MARKET", "ACTIVE") and len(r_pos) == 0 and not item["is_online"]:
+                continue
+            if sf == "IN_MARKET" and len(r_pos) == 0:
+                continue
+            if sf == "IDLE" and (not item["is_online"] or len(r_pos) > 0):
+                continue
+            if sf == "PAUSED" and "PAUSE" not in st_up:
+                continue
+            if sf == "OFFLINE" and item["is_online"]:
+                continue
+
+        serialized.append(item)
+
+    return page.apply(serialized)
 
 
 @router.post("/robots", status_code=status.HTTP_201_CREATED)
@@ -677,6 +871,7 @@ async def get_robot(
     if not robot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Robot not found")
     account = await db.get(TradingAccount, robot.account_id)
+    div = (account.currency_divisor if account and account.currency_divisor else 1.0)
 
     open_positions = (
         (
@@ -690,31 +885,72 @@ async def get_robot(
         .scalars()
         .all()
     )
-    recent_deals = (
+    all_deals = (
         (
             await db.execute(
                 select(Deal)
-                .where(Deal.account_id == robot.account_id, Deal.magic_number == robot.magic_number)
-                .order_by(Deal.time_msc.desc())
-                .limit(25)
+                .where(
+                    Deal.account_id == robot.account_id,
+                    Deal.magic_number == robot.magic_number,
+                    Deal.deal_type.in_([0, 1]),
+                )
+                .order_by(Deal.time_msc.asc())
+                .limit(500)
             )
         )
         .scalars()
         .all()
     )
-    closed_deals = [d for d in recent_deals if d.entry_type in (1, 2)]
-    net_pnl_usd = round(sum(d.net_profit_usd for d in closed_deals), 2)
-    wins = sum(1 for d in closed_deals if d.net_profit_usd > 0)
-    win_rate = round((wins / len(closed_deals)) * 100.0, 2) if closed_deals else 0.0
+    clean_deals = [d for d in all_deals if not _is_internal_transfer_deal(d)]
+    closed_deals = [d for d in clean_deals if d.entry_type in (1, 2)]
+
+    def _d_usd(d: Deal) -> float:
+        if d.net_profit_usd != 0.0:
+            return float(d.net_profit_usd)
+        return (d.profit + d.commission + d.swap + d.fee) / div
+
+    pnls = [_d_usd(d) for d in closed_deals]
+    net_pnl_usd = round(sum(pnls), 2)
+    wins = sum(1 for p in pnls if p > 0)
+    gross_win = sum(p for p in pnls if p > 0)
+    gross_loss = abs(sum(p for p in pnls if p < 0))
+    win_rate = round((wins / len(pnls)) * 100.0, 2) if pnls else 0.0
+    pf = round(gross_win / gross_loss, 2) if gross_loss > 0 else (99.99 if gross_win > 0 else 0.0)
+
+    equity_curve: list[dict[str, Any]] = []
+    cum = 0.0
+    for d in closed_deals:
+        cum += _d_usd(d)
+        equity_curve.append(
+            {
+                "time_sec": d.time_msc // 1000,
+                "date": datetime.fromtimestamp(d.time_msc / 1000, tz=UTC).strftime("%m-%d %H:%M"),
+                "cum_pnl_usd": round(cum, 2),
+            }
+        )
+
+    recent_deals = list(reversed(clean_deals[-25:]))
+    flt_usd = round(sum(float(p.profit_usd or (p.profit / div)) for p in open_positions), 2)
+    vol_lots = round(sum(float(p.volume or 0.0) for p in open_positions), 2)
 
     return {
-        **_serialize_robot(robot, account),
-        "stats": {
-            "open_positions_count": len(open_positions),
-            "recent_closed_trades": len(closed_deals),
-            "recent_net_pnl_usd": net_pnl_usd,
-            "recent_win_rate_pct": win_rate,
-        },
+        **_serialize_robot(
+            robot,
+            account,
+            stats={
+                "open_positions_count": len(open_positions),
+                "open_volume_lots": vol_lots,
+                "floating_pnl_usd": flt_usd,
+                "recent_closed_trades": len(closed_deals),
+                "total_trades": len(closed_deals),
+                "recent_net_pnl_usd": net_pnl_usd,
+                "total_pnl_usd": net_pnl_usd,
+                "recent_win_rate_pct": win_rate,
+                "win_rate_pct": win_rate,
+                "profit_factor": pf,
+            },
+        ),
+        "equity_curve": equity_curve,
         "open_positions": [
             {
                 "position_ticket": p.position_ticket,
@@ -725,7 +961,10 @@ async def get_robot(
                 "current_price": p.current_price,
                 "sl": p.sl,
                 "tp": p.tp,
-                "profit_usd": p.profit_usd,
+                "swap_usd": round(float(p.swap or 0.0) / div, 2),
+                "mae_usd": round(float(p.mae_usd or 0.0), 2),
+                "mfe_usd": round(float(p.mfe_usd or 0.0), 2),
+                "profit_usd": round(float(p.profit_usd or (p.profit / div)), 2),
                 "open_time": p.open_time,
             }
             for p in open_positions
@@ -739,7 +978,7 @@ async def get_robot(
                 "entry": "IN" if d.entry_type == 0 else "OUT" if d.entry_type == 1 else "INOUT",
                 "volume": d.volume,
                 "price": d.price,
-                "net_profit_usd": round(d.net_profit_usd, 2),
+                "net_profit_usd": round(_d_usd(d), 2),
                 "time_msc": d.time_msc,
             }
             for d in recent_deals
@@ -828,32 +1067,67 @@ async def get_account(
     id_or_login: str,
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     account = await _resolve_account(db, id_or_login)
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
+    div = account.currency_divisor or (100.0 if (account.currency or "").upper() == "USC" else 1.0)
     profile = await db.get(ExnessProfile, account.profile_id)
-    robots = (
+    all_robots = (
         (await db.execute(select(Robot).where(Robot.account_id == account.id).order_by(Robot.created_at.asc())))
         .scalars()
         .all()
     )
-    open_pos_cnt = int(
+    robots = [r for r in all_robots if not _is_bridge_robot(r)]
+    open_positions = (
         (
-            await db.execute(select(func.count(OpenPositionLive.id)).where(OpenPositionLive.account_id == account.id))
-        ).scalar_one()
-        or 0
+            await db.execute(
+                select(OpenPositionLive)
+                .where(OpenPositionLive.account_id == account.id)
+                .order_by(OpenPositionLive.open_time.desc())
+            )
+        )
+        .scalars()
+        .all()
     )
     deals_cnt = int(
         (await db.execute(select(func.count(Deal.id)).where(Deal.account_id == account.id))).scalar_one() or 0
     )
+    open_vol = sum(float(p.volume or 0.0) for p in open_positions)
 
     return {
-        **_serialize_account(account, robots_count=len(robots)),
-        "profile_name": profile.name if profile else "",
-        "open_positions_count": open_pos_cnt,
+        **_serialize_account(
+            account,
+            robots_count=len(robots),
+            open_positions_count=len(open_positions),
+            open_volume_lots=open_vol,
+            profile=profile,
+            master_key=settings.vault_master_key,
+        ),
+        "profile": _serialize_profile(profile, master_key=settings.vault_master_key) if profile else None,
         "deals_count": deals_cnt,
+        "open_positions": [
+            {
+                "position_ticket": p.position_ticket,
+                "magic_number": p.magic_number,
+                "symbol": p.symbol,
+                "side": p.side,
+                "volume": p.volume,
+                "open_price": p.open_price,
+                "current_price": p.current_price,
+                "sl": p.sl,
+                "tp": p.tp,
+                "swap_usd": round(float(p.swap or 0.0) / div, 2),
+                "mae_usd": round(float(p.mae_usd or 0.0), 2),
+                "mfe_usd": round(float(p.mfe_usd or 0.0), 2),
+                "profit_usd": round(float(p.profit_usd or (p.profit / div)), 2),
+                "open_time": p.open_time,
+                "comment": p.comment,
+            }
+            for p in open_positions
+        ],
         "robots": [_serialize_robot(r, account) for r in robots],
     }
 
