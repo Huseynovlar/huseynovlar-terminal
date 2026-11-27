@@ -8,6 +8,8 @@ import { defineConfig } from "vite";
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
+  // MapLibre v6 must be bundled by Vite for TanStack Start SSR.
+  ssr: { noExternal: ["maplibre-gl"] },
   plugins: [
     devtools({
       injectSource: {

@@ -4,13 +4,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Compass, ExternalLink, Radio, ShieldAlert, Ship } from "lucide-react";
+import { setWorkerUrl } from "maplibre-gl";
 import * as maplibregl from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { type LiveNewsItem, stripHtmlSafe, useNewsStream } from "@/framework/use-news-stream";
 import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
+
+// MapLibre v6 needs an explicit bundled worker URL in Vite production builds.
+setWorkerUrl(maplibreWorkerUrl);
 
 export const Route = createFileRoute("/(main)/dashboard/global-map/")({
   component: GlobalBmapPage,
