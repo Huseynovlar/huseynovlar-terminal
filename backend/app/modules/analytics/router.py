@@ -1326,13 +1326,15 @@ async def get_treasury_report(
                     paired_internal_ids.add(b.id)
 
     def _effective_kind(o: BalanceOperation) -> str:
+        if o.op_kind == "EXNESS_VAULT":
+            return "EXNESS_VAULT"
         if o.op_kind == "INTERNAL_TRANSFER" or o.id in paired_internal_ids:
             return "INTERNAL_TRANSFER"
         c = (o.comment or "").lower()
         keywords = ("allint", "internal", "transfer between", "transfer from", "transfer to", "int. transfer")
         if any(k in c for k in keywords):
             return "INTERNAL_TRANSFER"
-        if o.op_kind in ("REBATE", "BONUS", "FEE", "EXNESS_VAULT"):
+        if o.op_kind in ("REBATE", "BONUS", "FEE"):
             return o.op_kind
         if o.amount_usd > 0:
             return "DEPOSIT"
