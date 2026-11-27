@@ -13,7 +13,7 @@ concurrency:
 jobs:
   build:
     name: Build and publish macOS Apple Silicon (M1)
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: macos-14
     timeout-minutes: 60
     environment: production
     steps:
