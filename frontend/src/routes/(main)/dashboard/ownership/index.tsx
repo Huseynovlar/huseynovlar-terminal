@@ -4,6 +4,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ExternalLink, RefreshCw, Search } from "lucide-react";
 
 import { CotNetPositionChart, type CotPoint } from "@/components/institutional/InstitutionalCharts";
+import { Ownership13FGraph } from "@/components/institutional/Ownership13FGraph";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
@@ -444,6 +445,14 @@ function OwnershipInstitutionalPage() {
               Найти в SEC EDGAR
             </button>
           </form>
+
+          <Ownership13FGraph
+            activeTicker={secQuery}
+            onSelectTicker={(tk) => {
+              setSecInput(tk);
+              setSecQuery(tk);
+            }}
+          />
 
           {secLoading && !sec ? (
             <PageSkeleton />

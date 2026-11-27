@@ -291,16 +291,16 @@ export function AppSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="mt-1 group-data-[collapsible=icon]:hidden">
+        <div className="mt-2 px-1 pb-1 group-data-[collapsible=icon]:hidden">
           <Button
             type="button"
-            size="xs"
+            size="sm"
             variant={editMode ? "default" : "ghost"}
-            className="w-full justify-start gap-1.5 text-xs"
+            className="h-8 w-full justify-start gap-2 px-3 text-xs font-medium"
             onClick={() => setEditMode((v) => !v)}
           >
-            {editMode ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
-            {editMode ? t.common.save : "Edit menu"}
+            {editMode ? <Check className="size-3.5 shrink-0" /> : <Pencil className="size-3.5 shrink-0" />}
+            <span>{editMode ? t.common.save : "Edit menu"}</span>
           </Button>
         </div>
       </SidebarFooter>

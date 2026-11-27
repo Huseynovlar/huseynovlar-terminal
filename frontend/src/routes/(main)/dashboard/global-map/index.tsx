@@ -3,7 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { ChevronLeft, ChevronRight, Compass, Radio, Ship } from "lucide-react";
+import { ChevronLeft, ChevronRight, Compass, ExternalLink, Radio, ShieldAlert, Ship } from "lucide-react";
 import * as maplibregl from "maplibre-gl";
 
 import { notify } from "@/components/ui/toast";
@@ -38,6 +38,17 @@ interface VesselItem {
   updated_at_utc: string;
 }
 
+interface GdeltEventItem {
+  id: string;
+  title: string;
+  category: string;
+  lat: number;
+  lon: number;
+  severity: "high" | "medium" | "low" | string;
+  url: string;
+  domain: string;
+}
+
 interface BmapResponse {
   updated_at_utc: string;
   chokepoints: Chokepoint[];
@@ -64,10 +75,17 @@ function GlobalBmapPage() {
   const isDark = usePreferencesStore((s) => s.resolvedThemeMode) !== "light";
 
   const [data, setData] = useState<BmapResponse | null>(null);
+  const [gdeltEvents, setGdeltEvents] = useState<GdeltEventItem[]>([]);
   const [activeChokepoint, setActiveChokepoint] = useState<string>("hormuz");
   const [selectedVessel, setSelectedVessel] = useState<VesselItem | null>(null);
+  const [selectedGdelt, setSelectedGdelt] = useState<GdeltEventItem | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [bannerNews, setBannerNews] = useState<BmapResponse["alert_banner"]>(null);
+
+  // Layer toggles per spec
+  const [showVessels, setShowVessels] = useState(true);
+  const [showGdelt, setShowGdelt] = useState(true);
+  const [showChokepoints, setShowChokepoints] = useState(true);
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -81,6 +99,12 @@ function GlobalBmapPage() {
       })
       .catch((err) => {
         notify.error("Ошибка загрузки BMAP", err instanceof Error ? err.message : String(err));
+      });
+
+    apiRequest<{ items: GdeltEventItem[] }>("/pro/bmap/gdelt")
+      .then((res) => setGdeltEvents(res.items || []))
+      .catch(() => {
+        // non-blocking
       });
   }, []);
 
@@ -135,34 +159,69 @@ function GlobalBmapPage() {
     map.setStyle(isDark ? DARK_STYLE : LIGHT_STYLE);
   }, [isDark]);
 
-  // Render Vessel Markers on MapLibre canvas
+  // Render AIS Vessels + GDELT Geopolitics + Chokepoint markers on MapLibre canvas
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !data?.vessels) return;
+    if (!map) return;
     for (const mk of markersRef.current) mk.remove();
     markersRef.current = [];
 
-    for (const v of data.vessels) {
-      const dot = document.createElement("button");
-      dot.type = "button";
-      dot.title = `${v.name} (${v.cargo_type}) · ${v.speed_knots} kn`;
-      dot.style.width = "12px";
-      dot.style.height = "12px";
-      dot.style.borderRadius = "9999px";
-      dot.style.backgroundColor = vesselColor(v.cargo_type);
-      dot.style.border = "2px solid #0B0E14";
-      dot.style.cursor = "pointer";
-      dot.onclick = () => {
-        setSelectedVessel(v);
-        setSidebarOpen(true);
-      };
-
-      const marker = new maplibregl.Marker({ element: dot })
-        .setLngLat([v.lon, v.lat])
-        .addTo(map);
-      markersRef.current.push(marker);
+    if (showChokepoints && data?.chokepoints) {
+      for (const cp of data.chokepoints) {
+        const ring = document.createElement("button");
+        ring.type = "button";
+        ring.title = `Пролив: ${cp.name}`;
+        ring.style.width = "18px";
+        ring.style.height = "18px";
+        ring.style.borderRadius = "9999px";
+        ring.style.border = "2px dashed #3B82F6";
+        ring.style.backgroundColor = "rgba(59,130,246,0.15)";
+        ring.style.cursor = "pointer";
+        ring.onclick = () => flyToChokepoint(cp);
+        markersRef.current.push(new maplibregl.Marker({ element: ring }).setLngLat([cp.lon, cp.lat]).addTo(map));
+      }
     }
-  }, [data?.vessels]);
+
+    if (showVessels && data?.vessels) {
+      for (const v of data.vessels) {
+        const dot = document.createElement("button");
+        dot.type = "button";
+        dot.title = `${v.name} (${v.cargo_type}) · ${v.speed_knots} kn`;
+        dot.style.width = "12px";
+        dot.style.height = "12px";
+        dot.style.borderRadius = "9999px";
+        dot.style.backgroundColor = vesselColor(v.cargo_type);
+        dot.style.border = "2px solid #0B0E14";
+        dot.style.cursor = "pointer";
+        dot.onclick = () => {
+          setSelectedGdelt(null);
+          setSelectedVessel(v);
+          setSidebarOpen(true);
+        };
+        markersRef.current.push(new maplibregl.Marker({ element: dot }).setLngLat([v.lon, v.lat]).addTo(map));
+      }
+    }
+
+    if (showGdelt && gdeltEvents.length) {
+      for (const ev of gdeltEvents) {
+        const pin = document.createElement("button");
+        pin.type = "button";
+        pin.title = `[GDELT] ${ev.title}`;
+        pin.style.width = "13px";
+        pin.style.height = "13px";
+        pin.style.transform = "rotate(45deg)";
+        pin.style.backgroundColor = ev.severity === "high" ? "#F43F5E" : "#F59E0B";
+        pin.style.border = "1.5px solid #FFFFFF";
+        pin.style.cursor = "pointer";
+        pin.onclick = () => {
+          setSelectedVessel(null);
+          setSelectedGdelt(ev);
+          setSidebarOpen(true);
+        };
+        markersRef.current.push(new maplibregl.Marker({ element: pin }).setLngLat([ev.lon, ev.lat]).addTo(map));
+      }
+    }
+  }, [data?.vessels, data?.chokepoints, gdeltEvents, showVessels, showGdelt, showChokepoints]);
 
   function flyToChokepoint(cp: Chokepoint) {
     setActiveChokepoint(cp.id);
@@ -194,12 +253,12 @@ function GlobalBmapPage() {
       data-content-padding="false"
       className="relative flex h-[calc(100vh-52px)] w-full flex-col overflow-hidden bg-[var(--bg-canvas)] font-sans text-[var(--text-primary)]"
     >
-      {/* Top Chokepoint Teleport Bar */}
-      <div className="z-20 flex h-10 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3">
+      {/* Top Chokepoint Teleport & Layer Toggle Bar */}
+      <div className="z-20 flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 py-1">
         <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
           <span className="mr-1 hidden items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--text-muted)] md:inline-flex">
             <Compass className="size-3.5 text-[var(--accent-blue)]" />
-            BMAP Проливы:
+            BMAP:
           </span>
           {(data?.chokepoints ?? []).map((cp) => (
             <button
@@ -217,17 +276,20 @@ function GlobalBmapPage() {
           ))}
         </div>
 
-        {/* Legend + Sidebar Toggle */}
-        <div className="flex shrink-0 items-center gap-3 text-[10px]">
-          <span className="hidden items-center gap-1 sm:inline-flex">
-            <span className="h-2 w-2 rounded-full bg-[#F59E0B]" /> Tanker
-          </span>
-          <span className="hidden items-center gap-1 sm:inline-flex">
-            <span className="h-2 w-2 rounded-full bg-[#38BDF8]" /> LNG
-          </span>
-          <span className="hidden items-center gap-1 sm:inline-flex">
-            <span className="h-2 w-2 rounded-full bg-[#94A3B8]" /> Cargo
-          </span>
+        {/* 3 Layer Toggles + Sidebar Toggle */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 text-[10.5px]">
+          <label className="flex cursor-pointer items-center gap-1 rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 py-1 text-[var(--text-secondary)]">
+            <input type="checkbox" checked={showVessels} onChange={(e) => setShowVessels(e.target.checked)} />
+            <span>Танкеры и суда (AIS)</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-1 rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 py-1 text-[var(--text-secondary)]">
+            <input type="checkbox" checked={showGdelt} onChange={(e) => setShowGdelt(e.target.checked)} />
+            <span className="text-[var(--bear)]">Геополитика (GDELT {gdeltEvents.length})</span>
+          </label>
+          <label className="hidden cursor-pointer items-center gap-1 rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 py-1 text-[var(--text-secondary)] lg:flex">
+            <input type="checkbox" checked={showChokepoints} onChange={(e) => setShowChokepoints(e.target.checked)} />
+            <span>Ключевые проливы</span>
+          </label>
           <button
             type="button"
             onClick={() => setSidebarOpen((v) => !v)}
@@ -246,6 +308,40 @@ function GlobalBmapPage() {
         {/* Collapsible Right Inspector Sidebar (320px) */}
         {sidebarOpen && (
           <aside className="z-10 flex w-[320px] shrink-0 flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+            {/* Selected GDELT Incident Card */}
+            {selectedGdelt && (
+              <div className="border-b border-[var(--bear)]/40 bg-[var(--bear)]/10 p-2.5 text-[11px]">
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1 font-semibold uppercase text-[var(--bear)]">
+                    <ShieldAlert className="size-3.5" />
+                    GDELT · {selectedGdelt.category}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedGdelt(null)}
+                    className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  >
+                    Закрыть
+                  </button>
+                </div>
+                <p className="font-medium leading-snug text-[var(--text-primary)]">{selectedGdelt.title}</p>
+                <div className="mt-1.5 flex items-center justify-between font-mono text-[10px] text-[var(--text-muted)]">
+                  <span>
+                    {selectedGdelt.lat.toFixed(2)}, {selectedGdelt.lon.toFixed(2)}
+                  </span>
+                  <a
+                    href={selectedGdelt.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 font-sans font-semibold text-[var(--accent-blue)] hover:underline"
+                  >
+                    Источник
+                    <ExternalLink className="size-2.5" />
+                  </a>
+                </div>
+              </div>
+            )}
+
             {/* Traffic Summary */}
             <div className="grid grid-cols-3 gap-px border-b border-[var(--border-subtle)] bg-[var(--border-subtle)] text-center tabular-nums">
               <div className="bg-[var(--bg-panel)] p-2">

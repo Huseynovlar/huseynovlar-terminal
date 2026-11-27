@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Activity, Cpu, Pause, Play, Radio, RefreshCw, Server, Terminal } from "lucide-react";
 
+import { InfraEtcAndWikiPanel } from "@/components/pro/InfraEtcAndWikiPanel";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
@@ -369,6 +370,7 @@ function InfrastructureHubPage() {
           </div>
         </div>
       ) : null}
+      <InfraEtcAndWikiPanel />
     </TerminalPageShell>
   );
 }

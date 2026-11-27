@@ -10,6 +10,7 @@ import {
   YieldCurveChart,
   type YieldCurvePoint,
 } from "@/components/institutional/InstitutionalCharts";
+import { PolymarketMacroCard } from "@/components/institutional/PolymarketMacroCard";
 import { SearchSelect } from "@/components/ui/search-select";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
@@ -356,6 +357,8 @@ function MacroYieldPage() {
               </tbody>
             </table>
           </div>
+
+          <PolymarketMacroCard />
         </div>
       ) : null}
     </TerminalPageShell>

@@ -57,8 +57,29 @@ interface EarningsItem {
   sec_url: string;
 }
 
-type CalTab = "macro" | "unlocks" | "earnings";
-type PeriodPreset = "today" | "tomorrow" | "this_week" | "next_week" | "month";
+interface ExchangeHolidayItem {
+  id: string;
+  date: string;
+  exchange: string;
+  name: string;
+  status: string;
+  impact: string;
+}
+
+interface CorporateEventItem {
+  id: string;
+  kind: "ipo" | "fda" | string;
+  date: string;
+  symbol: string;
+  company: string;
+  exchange: string;
+  details: string;
+  url: string;
+}
+
+type CalTab = "macro" | "unlocks" | "earnings" | "holidays";
+type PeriodPreset = "today" | "tomorrow" | "this_week" | "next_week" | "month" | "year";
+type EarningsSubFilter = "earnings" | "ipo" | "fda";
 
 const PERIOD_PRESETS: Array<{ id: PeriodPreset; label: string }> = [
   { id: "today", label: "Сегодня" },
@@ -66,6 +87,7 @@ const PERIOD_PRESETS: Array<{ id: PeriodPreset; label: string }> = [
   { id: "this_week", label: "Эта неделя" },
   { id: "next_week", label: "След. неделя" },
   { id: "month", label: "Месяц" },
+  { id: "year", label: "Весь год" },
 ];
 
 const CURRENCY_FILTERS = ["ALL", "USD", "EUR", "GBP", "JPY", "CNY"] as const;
@@ -90,6 +112,10 @@ function getPresetRange(preset: PeriodPreset): { from: string; to: string } {
     const dow = (utcDayStart.getUTCDay() + 6) % 7;
     const nextMon = addDays(utcDayStart, 7 - dow);
     return { from: fmt(nextMon), to: fmt(addDays(nextMon, 6)) };
+  }
+  if (preset === "year") {
+    const y = now.getUTCFullYear();
+    return { from: `${y}-01-01`, to: `${y}-12-31` };
   }
   return { from: fmt(utcDayStart), to: fmt(addDays(utcDayStart, 30)) };
 }
@@ -199,6 +225,10 @@ function CalendarsHubPage() {
   const [macroEvents, setMacroEvents] = useState<MacroCalendarEvent[]>([]);
   const [unlocks, setUnlocks] = useState<TokenUnlockItem[]>([]);
   const [earnings, setEarnings] = useState<EarningsItem[]>([]);
+  const [earningsSub, setEarningsSub] = useState<EarningsSubFilter>("earnings");
+  const [corporateEvents, setCorporateEvents] = useState<CorporateEventItem[]>([]);
+  const [holidays, setHolidays] = useState<ExchangeHolidayItem[]>([]);
+  const [holidayWarning, setHolidayWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -208,6 +238,24 @@ function CalendarsHubPage() {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  const loadHolidays = useCallback(async () => {
+    try {
+      const year = new Date().getUTCFullYear();
+      const res = await apiRequest<{
+        upcoming_48h_alert?: { warning_text?: string } | null;
+        items: ExchangeHolidayItem[];
+      }>(`/pro/calendar/holidays?year=${year}`);
+      setHolidays(Array.isArray(res?.items) ? res.items : []);
+      setHolidayWarning(res?.upcoming_48h_alert?.warning_text || null);
+    } catch {
+      // non-blocking
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadHolidays();
+  }, [loadHolidays]);
 
   const loadMacro = useCallback(
     async (silent = false) => {
@@ -245,8 +293,12 @@ function CalendarsHubPage() {
   const loadEarnings = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await apiRequest<{ items: EarningsItem[] }>("/intelligence/calendar/earnings");
-      setEarnings(Array.isArray(res?.items) ? res.items : []);
+      const [eRes, cRes] = await Promise.all([
+        apiRequest<{ items: EarningsItem[] }>("/intelligence/calendar/earnings"),
+        apiRequest<{ items: CorporateEventItem[] }>("/pro/calendar/corporate?kind=all"),
+      ]);
+      setEarnings(Array.isArray(eRes?.items) ? eRes.items : []);
+      setCorporateEvents(Array.isArray(cRes?.items) ? cRes.items : []);
     } catch (err) {
       if (!silent) notify.error("Ошибка загрузки отчётности", err instanceof Error ? err.message : String(err));
     } finally {
@@ -257,8 +309,9 @@ function CalendarsHubPage() {
   useEffect(() => {
     if (tab === "macro") void loadMacro(false);
     else if (tab === "unlocks") void loadUnlocks(false);
-    else void loadEarnings(false);
-  }, [tab, loadMacro, loadUnlocks, loadEarnings]);
+    else if (tab === "earnings") void loadEarnings(false);
+    else void loadHolidays();
+  }, [tab, loadMacro, loadUnlocks, loadEarnings, loadHolidays]);
 
   useLiveEvents("calendar_alert", () => {
     if (tab === "macro") void loadMacro(true);
@@ -272,8 +325,10 @@ function CalendarsHubPage() {
         await loadMacro(true);
       } else if (tab === "unlocks") {
         await loadUnlocks(true);
-      } else {
+      } else if (tab === "earnings") {
         await loadEarnings(true);
+      } else {
+        await loadHolidays();
       }
       notify.success("Календарь обновлён");
     } catch (err) {
@@ -294,7 +349,7 @@ function CalendarsHubPage() {
   return (
     <TerminalPageShell
       title="Календари"
-      subtitle="Макроэкономика (FOMC / FRED / ForexFactory) · Токен-анлоки (DefiLlama) · Отчётность компаний (SEC / Finnhub)"
+      subtitle="Макроэкономика (весь год) · Токен-анлоки · Отчётность (Earnings / IPO / FDA) · Праздники бирж"
       badge={
         nextHighEvent
           ? `До ${nextHighEvent.title.slice(0, 22)}: ${fmtCountdown(new Date(nextHighEvent.event_time).getTime() - nowMs)}`
@@ -326,13 +381,28 @@ function CalendarsHubPage() {
       }
     >
       <div className="space-y-3">
-        {/* 3 Horizontal Tabs + Filters Bar */}
+        {/* 48h Exchange Holiday Warning Banner */}
+        {holidayWarning ? (
+          <div className="flex items-center justify-between gap-2 rounded-[4px] border border-[var(--accent-amber)]/50 bg-[var(--accent-amber)]/12 px-3 py-2 text-[11.5px] font-medium text-[var(--accent-amber)]">
+            <span>{holidayWarning}</span>
+            <button
+              type="button"
+              onClick={() => setTab("holidays")}
+              className="shrink-0 rounded-[3px] border border-[var(--accent-amber)]/40 px-2 py-0.5 text-[10.5px] font-semibold hover:bg-[var(--accent-amber)]/15"
+            >
+              Расписание бирж →
+            </button>
+          </div>
+        ) : null}
+
+        {/* 4 Horizontal Tabs + Filters Bar */}
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] px-2.5 py-2">
-          <div className="inline-flex rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-0.5">
+          <div className="inline-flex flex-wrap rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-0.5">
             {[
-              { id: "macro", label: "Экономический календарь (Macro)" },
-              { id: "unlocks", label: "Токен-анлоки и крипто" },
-              { id: "earnings", label: "Отчётность компаний (Earnings)" },
+              { id: "macro", label: "Экономический (Macro)" },
+              { id: "unlocks", label: "Токен-анлоки" },
+              { id: "earnings", label: "Отчётность (Earnings / IPO / FDA)" },
+              { id: "holidays", label: "Праздники и расписание бирж" },
             ].map((item) => (
               <button
                 key={item.id}
@@ -556,105 +626,219 @@ function CalendarsHubPage() {
           </div>
         ) : null}
 
-        {/* TAB 3: Company Earnings */}
+        {/* TAB 3: Company Earnings / IPO / FDA */}
         {tab === "earnings" ? (
-          <div className="overflow-x-auto rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
-            {loading && earnings.length === 0 ? (
-              <div className="p-3">
-                <TableSkeleton rows={8} cols={6} />
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-1">
+              {(
+                [
+                  { id: "earnings", label: "Earnings (Отчётность)" },
+                  { id: "ipo", label: "IPO (Первичные размещения)" },
+                  { id: "fda", label: "FDA (Биотех / Одобрения)" },
+                ] as const
+              ).map((sub) => (
+                <button
+                  key={sub.id}
+                  type="button"
+                  onClick={() => setEarningsSub(sub.id)}
+                  className={`rounded-[4px] border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    earningsSub === sub.id
+                      ? "border-[var(--accent-blue)] bg-[var(--accent-blue)]/15 text-[var(--text-primary)]"
+                      : "border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  {sub.label}
+                </button>
+              ))}
+            </div>
+
+            {earningsSub !== "earnings" ? (
+              <div className="overflow-x-auto rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+                <table className="w-full border-collapse text-left text-[11px] tabular-nums">
+                  <thead>
+                    <tr className="h-8 border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[10px] uppercase text-[var(--text-muted)]">
+                      <th className="px-3">Дата</th>
+                      <th className="px-2">Тип</th>
+                      <th className="px-3">Тикер / Компания</th>
+                      <th className="px-2">Биржа</th>
+                      <th className="px-2">Детали события</th>
+                      <th className="px-3 text-right">Источник</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-subtle)]">
+                    {corporateEvents
+                      .filter((c) => c.kind === earningsSub)
+                      .map((c) => (
+                        <tr key={c.id} className="h-10 hover:bg-[var(--bg-elevated)]/50">
+                          <td className="px-3 font-mono text-[var(--text-secondary)]">{c.date}</td>
+                          <td className="px-2">
+                            <span className="rounded-[3px] border border-[var(--accent-amber)]/40 bg-[var(--accent-amber)]/15 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase text-[var(--accent-amber)]">
+                              {c.kind}
+                            </span>
+                          </td>
+                          <td className="px-3">
+                            <div className="font-semibold text-[var(--text-primary)]">{c.symbol}</div>
+                            <div className="text-[10px] text-[var(--text-muted)]">{c.company}</div>
+                          </td>
+                          <td className="px-2 font-mono text-[var(--text-secondary)]">{c.exchange}</td>
+                          <td className="px-2 text-[var(--text-primary)]">{c.details}</td>
+                          <td className="px-3 text-right">
+                            <a
+                              href={c.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 font-medium text-[var(--accent-blue)] hover:underline"
+                            >
+                              Подробнее
+                              <ExternalLink className="size-3" />
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
-              <table className="w-full border-collapse text-left text-[11px] tabular-nums">
-                <thead>
-                  <tr className="h-8 border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[10px] uppercase text-[var(--text-muted)]">
-                    <th className="px-3">Дата</th>
-                    <th className="px-2">Сессия</th>
-                    <th className="px-3">Тикер / Компания</th>
-                    <th className="px-2 text-right">EPS Прогноз / Факт</th>
-                    <th className="px-2 text-right">Выручка Прогноз / Факт</th>
-                    <th className="px-3 text-right">SEC EDGAR</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--border-subtle)]">
-                  {earnings.map((e) => {
-                    const epsBeat =
-                      e.eps_actual !== null && e.eps_estimate !== null ? e.eps_actual >= e.eps_estimate : null;
-                    return (
-                      <tr
-                        key={e.id}
-                        onClick={() => void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: e.symbol } })}
-                        className="h-10 cursor-pointer hover:bg-[var(--bg-elevated)]/50"
-                      >
-                        <td className="px-3 text-[var(--text-secondary)]">{e.date}</td>
-                        <td className="px-2">
-                          <span
-                            className="rounded-[3px] px-1.5 py-0.5 text-[10px] font-bold"
-                            style={{
-                              backgroundColor:
-                                e.session === "BMO"
-                                  ? "color-mix(in srgb, var(--accent-amber) 16%, transparent)"
-                                  : "color-mix(in srgb, var(--accent-blue) 16%, transparent)",
-                              color: e.session === "BMO" ? "var(--accent-amber)" : "var(--accent-blue)",
-                            }}
-                          >
-                            {e.session}
-                          </span>
-                        </td>
-                        <td className="px-3">
-                          <div className="flex items-center gap-2">
-                            <AssetLogo symbol={e.symbol} size={18} />
-                            <div>
-                              <div className="font-semibold text-[var(--text-primary)]">{e.symbol}</div>
-                              <div className="text-[10px] text-[var(--text-muted)]">{e.company_name}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-2 text-right">
-                          <span className="text-[var(--text-muted)]">
-                            {e.eps_estimate !== null ? `$${e.eps_estimate.toFixed(2)}` : "—"}
-                          </span>
-                          <span className="mx-1 text-[var(--text-muted)]">/</span>
-                          <span
-                            className="font-semibold"
-                            style={{
-                              color:
-                                epsBeat === null
-                                  ? "var(--text-primary)"
-                                  : epsBeat
-                                    ? "var(--bull)"
-                                    : "var(--bear)",
-                            }}
-                          >
-                            {e.eps_actual !== null ? `$${e.eps_actual.toFixed(2)}` : "Ожидается"}
-                          </span>
-                        </td>
-                        <td className="px-2 text-right">
-                          <span className="text-[var(--text-muted)]">
-                            {e.revenue_estimate_b !== null ? `$${e.revenue_estimate_b.toFixed(2)}B` : "—"}
-                          </span>
-                          <span className="mx-1 text-[var(--text-muted)]">/</span>
-                          <span className="font-semibold text-[var(--text-primary)]">
-                            {e.revenue_actual_b !== null ? `$${e.revenue_actual_b.toFixed(2)}B` : "Ожидается"}
-                          </span>
-                        </td>
-                        <td className="px-3 text-right">
-                          <a
-                            href={e.sec_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(ev) => ev.stopPropagation()}
-                            className="inline-flex items-center gap-1 font-medium text-[var(--accent-blue)] hover:underline"
-                          >
-                            10-Q / 8-K
-                            <ExternalLink className="size-3" />
-                          </a>
-                        </td>
+              <div className="overflow-x-auto rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+                {loading && earnings.length === 0 ? (
+                  <div className="p-3">
+                    <TableSkeleton rows={8} cols={6} />
+                  </div>
+                ) : (
+                  <table className="w-full border-collapse text-left text-[11px] tabular-nums">
+                    <thead>
+                      <tr className="h-8 border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[10px] uppercase text-[var(--text-muted)]">
+                        <th className="px-3">Дата</th>
+                        <th className="px-2">Сессия</th>
+                        <th className="px-3">Тикер / Компания</th>
+                        <th className="px-2 text-right">EPS Прогноз / Факт</th>
+                        <th className="px-2 text-right">Выручка Прогноз / Факт</th>
+                        <th className="px-3 text-right">SEC EDGAR</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--border-subtle)]">
+                      {earnings.map((e) => {
+                        const epsBeat =
+                          e.eps_actual !== null && e.eps_estimate !== null ? e.eps_actual >= e.eps_estimate : null;
+                        return (
+                          <tr
+                            key={e.id}
+                            onClick={() => void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: e.symbol } })}
+                            className="h-10 cursor-pointer hover:bg-[var(--bg-elevated)]/50"
+                          >
+                            <td className="px-3 text-[var(--text-secondary)]">{e.date}</td>
+                            <td className="px-2">
+                              <span
+                                className="rounded-[3px] px-1.5 py-0.5 text-[10px] font-bold"
+                                style={{
+                                  backgroundColor:
+                                    e.session === "BMO"
+                                      ? "color-mix(in srgb, var(--accent-amber) 16%, transparent)"
+                                      : "color-mix(in srgb, var(--accent-blue) 16%, transparent)",
+                                  color: e.session === "BMO" ? "var(--accent-amber)" : "var(--accent-blue)",
+                                }}
+                              >
+                                {e.session}
+                              </span>
+                            </td>
+                            <td className="px-3">
+                              <div className="flex items-center gap-2">
+                                <AssetLogo symbol={e.symbol} size={18} />
+                                <div>
+                                  <div className="font-semibold text-[var(--text-primary)]">{e.symbol}</div>
+                                  <div className="text-[10px] text-[var(--text-muted)]">{e.company_name}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-2 text-right">
+                              <span className="text-[var(--text-muted)]">
+                                {e.eps_estimate !== null ? `$${e.eps_estimate.toFixed(2)}` : "—"}
+                              </span>
+                              <span className="mx-1 text-[var(--text-muted)]">/</span>
+                              <span
+                                className="font-semibold"
+                                style={{
+                                  color:
+                                    epsBeat === null
+                                      ? "var(--text-primary)"
+                                      : epsBeat
+                                        ? "var(--bull)"
+                                        : "var(--bear)",
+                                }}
+                              >
+                                {e.eps_actual !== null ? `$${e.eps_actual.toFixed(2)}` : "Ожидается"}
+                              </span>
+                            </td>
+                            <td className="px-2 text-right">
+                              <span className="text-[var(--text-muted)]">
+                                {e.revenue_estimate_b !== null ? `$${e.revenue_estimate_b.toFixed(2)}B` : "—"}
+                              </span>
+                              <span className="mx-1 text-[var(--text-muted)]">/</span>
+                              <span className="font-semibold text-[var(--text-primary)]">
+                                {e.revenue_actual_b !== null ? `$${e.revenue_actual_b.toFixed(2)}B` : "Ожидается"}
+                              </span>
+                            </td>
+                            <td className="px-3 text-right">
+                              <a
+                                href={e.sec_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(ev) => ev.stopPropagation()}
+                                className="inline-flex items-center gap-1 font-medium text-[var(--accent-blue)] hover:underline"
+                              >
+                                10-Q / 8-K
+                                <ExternalLink className="size-3" />
+                              </a>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             )}
+          </div>
+        ) : null}
+
+        {/* TAB 4: Full-Year Exchange Holidays & Schedule */}
+        {tab === "holidays" ? (
+          <div className="overflow-x-auto rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+            <table className="w-full border-collapse text-left text-[11px] tabular-nums">
+              <thead>
+                <tr className="h-8 border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[10px] uppercase text-[var(--text-muted)]">
+                  <th className="px-3">Дата</th>
+                  <th className="px-2">Биржа</th>
+                  <th className="px-3">Праздник / Событие</th>
+                  <th className="px-2">Режим работы</th>
+                  <th className="px-3">Влияние на ликвидность</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-subtle)]">
+                {holidays.map((h) => {
+                  const isClosed = h.status === "CLOSED";
+                  return (
+                    <tr key={h.id} className="h-9 hover:bg-[var(--bg-elevated)]/50">
+                      <td className="px-3 font-mono font-semibold text-[var(--text-primary)]">{h.date}</td>
+                      <td className="px-2 font-mono font-semibold text-[var(--accent-blue)]">{h.exchange}</td>
+                      <td className="px-3 text-[var(--text-primary)]">{h.name}</td>
+                      <td className="px-2">
+                        <span
+                          className={`rounded-[3px] px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                            isClosed
+                              ? "bg-[var(--bear)]/15 text-[var(--bear)]"
+                              : "bg-[var(--accent-amber)]/15 text-[var(--accent-amber)]"
+                          }`}
+                        >
+                          {h.status}
+                        </span>
+                      </td>
+                      <td className="px-3 text-[var(--text-secondary)]">{h.impact}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         ) : null}
       </div>

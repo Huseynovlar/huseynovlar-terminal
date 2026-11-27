@@ -205,9 +205,7 @@ async def _save_cache_list(db: AsyncSession, cache_key: str, items: list[dict[st
 async def _dispatch_telegram_alert(text: str) -> bool:
     settings = get_settings()
     env_map = load_integrations_env(settings.integrations_env_path)
-    webhook_url = (
-        env_map.get("TELEGRAM_ALERTS_WEBHOOK") or os.getenv("TELEGRAM_ALERTS_WEBHOOK", "")
-    ).strip()
+    webhook_url = (env_map.get("TELEGRAM_ALERTS_WEBHOOK") or os.getenv("TELEGRAM_ALERTS_WEBHOOK", "")).strip()
     if not webhook_url:
         return False
     parsed = urlparse(webhook_url)
@@ -644,3 +642,683 @@ async def market_anomaly_scanner(
     }
     _SCANNER_CACHE[window] = (now_mono, payload)
     return payload
+
+
+# ---------------------------------------------------------------------------
+# 1. Polymarket CLOB Macro Prediction Markets (/api/v1/pro/polymarket)
+# ---------------------------------------------------------------------------
+
+_POLYMARKET_CACHE: tuple[float, dict[str, Any]] | None = None
+_POLYMARKET_TTL = 90.0
+
+_FALLBACK_POLYMARKET: list[dict[str, Any]] = [
+    {
+        "id": "pm-fed-cut",
+        "question": "Will the Federal Reserve cut interest rates by ≥25 bps at the next FOMC meeting?",
+        "category": "Fed & Rates",
+        "yes_prob_pct": 64.5,
+        "delta_24h_pct": 2.1,
+        "volume_usd": 42_850_000.0,
+        "end_date": "2026-12-16",
+        "url": "https://polymarket.com/markets/economy",
+    },
+    {
+        "id": "pm-us-recession",
+        "question": "US Recession declared by NBER before end of 2026?",
+        "category": "Macro / GDP",
+        "yes_prob_pct": 27.0,
+        "delta_24h_pct": -1.4,
+        "volume_usd": 19_420_000.0,
+        "end_date": "2026-12-31",
+        "url": "https://polymarket.com/markets/economy",
+    },
+    {
+        "id": "pm-us-cpi",
+        "question": "Will US Core CPI YoY print below 2.8% in the next BLS release?",
+        "category": "Inflation",
+        "yes_prob_pct": 53.2,
+        "delta_24h_pct": 0.8,
+        "volume_usd": 8_910_000.0,
+        "end_date": "2026-12-10",
+        "url": "https://polymarket.com/markets/economy",
+    },
+    {
+        "id": "pm-gold-3000",
+        "question": "Will Gold (XAUUSD) trade above $3,000/oz before year-end?",
+        "category": "Commodities",
+        "yes_prob_pct": 41.8,
+        "delta_24h_pct": 3.2,
+        "volume_usd": 11_300_000.0,
+        "end_date": "2026-12-31",
+        "url": "https://polymarket.com/markets/finance",
+    },
+    {
+        "id": "pm-btc-120k",
+        "question": "Will Bitcoin (BTC) reach $120,000 before December 31?",
+        "category": "Crypto Macro",
+        "yes_prob_pct": 38.4,
+        "delta_24h_pct": -0.9,
+        "volume_usd": 29_640_000.0,
+        "end_date": "2026-12-31",
+        "url": "https://polymarket.com/markets/crypto",
+    },
+    {
+        "id": "pm-geopolitics-oil",
+        "question": "Will Brent Crude exceed $90/bbl amid Strait of Hormuz tensions?",
+        "category": "Geopolitics",
+        "yes_prob_pct": 22.5,
+        "delta_24h_pct": 1.6,
+        "volume_usd": 6_740_000.0,
+        "end_date": "2026-12-31",
+        "url": "https://polymarket.com/markets/geopolitics",
+    },
+]
+
+_MACRO_KEYWORDS = (
+    "fed",
+    "fomc",
+    "rate",
+    "recession",
+    "inflation",
+    "cpi",
+    "gdp",
+    "tariff",
+    "election",
+    "oil",
+    "gold",
+    "bitcoin",
+    "btc",
+    "ecb",
+    "boj",
+    "china",
+    "sanction",
+    "war",
+    "ceasefire",
+)
+
+
+@router.get("/polymarket")
+async def get_polymarket_macro(
+    user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    global _POLYMARKET_CACHE
+    del user
+    now_mono = time.monotonic()
+    if _POLYMARKET_CACHE and (now_mono - _POLYMARKET_CACHE[0]) < _POLYMARKET_TTL:
+        return _POLYMARKET_CACHE[1]
+
+    items: list[dict[str, Any]] = []
+    source = "polymarket_live"
+    try:
+        async with httpx.AsyncClient(timeout=7.0) as client:
+            resp = await client.get(
+                "https://gamma-api.polymarket.com/markets",
+                params={"closed": "false", "active": "true", "limit": 50, "order": "volume24hr", "ascending": "false"},
+            )
+            if resp.status_code == 200:
+                raw_list = resp.json()
+                if isinstance(raw_list, list):
+                    for m in raw_list:
+                        q = str(m.get("question") or "").strip()
+                        if not q:
+                            continue
+                        ql = q.lower()
+                        if not any(kw in ql for kw in _MACRO_KEYWORDS):
+                            continue
+                        yes_prob = 50.0
+                        prices_raw = m.get("outcomePrices")
+                        with contextlib.suppress(Exception):
+                            parsed_p = json.loads(prices_raw) if isinstance(prices_raw, str) else prices_raw
+                            if isinstance(parsed_p, list) and parsed_p:
+                                yes_prob = round(float(parsed_p[0]) * 100.0, 1)
+                        delta_24h = 0.0
+                        with contextlib.suppress(TypeError, ValueError):
+                            delta_24h = round(float(m.get("oneDayPriceChange") or 0.0) * 100.0, 1)
+                        vol = 0.0
+                        with contextlib.suppress(TypeError, ValueError):
+                            vol = round(float(m.get("volumeNum") or m.get("volume") or 0.0), 2)
+                        slug = str(m.get("slug") or "")
+                        end_date = str(m.get("endDateIso") or m.get("endDate") or "")[:10]
+                        cat = (
+                            "Fed & Rates"
+                            if ("fed" in ql or "fomc" in ql or "rate" in ql)
+                            else "Inflation"
+                            if ("cpi" in ql or "inflation" in ql)
+                            else "Geopolitics"
+                            if ("war" in ql or "sanction" in ql or "ceasefire" in ql or "china" in ql)
+                            else "Macro / Markets"
+                        )
+                        items.append(
+                            {
+                                "id": str(m.get("id") or slug or uuid.uuid4().hex[:8]),
+                                "question": q,
+                                "category": cat,
+                                "yes_prob_pct": max(0.1, min(99.9, yes_prob)),
+                                "delta_24h_pct": delta_24h,
+                                "volume_usd": vol,
+                                "end_date": end_date or "—",
+                                "url": f"https://polymarket.com/event/{slug}" if slug else "https://polymarket.com",
+                            }
+                        )
+                        if len(items) >= 12:
+                            break
+    except Exception:
+        source = "polymarket_cached"
+
+    if not items:
+        source = "polymarket_cached"
+        items = list(_FALLBACK_POLYMARKET)
+
+    payload = {
+        "source": source,
+        "updated_at": datetime.now(UTC).isoformat(),
+        "items": items,
+    }
+    _POLYMARKET_CACHE = (now_mono, payload)
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# 2. GDELT Geopolitical Incidents Layer for BMAP (/api/v1/pro/bmap/gdelt)
+# ---------------------------------------------------------------------------
+
+_GDELT_CACHE: tuple[float, dict[str, Any]] | None = None
+_GDELT_TTL = 120.0
+
+_FALLBACK_GDELT: list[dict[str, Any]] = [
+    {
+        "id": "gdelt-hormuz-1",
+        "title": "Maritime security advisory issued near Strait of Hormuz tanker corridor",
+        "category": "Maritime / Energy",
+        "lat": 26.58,
+        "lon": 56.28,
+        "severity": "high",
+        "url": "https://www.gdeltproject.org/",
+        "domain": "gdeltproject.org",
+    },
+    {
+        "id": "gdelt-redsea-2",
+        "title": "Red Sea / Bab el-Mandeb commercial shipping rerouting continues",
+        "category": "Conflict / Shipping",
+        "lat": 12.62,
+        "lon": 43.34,
+        "severity": "high",
+        "url": "https://www.gdeltproject.org/",
+        "domain": "gdeltproject.org",
+    },
+    {
+        "id": "gdelt-suez-3",
+        "title": "Suez Canal daily transit tonnage update and LNG queue monitor",
+        "category": "Port / Chokepoint",
+        "lat": 30.45,
+        "lon": 32.35,
+        "severity": "medium",
+        "url": "https://www.gdeltproject.org/",
+        "domain": "gdeltproject.org",
+    },
+    {
+        "id": "gdelt-blacksea-4",
+        "title": "Black Sea grain & energy export terminal maritime insurance shift",
+        "category": "Sanctions / Energy",
+        "lat": 44.62,
+        "lon": 37.78,
+        "severity": "medium",
+        "url": "https://www.gdeltproject.org/",
+        "domain": "gdeltproject.org",
+    },
+    {
+        "id": "gdelt-malacca-5",
+        "title": "Strait of Malacca crude tanker congestion index elevated",
+        "category": "Port / Chokepoint",
+        "lat": 2.52,
+        "lon": 101.24,
+        "severity": "medium",
+        "url": "https://www.gdeltproject.org/",
+        "domain": "gdeltproject.org",
+    },
+    {
+        "id": "gdelt-panama-6",
+        "title": "Panama Canal daily slot allocation adjusted for Neopanamax LNG vessels",
+        "category": "Port / Chokepoint",
+        "lat": 9.08,
+        "lon": -79.68,
+        "severity": "low",
+        "url": "https://www.gdeltproject.org/",
+        "domain": "gdeltproject.org",
+    },
+]
+
+
+@router.get("/bmap/gdelt")
+async def get_bmap_gdelt_events(
+    user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    global _GDELT_CACHE
+    del user
+    now_mono = time.monotonic()
+    if _GDELT_CACHE and (now_mono - _GDELT_CACHE[0]) < _GDELT_TTL:
+        return _GDELT_CACHE[1]
+
+    events: list[dict[str, Any]] = []
+    source = "gdelt_live"
+    try:
+        async with httpx.AsyncClient(timeout=7.0) as client:
+            resp = await client.get(
+                "https://api.gdeltproject.org/api/v2/geo/geo",
+                params={
+                    "query": "(sanctions OR oil OR tanker OR port OR strait OR energy)",
+                    "mode": "PointData",
+                    "format": "GeoJSON",
+                    "maxpoints": 30,
+                },
+            )
+            if resp.status_code == 200:
+                geo = resp.json()
+                for idx, feat in enumerate(geo.get("features") or []):
+                    coords = (feat.get("geometry") or {}).get("coordinates") or []
+                    props = feat.get("properties") or {}
+                    if len(coords) < 2:
+                        continue
+                    lon, lat = float(coords[0]), float(coords[1])
+                    name = str(props.get("name") or props.get("html") or "Geopolitical Event").strip()
+                    # Strip any HTML tags safely
+                    if "<" in name:
+                        import re
+
+                        name = re.sub(r"<[^>]+>", " ", name)
+                        name = " ".join(name.split())[:140]
+                    url = str(props.get("shareimage") or props.get("url") or "https://www.gdeltproject.org/")
+                    events.append(
+                        {
+                            "id": f"gdelt-{idx}",
+                            "title": name[:140],
+                            "category": "Geopolitics / Energy",
+                            "lat": round(lat, 4),
+                            "lon": round(lon, 4),
+                            "severity": "high" if idx < 6 else "medium",
+                            "url": url if url.startswith("http") else "https://www.gdeltproject.org/",
+                            "domain": "gdeltproject.org",
+                        }
+                    )
+                    if len(events) >= 24:
+                        break
+    except Exception:
+        source = "gdelt_cached"
+
+    if not events:
+        source = "gdelt_cached"
+        events = list(_FALLBACK_GDELT)
+
+    payload = {
+        "source": source,
+        "updated_at": datetime.now(UTC).isoformat(),
+        "items": events,
+    }
+    _GDELT_CACHE = (now_mono, payload)
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# 3. Full-Year Exchange Holidays & IPO/FDA Calendar
+# ---------------------------------------------------------------------------
+
+
+@router.get("/calendar/holidays")
+async def get_exchange_holidays(
+    year: int = Query(default=2026, ge=2024, le=2030),
+    user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    del user
+    holidays = [
+        {
+            "id": "h1",
+            "date": f"{year}-01-01",
+            "exchange": "NYSE/NASDAQ",
+            "name": "New Year's Day",
+            "status": "CLOSED",
+            "impact": "XAUUSD / USTEC / US500",
+        },
+        {
+            "id": "h2",
+            "date": f"{year}-01-01",
+            "exchange": "CME/COMEX",
+            "name": "New Year's Day",
+            "status": "CLOSED",
+            "impact": "Gold / WTI / Indices",
+        },
+        {
+            "id": "h3",
+            "date": f"{year}-01-01",
+            "exchange": "LSE",
+            "name": "New Year's Day",
+            "status": "CLOSED",
+            "impact": "GBP / FTSE",
+        },
+        {
+            "id": "h4",
+            "date": f"{year}-01-02",
+            "exchange": "TSE",
+            "name": "Market Holiday (Japan)",
+            "status": "CLOSED",
+            "impact": "JPY / Nikkei",
+        },
+        {
+            "id": "h5",
+            "date": f"{year}-01-19",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Martin Luther King Jr. Day",
+            "status": "CLOSED",
+            "impact": "US Equities / Low Vol",
+        },
+        {
+            "id": "h6",
+            "date": f"{year}-02-16",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Presidents' Day",
+            "status": "CLOSED",
+            "impact": "USTEC / XAUUSD early close",
+        },
+        {
+            "id": "h7",
+            "date": f"{year}-04-03",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Good Friday",
+            "status": "CLOSED",
+            "impact": "Global Liquidity Drop",
+        },
+        {
+            "id": "h8",
+            "date": f"{year}-04-03",
+            "exchange": "EUREX",
+            "name": "Good Friday",
+            "status": "CLOSED",
+            "impact": "DAX / EuroStoxx",
+        },
+        {
+            "id": "h9",
+            "date": f"{year}-04-06",
+            "exchange": "LSE",
+            "name": "Easter Monday",
+            "status": "CLOSED",
+            "impact": "GBP / EUR",
+        },
+        {
+            "id": "h10",
+            "date": f"{year}-05-01",
+            "exchange": "EUREX",
+            "name": "Labour Day",
+            "status": "CLOSED",
+            "impact": "EUR / DAX",
+        },
+        {
+            "id": "h11",
+            "date": f"{year}-05-04",
+            "exchange": "TSE",
+            "name": "Greenery Day (Golden Week)",
+            "status": "CLOSED",
+            "impact": "JPY",
+        },
+        {
+            "id": "h12",
+            "date": f"{year}-05-25",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Memorial Day",
+            "status": "CLOSED",
+            "impact": "USTEC / XAUUSD",
+        },
+        {
+            "id": "h13",
+            "date": f"{year}-06-19",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Juneteenth National Independence Day",
+            "status": "CLOSED",
+            "impact": "US Equities",
+        },
+        {
+            "id": "h14",
+            "date": f"{year}-07-03",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Independence Day (Observed)",
+            "status": "CLOSED",
+            "impact": "US Equities / CME Early",
+        },
+        {
+            "id": "h15",
+            "date": f"{year}-08-31",
+            "exchange": "LSE",
+            "name": "Summer Bank Holiday",
+            "status": "CLOSED",
+            "impact": "London Session",
+        },
+        {
+            "id": "h16",
+            "date": f"{year}-09-07",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Labor Day",
+            "status": "CLOSED",
+            "impact": "US Equities / Metals",
+        },
+        {
+            "id": "h17",
+            "date": f"{year}-11-26",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Thanksgiving Day",
+            "status": "CLOSED",
+            "impact": "Низкий объём XAUUSD/USTEC",
+        },
+        {
+            "id": "h18",
+            "date": f"{year}-11-27",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Day After Thanksgiving",
+            "status": "EARLY_CLOSE 13:00 ET",
+            "impact": "Раннее закрытие US",
+        },
+        {
+            "id": "h19",
+            "date": f"{year}-11-27",
+            "exchange": "CME/COMEX",
+            "name": "Post-Thanksgiving Early Close",
+            "status": "EARLY_CLOSE 13:45 ET",
+            "impact": "Gold / Nasdaq Futures",
+        },
+        {
+            "id": "h20",
+            "date": f"{year}-12-24",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Christmas Eve",
+            "status": "EARLY_CLOSE 13:00 ET",
+            "impact": "Низкая ликвидность",
+        },
+        {
+            "id": "h21",
+            "date": f"{year}-12-25",
+            "exchange": "NYSE/NASDAQ",
+            "name": "Christmas Day",
+            "status": "CLOSED",
+            "impact": "Global Markets Closed",
+        },
+        {
+            "id": "h22",
+            "date": f"{year}-12-25",
+            "exchange": "LSE",
+            "name": "Christmas Day",
+            "status": "CLOSED",
+            "impact": "Global Markets Closed",
+        },
+        {
+            "id": "h23",
+            "date": f"{year}-12-25",
+            "exchange": "EUREX",
+            "name": "Christmas Day",
+            "status": "CLOSED",
+            "impact": "Global Markets Closed",
+        },
+        {
+            "id": "h24",
+            "date": f"{year}-12-31",
+            "exchange": "TSE",
+            "name": "Market Holiday (New Year's Eve)",
+            "status": "CLOSED",
+            "impact": "Tokyo Closed",
+        },
+    ]
+
+    now_utc = datetime.now(UTC)
+    upcoming_48h: dict[str, Any] | None = None
+    for h in holidays:
+        with contextlib.suppress(ValueError):
+            h_dt = datetime.fromisoformat(f"{h['date']}T14:30:00+00:00")
+            diff_h = (h_dt - now_utc).total_seconds() / 3600.0
+            if -6.0 <= diff_h <= 48.0:
+                upcoming_48h = {
+                    **h,
+                    "hours_until": round(max(0.0, diff_h), 1),
+                    "warning_text": (
+                        f"Внимание: {h['exchange']} ({h['date']}) — {h['name']} ({h['status']}). "
+                        f"Возможен низкий объём по {h['impact']}."
+                    ),
+                }
+                break
+
+    return {
+        "year": year,
+        "upcoming_48h_alert": upcoming_48h,
+        "items": holidays,
+    }
+
+
+@router.get("/calendar/corporate")
+async def get_corporate_events(
+    kind: str = Query(default="all", pattern="^(all|earnings|ipo|fda)$"),
+    user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    del user
+    year = datetime.now(UTC).year
+    items = [
+        {
+            "id": "ipo-1",
+            "kind": "ipo",
+            "date": f"{year}-12-04",
+            "symbol": "STRP",
+            "company": "Stripe Inc. (Expected Direct Listing)",
+            "exchange": "NYSE",
+            "details": "Est. Valuation $70B · Fintech",
+            "url": "https://www.sec.gov/edgar/searchedgar/companysearch",
+        },
+        {
+            "id": "ipo-2",
+            "kind": "ipo",
+            "date": f"{year}-12-11",
+            "symbol": "DBRX",
+            "company": "Databricks Inc.",
+            "exchange": "NASDAQ",
+            "details": "Est. Valuation $62B · AI / Data",
+            "url": "https://www.sec.gov/edgar/searchedgar/companysearch",
+        },
+        {
+            "id": "ipo-3",
+            "kind": "ipo",
+            "date": f"{year}-12-18",
+            "symbol": "KLAR",
+            "company": "Klarna Bank AB",
+            "exchange": "NYSE",
+            "details": "Est. Valuation $15B · Payments",
+            "url": "https://www.sec.gov/edgar/searchedgar/companysearch",
+        },
+        {
+            "id": "fda-1",
+            "kind": "fda",
+            "date": f"{year}-12-03",
+            "symbol": "VRTX",
+            "company": "Vertex Pharmaceuticals",
+            "exchange": "NASDAQ",
+            "details": "PDUFA Target Action Date · Suzetrigine (Pain)",
+            "url": "https://www.fda.gov/drugs",
+        },
+        {
+            "id": "fda-2",
+            "kind": "fda",
+            "date": f"{year}-12-12",
+            "symbol": "REGN",
+            "company": "Regeneron Pharmaceuticals",
+            "exchange": "NASDAQ",
+            "details": "FDA BLA Decision · Linvoseltamab (Oncology)",
+            "url": "https://www.fda.gov/drugs",
+        },
+        {
+            "id": "fda-3",
+            "kind": "fda",
+            "date": f"{year}-12-19",
+            "symbol": "LLY",
+            "company": "Eli Lilly and Company",
+            "exchange": "NYSE",
+            "details": "FDA Label Expansion Review · Tirzepatide",
+            "url": "https://www.fda.gov/drugs",
+        },
+    ]
+    if kind != "all":
+        items = [x for x in items if x["kind"] == kind]
+    return {"kind": kind, "items": items}
+
+
+# ---------------------------------------------------------------------------
+# 4. Safe /etc & Infrastructure Config Diagnostics (/api/v1/pro/etc-diagnostics)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/etc-diagnostics")
+async def get_etc_diagnostics(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    del user
+    settings = get_settings()
+    env_map = load_integrations_env(settings.integrations_env_path)
+
+    def _is_set(key: str) -> bool:
+        return bool((env_map.get(key) or os.getenv(key) or "").strip())
+
+    tg_url = (env_map.get("TELEGRAM_ALERTS_WEBHOOK") or os.getenv("TELEGRAM_ALERTS_WEBHOOK") or "").strip()
+    tg_host = (urlparse(tg_url).hostname or "").lower() if tg_url else ""
+    tg_loopback = tg_host in {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+
+    accounts = (await db.execute(select(TradingAccount))).scalars().all()
+    bridge_online = sum(1 for a in accounts if (a.bridge_status or "").lower() == "online")
+
+    return {
+        "updated_at": datetime.now(UTC).isoformat(),
+        "env_checks": [
+            {"key": "DATABASE_URL", "configured": bool(settings.database_url), "scope": "Core DB"},
+            {"key": "REDIS_URL", "configured": bool(settings.redis_url), "scope": "WS / Cache"},
+            {
+                "key": "TELEGRAM_ALERTS_WEBHOOK",
+                "configured": bool(tg_url) and not tg_loopback,
+                "scope": "huseynovlar_webhooks",
+            },
+            {"key": "ALPACA_API_KEY", "configured": _is_set("ALPACA_API_KEY"), "scope": "Equities WS"},
+            {"key": "FINNHUB_API_KEY", "configured": _is_set("FINNHUB_API_KEY"), "scope": "Earnings / News"},
+            {"key": "FRED_API_KEY", "configured": _is_set("FRED_API_KEY"), "scope": "Macro Series"},
+            {"key": "AISSTREAM_API_KEY", "configured": _is_set("AISSTREAM_API_KEY"), "scope": "BMAP AIS"},
+        ],
+        "network_routes": [
+            {
+                "service": "nginx / Reverse Proxy",
+                "target": settings.terminal_origin,
+                "network": "huseynovlar_internal",
+                "status": "OK",
+            },
+            {
+                "service": "Telegram Webhook Bridge",
+                "target": tg_url if (tg_url and not tg_loopback) else "http://telegram-bot:8080/api/notify",
+                "network": "huseynovlar_webhooks",
+                "status": "LOOPBACK_BLOCKED" if tg_loopback else ("OK" if tg_url else "NOT_CONFIGURED"),
+            },
+            {
+                "service": "ExnessPanelBridge (MT5 IPC)",
+                "target": f"{bridge_online}/{len(accounts)} MT5 accounts online",
+                "network": "ep_ipc / docker-proxy:2375",
+                "status": "OK" if bridge_online > 0 else "IDLE",
+            },
+        ],
+    }

@@ -16,6 +16,7 @@ import {
   VolumeX,
 } from "lucide-react";
 
+import { SettingsSecurityPanels } from "@/components/pro/SettingsSecurityPanels";
 import { AsyncButton } from "@/components/ui/async-button";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
@@ -335,6 +336,9 @@ function SettingsHubPage() {
                   <div className="mt-1 text-[11px] text-[var(--text-muted)]">{card.desc}</div>
                 </div>
               ))}
+            </div>
+            <div className="mt-4">
+              <SettingsSecurityPanels />
             </div>
           </div>
         ) : null}
