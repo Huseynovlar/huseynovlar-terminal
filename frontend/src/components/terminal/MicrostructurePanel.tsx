@@ -255,22 +255,10 @@ export function MicrostructurePanel({
 
   const visibleTicks = useMemo(() => ticks.slice(-tickWindow), [ticks, tickWindow]);
   const tapeRows = useMemo(() => [...ticks].reverse().slice(0, 30), [ticks]);
-
-  const badgeProvider = feedProvider !== "Market WS" ? feedProvider : resolvedProvider;
-  const statusDot =
-    feedHealth === "live"
-      ? "bg-[var(--bull)]"
-      : feedHealth === "reconnecting" || feedHealth === "connecting"
-        ? "bg-[var(--accent-amber)]"
-        : "bg-[var(--bear)]";
-  const statusText =
-    feedHealth === "live"
-      ? `${badgeProvider}${feedLatencyMs !== null ? ` · ${feedLatencyMs}ms` : ""}`
-      : feedHealth === "reconnecting"
-        ? "RECONNECTING"
-        : feedHealth === "stale"
-          ? "STALE"
-          : badgeProvider;
+  void resolvedProvider;
+  void feedHealth;
+  void feedProvider;
+  void feedLatencyMs;
 
   // Build SVG polyline paths for the Tick Chart (Bid green + Ask red)
   const tickSvg = useMemo(() => {
@@ -321,9 +309,9 @@ export function MicrostructurePanel({
     <div className="flex h-full min-h-0 flex-col bg-[var(--bg-panel)]">
       {/* TOP HALF (55%): DOM / TAPE / LIQUIDATIONS */}
       <div className="flex min-h-0 flex-[55] flex-col border-b border-[var(--border-subtle)]">
-        {/* Header with underline tabs + live WS status */}
-        <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] px-2">
-          <div className="flex h-full items-center gap-2.5 overflow-x-auto">
+        {/* Header with underline tabs (API source + status dot lives exclusively in Chart Bar) */}
+        <div className="flex h-8 shrink-0 items-center border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2">
+          <div className="flex h-full min-w-0 items-center gap-3 overflow-x-auto">
             {(
               [
                 { id: "dom", label: "Стакан (DOM)" },
@@ -345,10 +333,6 @@ export function MicrostructurePanel({
               </button>
             ))}
           </div>
-          <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[10px] text-[var(--text-secondary)]">
-            <span className={`inline-block size-1.5 rounded-full ${statusDot}`} />
-            <span className="max-w-[100px] truncate">{statusText}</span>
-          </span>
         </div>
 
         {/* Content */}

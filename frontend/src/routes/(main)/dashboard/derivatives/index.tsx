@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { TerminalSectionPlaceholder } from "@/framework/templates";
 
 export const Route = createFileRoute("/(main)/dashboard/derivatives/")({
   component: DerivativesStubPage,
@@ -8,10 +8,10 @@ export const Route = createFileRoute("/(main)/dashboard/derivatives/")({
 
 function DerivativesStubPage() {
   return (
-    <TerminalPageShell title="Деривативы и Ончейн" badge="Deribit · Binance · DefiLlama">
-      <div className="rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 py-2.5 font-mono text-[12px] text-[var(--text-secondary)]">
-        Модуль опционов, OI/Funding, Long/Short, TVL и ончейн-метрик (Deribit, Binance/Bybit, DefiLlama, Mempool.space) — ожидает детальное ТЗ.
-      </div>
-    </TerminalPageShell>
+    <TerminalSectionPlaceholder
+      title="Деривативы и Ончейн"
+      badge="Deribit · Binance · DefiLlama"
+      description="Модуль опционов, OI/Funding, Long/Short, TVL и ончейн-метрик (Deribit, Binance/Bybit, DefiLlama, Mempool.space) — ожидает детальное ТЗ."
+    />
   );
 }

@@ -214,12 +214,12 @@ export interface ChartBundleResponse {
 const TIMEFRAMES: ChartTimeframe[] = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"];
 
 const MARKET_PROVIDERS = [
-  { id: "auto", label: "Auto" },
-  { id: "exness_api", label: "Exness API" },
-  { id: "binance", label: "Binance" },
-  { id: "bybit", label: "Bybit" },
-  { id: "biquote", label: "biquote" },
-  { id: "alpaca", label: "Alpaca" },
+  { id: "auto", label: "Auto (Лучший)" },
+  { id: "binance", label: "Binance Vision" },
+  { id: "tiingo", label: "Tiingo FX" },
+  { id: "alpaca", label: "Alpaca IEX" },
+  { id: "yahoo", label: "Yahoo Finance" },
+  { id: "stooq", label: "Stooq Daily" },
 ] as const;
 
 const TF_TO_PERIOD: Record<ChartTimeframe, { span: number; type: "minute" | "hour" | "day" | "week" }> = {
@@ -649,11 +649,13 @@ export function KLineChartPro({
   };
 
   const effectiveProviderLabel =
-    provider !== "auto"
-      ? MARKET_PROVIDERS.find((p) => p.id === provider)?.label || provider
-      : feedProvider !== "Market WS"
-        ? feedProvider
-        : formatProviderLabel(resolvedSource || "Market WS");
+    resolvedSource
+      ? formatProviderLabel(resolvedSource)
+      : provider !== "auto"
+        ? MARKET_PROVIDERS.find((p) => p.id === provider)?.label || provider
+        : feedProvider !== "Market WS"
+          ? feedProvider
+          : "Market WS";
   const effectiveLatency = feedLatencyMs ?? bundleLatencyMs;
 
   const dotColor =
@@ -666,14 +668,14 @@ export function KLineChartPro({
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-[var(--bg-canvas)]">
       {/* CHART BAR (36px) */}
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] px-2">
-        <div className="flex items-center gap-1">
+      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] px-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf}
               type="button"
               onClick={() => setTimeframe(tf)}
-              className={`h-6 rounded-[3px] px-2 font-mono text-[11px] font-medium transition-colors duration-75 ${
+              className={`h-6 shrink-0 whitespace-nowrap rounded-[3px] px-2 font-mono text-[11px] font-medium transition-colors duration-75 ${
                 timeframe === tf
                   ? "bg-[var(--bg-elevated)] text-[var(--accent-blue)] border border-[var(--border-strong)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
@@ -683,16 +685,16 @@ export function KLineChartPro({
             </button>
           ))}
 
-          <div className="mx-1.5 h-4 w-px bg-[var(--border-subtle)]" />
+          <div className="mx-1.5 h-4 w-px shrink-0 bg-[var(--border-subtle)]" />
 
           {/* Indicators dropdown */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               type="button"
               onClick={() => setIndicatorsMenuOpen((v) => !v)}
-              className="inline-flex h-6 items-center gap-1 rounded-[3px] px-2 text-[11px] text-[var(--text-secondary)] transition-colors duration-75 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-[3px] px-2 text-[11px] text-[var(--text-secondary)] transition-colors duration-75 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
-              <SlidersHorizontal className="size-3" />
+              <SlidersHorizontal className="size-3 shrink-0" />
               Индикаторы
             </button>
             {indicatorsMenuOpen ? (
@@ -731,14 +733,14 @@ export function KLineChartPro({
             <button
               type="button"
               onClick={() => setShowMt5Zones((v) => !v)}
-              className={`ml-1 inline-flex h-6 items-center gap-1 rounded-[3px] border px-2 font-mono text-[10px] transition-colors duration-75 ${
+              className={`ml-1 inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-[3px] border px-2 font-mono text-[10px] transition-colors duration-75 ${
                 showMt5Zones
                   ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--accent-amber)]"
                   : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
               }`}
               title="Зоны MT5 (SELL / FAIR / MEAN / BUY)"
             >
-              <Layers className="size-3" />
+              <Layers className="size-3 shrink-0" />
               Зоны MT5
             </button>
           ) : null}
@@ -747,7 +749,7 @@ export function KLineChartPro({
             <button
               type="button"
               onClick={() => setShowDealMarkers((v) => !v)}
-              className={`inline-flex h-6 items-center gap-1 rounded-[3px] border px-2 font-mono text-[10px] transition-colors duration-75 ${
+              className={`inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-[3px] border px-2 font-mono text-[10px] transition-colors duration-75 ${
                 showDealMarkers
                   ? "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--bull)]"
                   : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
@@ -759,18 +761,18 @@ export function KLineChartPro({
           ) : null}
         </div>
 
-        {/* Right side: Provider selector badge (NEVER MT5 Bridge!) */}
-        <div className="relative flex items-center gap-2">
+        {/* Right side: Single API Provider selector + live status dot */}
+        <div className="relative flex shrink-0 items-center gap-2 whitespace-nowrap">
           {loadingBars ? (
-            <span className="h-2.5 w-16 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+            <span className="h-2.5 w-12 shrink-0 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
           ) : null}
           <button
             type="button"
             onClick={() => setProviderMenuOpen((v) => !v)}
-            className="inline-flex h-6 items-center gap-1.5 rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 font-mono text-[10px] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-            title="Источник рыночных котировок (только прямые Market WS)"
+            className="inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 font-mono text-[10px] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+            title="Переключить API-источник графика"
           >
-            <span className={`inline-block size-1.5 rounded-full ${dotColor}`} />
+            <span className={`inline-block size-1.5 shrink-0 rounded-full ${dotColor}`} />
             <span>{effectiveProviderLabel}</span>
             {effectiveLatency !== null ? (
               <span className="text-[var(--text-muted)] tabular-nums">· {effectiveLatency}ms</span>

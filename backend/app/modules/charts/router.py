@@ -106,13 +106,15 @@ class ChartStateUpsert(BaseModel):
     filters_json: dict[str, Any] = Field(default_factory=dict)
 
 
-async def fetch_yahoo_chart(symbol: str, timeframe: str = "H1") -> dict[str, Any]:
-    """OHLC bars with 429-resistant caching and Binance/Frankfurter/Stooq fallbacks."""
+async def fetch_yahoo_chart(symbol: str, timeframe: str = "H1", provider: str = "auto") -> dict[str, Any]:
+    """OHLC bars with 429-resistant caching and multi-provider routing."""
     clean = canonical_asset_code(symbol) or symbol.strip().upper().replace(" ", "")
     yahoo_sym = _YAHOO_SYMBOL_ALIASES.get(clean, clean)
     interval, range_str = _TF_TO_YAHOO.get(timeframe, ("60m", "3mo"))
 
-    res = await market_data.fetch_chart_with_fallback(yahoo_sym, timeframe, interval, range_str)
+    res = await market_data.fetch_chart_with_fallback(
+        yahoo_sym, timeframe, interval, range_str, provider=provider
+    )
     if not res:
         raise ValueError(f"Symbol '{clean}' unavailable: all market data providers failed or rate-limited")
 
@@ -581,7 +583,7 @@ async def get_asset_chart_bundle(
     min_history_bars = min(limit, 320)
     if market_only or len(mt5_bars) < min_history_bars:
         try:
-            ydata = await fetch_yahoo_chart(code, timeframe)
+            ydata = await fetch_yahoo_chart(code, timeframe, provider=provider)
             ydata_meta = ydata
             up_raw = [
                 {

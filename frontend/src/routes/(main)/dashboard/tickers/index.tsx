@@ -8,7 +8,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { useI18n } from "@/framework/i18n";
-import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
+import { TerminalDataPanel, TerminalPageShell } from "@/framework/templates";
 
 export const Route = createFileRoute("/(main)/dashboard/tickers/")({
   component: MarketTickersPage,
@@ -175,8 +175,9 @@ function MarketTickersPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)]">
-        <div className="pro-scroll overflow-x-auto">
+      <TerminalDataPanel
+        footer={<PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />}
+      >
           {loading ? (
             <div className="space-y-1 p-3">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -264,11 +265,7 @@ function MarketTickersPage() {
               </tbody>
             </table>
           )}
-        </div>
-        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1">
-          <PagerBar page={page} pageSize={DEFAULT_PAGE_SIZE} total={total} onPage={setPage} />
-        </div>
-      </div>
+      </TerminalDataPanel>
     </TerminalPageShell>
   );
 }

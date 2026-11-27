@@ -710,111 +710,111 @@ async def tiingo_fx_bars(
 
 
 async def fetch_chart_with_fallback(
-    yahoo_sym: str, timeframe: str, interval: str, rng: str, *, http: httpx.AsyncClient | None = None
+    yahoo_sym: str,
+    timeframe: str,
+    interval: str,
+    rng: str,
+    *,
+    provider: str = "auto",
+    http: httpx.AsyncClient | None = None,
 ) -> dict[str, Any] | None:
     """Return {"bars","price","prev_close","name","currency","source","timeframe"} or None if all providers fail."""
     owns = http is None
     client = http or new_client()
-    try:
-        # 1. Fast direct providers that never hit Yahoo 429:
-        #    - Crypto -> Binance Vision Klines
-        #    - Metals / FX -> Tiingo FX Intraday
-        #    - US Equities -> Alpaca Historical Bars
-        if to_binance_symbol(yahoo_sym):
-            b_bars = await binance_bars(client, yahoo_sym, timeframe)
-            if b_bars:
-                prev = b_bars[-2]["close"] if len(b_bars) >= 2 else None
-                return {
-                    "bars": b_bars[-500:],
-                    "price": b_bars[-1]["close"],
-                    "prev_close": prev,
-                    "name": None,
-                    "currency": "USD",
-                    "source": "binance_vision",
-                    "timeframe": timeframe,
-                }
+    pref = (provider or "auto").strip().lower()
 
+    async def _try_binance() -> dict[str, Any] | None:
+        sym = "PAXG-USD" if yahoo_sym.upper() == "GC=F" else yahoo_sym
+        if not to_binance_symbol(sym):
+            return None
+        b_bars = await binance_bars(client, sym, timeframe)
+        if not b_bars:
+            return None
+        prev = b_bars[-2]["close"] if len(b_bars) >= 2 else None
+        return {
+            "bars": b_bars[-500:],
+            "price": b_bars[-1]["close"],
+            "prev_close": prev,
+            "name": None,
+            "currency": "USD",
+            "source": "binance_paxg" if yahoo_sym.upper() == "GC=F" else "binance_vision",
+            "timeframe": timeframe,
+        }
+
+    async def _try_tiingo() -> dict[str, Any] | None:
         t_bars = await tiingo_fx_bars(client, yahoo_sym, timeframe)
-        if t_bars:
-            prev = t_bars[-2]["close"] if len(t_bars) >= 2 else None
-            return {
-                "bars": t_bars[-500:],
-                "price": t_bars[-1]["close"],
-                "prev_close": prev,
-                "name": None,
-                "currency": "USD",
-                "source": "tiingo_fx",
-                "timeframe": timeframe,
-            }
+        if not t_bars:
+            return None
+        prev = t_bars[-2]["close"] if len(t_bars) >= 2 else None
+        return {
+            "bars": t_bars[-500:],
+            "price": t_bars[-1]["close"],
+            "prev_close": prev,
+            "name": None,
+            "currency": "USD",
+            "source": "tiingo_fx",
+            "timeframe": timeframe,
+        }
 
+    async def _try_alpaca() -> dict[str, Any] | None:
         a_bars = await alpaca_stock_bars(client, yahoo_sym, timeframe)
-        if a_bars:
-            prev = a_bars[-2]["close"] if len(a_bars) >= 2 else None
-            return {
-                "bars": a_bars[-500:],
-                "price": a_bars[-1]["close"],
-                "prev_close": prev,
-                "name": None,
-                "currency": "USD",
-                "source": "alpaca_iex",
-                "timeframe": timeframe,
-            }
-
-        # 2. Yahoo Finance chart (primary for Indices & Commodities)
-        parsed = await yahoo_chart(client, yahoo_sym, interval, rng) if not yahoo_in_cooldown() else None
-        if parsed:
-            bars: list[dict[str, Any]] = []
-            for idx, ts in enumerate(parsed["timestamps"]):
-                try:
-                    o, h, lo, c = (parsed[k][idx] for k in ("open", "high", "low", "close"))
-                except IndexError:
-                    continue
-                if None in (o, h, lo, c):
-                    continue
-                vols = parsed["volume"]
-                bars.append(
-                    {
-                        "time": int(ts),
-                        "open": float(o),
-                        "high": float(h),
-                        "low": float(lo),
-                        "close": float(c),
-                        "volume": float(vols[idx] or 0) if idx < len(vols) else 0.0,
-                    }
-                )
-            if bars:
-                meta = parsed["meta"]
-                return {
-                    "bars": bars,
-                    "price": float(meta.get("regularMarketPrice") or bars[-1]["close"]),
-                    "prev_close": float(meta.get("chartPreviousClose") or meta.get("previousClose") or 0) or None,
-                    "name": meta.get("longName") or meta.get("shortName"),
-                    "currency": meta.get("currency"),
-                    "source": "yahoo",
-                    "timeframe": timeframe,
-                }
-
-        # 3. Secondary fallbacks (Gold PAXG, Stooq Daily, Frankfurter FX, ETF proxy via Alpaca)
-        bars_fb: list[dict[str, Any]] | None = None
-        source, effective_tf = "stooq", "D1"
-        if yahoo_sym.upper() == "GC=F":
-            bars_fb = await binance_bars(client, "PAXG-USD", timeframe)
-            if bars_fb:
-                source, effective_tf = "binance_paxg", timeframe
-        if not bars_fb:
-            bars_fb = await stooq_daily_bars(client, yahoo_sym)
-            source, effective_tf = "stooq", "D1"
-        if not bars_fb:
+        src = "alpaca_iex"
+        if not a_bars:
             proxy_etf = _INDEX_ETF_PROXY.get(yahoo_sym.upper())
             if proxy_etf:
-                bars_fb = await alpaca_stock_bars(client, proxy_etf, timeframe)
-                if bars_fb:
-                    source, effective_tf = f"alpaca_{proxy_etf.lower()}", timeframe
-        if not bars_fb:
-            fx = await frankfurter_daily_series(client, yahoo_sym)
-            if fx:
-                bars_fb = [{"time": t, "open": c, "high": c, "low": c, "close": c, "volume": 0.0} for t, c in fx]
-                source, effective_tf = "frankfurter", "D1"
+                a_bars = await alpaca_stock_bars(client, proxy_etf, timeframe)
+                src = f"alpaca_{proxy_etf.lower()}"
+        if not a_bars:
+            return None
+        prev = a_bars[-2]["close"] if len(a_bars) >= 2 else None
+        return {
+            "bars": a_bars[-500:],
+            "price": a_bars[-1]["close"],
+            "prev_close": prev,
+            "name": None,
+            "currency": "USD",
+            "source": src,
+            "timeframe": timeframe,
+        }
+
+    async def _try_yahoo() -> dict[str, Any] | None:
+        parsed = await yahoo_chart(client, yahoo_sym, interval, rng) if not yahoo_in_cooldown() else None
+        if not parsed:
+            return None
+        bars: list[dict[str, Any]] = []
+        for idx, ts in enumerate(parsed["timestamps"]):
+            try:
+                o, h, lo, c = (parsed[k][idx] for k in ("open", "high", "low", "close"))
+            except IndexError:
+                continue
+            if None in (o, h, lo, c):
+                continue
+            vols = parsed["volume"]
+            bars.append(
+                {
+                    "time": int(ts),
+                    "open": float(o),
+                    "high": float(h),
+                    "low": float(lo),
+                    "close": float(c),
+                    "volume": float(vols[idx] or 0) if idx < len(vols) else 0.0,
+                }
+            )
+        if not bars:
+            return None
+        meta = parsed["meta"]
+        return {
+            "bars": bars,
+            "price": float(meta.get("regularMarketPrice") or bars[-1]["close"]),
+            "prev_close": float(meta.get("chartPreviousClose") or meta.get("previousClose") or 0) or None,
+            "name": meta.get("longName") or meta.get("shortName"),
+            "currency": meta.get("currency"),
+            "source": "yahoo",
+            "timeframe": timeframe,
+        }
+
+    async def _try_stooq() -> dict[str, Any] | None:
+        bars_fb = await stooq_daily_bars(client, yahoo_sym)
         if not bars_fb:
             return None
         prev = bars_fb[-2]["close"] if len(bars_fb) >= 2 else None
@@ -824,9 +824,49 @@ async def fetch_chart_with_fallback(
             "prev_close": prev,
             "name": None,
             "currency": None,
-            "source": source,
-            "timeframe": effective_tf,
+            "source": "stooq",
+            "timeframe": "D1",
         }
+
+    async def _try_frankfurter() -> dict[str, Any] | None:
+        fx = await frankfurter_daily_series(client, yahoo_sym)
+        if not fx:
+            return None
+        bars_fb = [{"time": t, "open": c, "high": c, "low": c, "close": c, "volume": 0.0} for t, c in fx]
+        prev = bars_fb[-2]["close"] if len(bars_fb) >= 2 else None
+        return {
+            "bars": bars_fb[-500:],
+            "price": bars_fb[-1]["close"],
+            "prev_close": prev,
+            "name": None,
+            "currency": None,
+            "source": "frankfurter",
+            "timeframe": "D1",
+        }
+
+    try:
+        # Order providers according to explicit user preference, with automatic fallback if unsupported
+        default_chain = [_try_binance, _try_tiingo, _try_alpaca, _try_yahoo, _try_stooq, _try_frankfurter]
+        preferred_map = {
+            "binance": _try_binance,
+            "binance_ws": _try_binance,
+            "binance_vision": _try_binance,
+            "tiingo": _try_tiingo,
+            "tiingo_fx": _try_tiingo,
+            "alpaca": _try_alpaca,
+            "alpaca_iex": _try_alpaca,
+            "yahoo": _try_yahoo,
+            "stooq": _try_stooq,
+            "frankfurter": _try_frankfurter,
+        }
+        first_fn = preferred_map.get(pref)
+        chain = [first_fn, *[fn for fn in default_chain if fn is not first_fn]] if first_fn else default_chain
+
+        for fn in chain:
+            res = await fn()
+            if res:
+                return res
+        return None
     finally:
         if owns:
             await client.aclose()

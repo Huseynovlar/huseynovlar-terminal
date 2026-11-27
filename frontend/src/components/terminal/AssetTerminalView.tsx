@@ -29,6 +29,7 @@ import { notify } from "@/components/ui/toast";
 import { apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { canonicalMarketSymbol } from "@/framework/open-market-ws";
+import { TerminalWorkspaceShell } from "@/framework/templates";
 import { useTerminalStore } from "@/framework/terminal-store";
 import { useLiveEvents } from "@/framework/use-live-socket";
 import {
@@ -687,372 +688,352 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
         ];
 
   return (
-    <div
-      data-content-padding="false"
-      className="flex h-[calc(100vh-80px)] min-h-[600px] w-full flex-col overflow-hidden bg-[var(--bg-canvas)] text-[var(--text-primary)]"
-    >
-      {/* 1. TOP BAR (48px) */}
-      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Link
-            to={mode === "portfolio" ? "/dashboard/hubs" : "/dashboard/tickers"}
-            className="flex size-7 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-            title={mode === "portfolio" ? "К списку «Мои активы»" : "К «Справочнику рынков»"}
-          >
-            <ArrowLeft className="size-3.5" />
-          </Link>
-
-          {/* Clickable Quick Ticker Switcher [Icon BTCUSD v] */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setSwitcherOpen((v) => !v)}
-              className="flex items-center gap-2 rounded-[4px] border border-transparent px-1.5 py-1 transition-colors duration-75 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)]"
-              title="Быстрое переключение инструмента"
+    <TerminalWorkspaceShell
+      sideWidth={rightWidth}
+      onSideResizeStart={startRightResize}
+      dockHeight={dockHeight}
+      dockCollapsed={dockCollapsed}
+      onDockResizeStart={startDockResize}
+      topBar={
+        <>
+          <div className="flex min-w-0 items-center gap-2">
+            <Link
+              to={mode === "portfolio" ? "/dashboard/hubs" : "/dashboard/tickers"}
+              className="flex size-7 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+              title={mode === "portfolio" ? "К списку «Мои активы»" : "К «Справочнику рынков»"}
             >
-              <AssetLogo symbol={displayCode} size={22} />
-              <span className="font-mono text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
-                {displayCode}
-              </span>
-              <ChevronDown className="size-3.5 text-[var(--text-muted)]" />
-            </button>
-            {switcherOpen ? (
-              <div className="absolute top-9 left-0 z-50 w-64 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1.5">
-                <input
-                  autoFocus
-                  value={switcherQuery}
-                  onChange={(e) => setSwitcherQuery(e.target.value)}
-                  placeholder="Перейти к тикеру..."
-                  className="mb-1.5 h-7 w-full rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent-blue)]"
-                />
-                <div className="pro-scroll max-h-56 overflow-y-auto">
-                  {switcherOptions.map((opt) => (
-                    <button
-                      key={opt.code}
-                      type="button"
-                      onClick={() => {
-                        setSwitcherOpen(false);
-                        setSwitcherQuery("");
-                        if (mode === "portfolio") {
-                          void navigate({ to: "/dashboard/hubs/$code", params: { code: opt.code } });
-                        } else {
-                          void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: opt.code } });
-                        }
-                      }}
-                      className="flex w-full items-center justify-between rounded-[2px] px-2 py-1.5 text-left text-[11px] hover:bg-[var(--bg-elevated)]"
-                    >
-                      <span className="flex items-center gap-2">
-                        <AssetLogo symbol={opt.code} size={16} />
-                        <span className="font-mono font-semibold text-[var(--text-primary)]">{opt.code}</span>
-                      </span>
-                      <span className="max-w-[110px] truncate text-[10px] text-[var(--text-muted)]">{opt.name}</span>
-                    </button>
-                  ))}
-                  {switcherOptions.length === 0 ? (
-                    <div className="px-2 py-3 text-center text-[11px] text-[var(--text-muted)]">Ничего не найдено</div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-          </div>
+              <ArrowLeft className="size-3.5" />
+            </Link>
 
-          <span className="hidden max-w-[150px] truncate text-[12px] text-[var(--text-secondary)] xl:inline">
-            {displayName}
-          </span>
-          <span className="rounded-[3px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[var(--text-secondary)]">
-            {displayClass}
-          </span>
-
-          <div className="mx-1 h-5 w-px bg-[var(--border-subtle)]" />
-
-          {/* Live Price + 24h % */}
-          <div className="flex items-baseline gap-2 font-mono tabular-nums">
-            <span
-              className={`rounded-[2px] px-1 text-[15px] font-semibold text-[var(--text-primary)] ${
-                priceFlash === "bull" ? "ht-flash-bull" : priceFlash === "bear" ? "ht-flash-bear" : ""
-              }`}
-            >
-              {displayPrice !== null ? (
-                formatQuotePrice(displayPrice)
-              ) : (
-                <span className="inline-block h-3.5 w-16 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar align-middle" />
-              )}
-            </span>
-            <span
-              className={`text-[12px] font-medium ${
-                changePct >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"
-              }`}
-            >
-              {changePct >= 0 ? "+" : ""}
-              {changePct.toFixed(2)}%
-            </span>
-          </div>
-
-          <div className="mx-1 hidden h-5 w-px bg-[var(--border-subtle)] lg:block" />
-
-          {/* Mode-specific 1-line KPIs or 24h Market Stats */}
-          {mode === "portfolio" ? (
-            <div className="hidden items-center gap-4 font-mono text-[11px] tabular-nums lg:flex">
-              <KpiInline
-                label="Эквити"
-                value={hub ? formatUsd(hub.stats.total_equity_usd, privacyMode) : "—"}
-              />
-              <KpiInline
-                label="PnL 24ч"
-                value={hub ? formatSignedUsd(hub.stats.pnl_24h_usd ?? 0, privacyMode) : "—"}
-                tone={hub ? ((hub.stats.pnl_24h_usd ?? 0) >= 0 ? "bull" : "bear") : "neutral"}
-              />
-              <KpiInline
-                label="Win Rate"
-                value={hub ? `${hub.stats.win_rate_pct.toFixed(1)}%` : "—"}
-              />
-              <KpiInline
-                label="Роботы"
-                value={hub ? `${hub.stats.robots_count}` : "—"}
-              />
-            </div>
-          ) : (
-            <div className="hidden items-center gap-4 font-mono text-[11px] tabular-nums lg:flex">
-              <KpiInline label="24h High" value={formatQuotePrice(marketStats?.high_24h)} />
-              <KpiInline label="24h Low" value={formatQuotePrice(marketStats?.low_24h)} />
-              <KpiInline
-                label="24h Vol"
-                value={marketStats?.volume_24h ? formatDynamicVolume(marketStats.volume_24h) : "—"}
-              />
-              <KpiInline
-                label="Spread"
-                value={
-                  marketStats?.spread_bps
-                    ? `${marketStats.spread_bps.toFixed(1)} bps`
-                    : "—"
-                }
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Right Actions */}
-        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
-          <button
-            type="button"
-            disabled={aiLoading}
-            onClick={() => void handleAiBrief()}
-            className="inline-flex h-7 shrink-0 items-center whitespace-nowrap rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-2.5 text-[11px] font-medium text-[var(--text-primary)] transition-colors duration-75 hover:border-[var(--accent-blue)] hover:text-[var(--accent-blue)] disabled:opacity-60"
-          >
-            {aiLoading ? "Анализ..." : "AI Обзор"}
-          </button>
-
-          {mode === "market" ? (
-            inPortfolio ? (
-              <Link
-                to="/dashboard/hubs/$code"
-                params={{ code: displayCode }}
-                className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] border border-[var(--bull)]/40 bg-[var(--bull)]/10 px-2.5 text-[11px] font-medium text-[var(--bull)] transition-colors duration-75 hover:bg-[var(--bull)]/20"
-              >
-                <Star className="size-3 shrink-0 fill-current" />
-                В Моих активах
-              </Link>
-            ) : (
-              <button
-                type="button"
-                disabled={addingPortfolio}
-                onClick={() => void handleAddToPortfolio()}
-                className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] border border-[var(--accent-blue)] bg-[var(--accent-blue)] px-2.5 text-[11px] font-medium text-white transition-colors duration-75 hover:bg-[var(--accent-blue)]/90 disabled:opacity-60"
-              >
-                <Star className="size-3 shrink-0" />
-                {addingPortfolio ? "Добавление..." : "Добавить в Мои активы"}
-              </button>
-            )
-          ) : (
+            {/* Clickable Quick Ticker Switcher [Icon BTCUSD v] */}
             <div className="relative shrink-0">
               <button
                 type="button"
-                onClick={() => setMenuOpen((v) => !v)}
-                className="flex size-7 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-                title="Действия актива"
+                onClick={() => setSwitcherOpen((v) => !v)}
+                className="flex items-center gap-2 rounded-[4px] border border-transparent px-1.5 py-1 transition-colors duration-75 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)]"
+                title="Быстрое переключение инструмента"
               >
-                <MoreVertical className="size-3.5" />
+                <AssetLogo symbol={displayCode} size={22} />
+                <span className="font-mono text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
+                  {displayCode}
+                </span>
+                <ChevronDown className="size-3.5 text-[var(--text-muted)]" />
               </button>
-              {menuOpen && hub ? (
-                <div className="absolute top-8 right-0 z-50 w-48 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1 text-[11px]">
-                  <Link
-                    to="/dashboard/hubs/$code/edit"
-                    params={{ code: hub.code }}
-                    onClick={() => setMenuOpen(false)}
-                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
-                  >
-                    <Pencil className="size-3 text-[var(--text-secondary)]" />
-                    Редактировать
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(hub.id);
-                      notify.success("UUID скопирован", hub.id);
-                      setMenuOpen(false);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 font-mono text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                    title={hub.id}
-                  >
-                    <Copy className="size-3" />
-                    UUID: {hub.id.slice(0, 8)}...
-                  </button>
-                  <div className="my-1 h-px bg-[var(--border-subtle)]" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setDeleteOpen(true);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[var(--bear)] hover:bg-[var(--bear)]/10"
-                  >
-                    <Trash2 className="size-3" />
-                    Удалить актив
-                  </button>
+              {switcherOpen ? (
+                <div className="absolute top-9 left-0 z-50 w-64 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1.5">
+                  <input
+                    autoFocus
+                    value={switcherQuery}
+                    onChange={(e) => setSwitcherQuery(e.target.value)}
+                    placeholder="Перейти к тикеру..."
+                    className="mb-1.5 h-7 w-full rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent-blue)]"
+                  />
+                  <div className="pro-scroll max-h-56 overflow-y-auto">
+                    {switcherOptions.map((opt) => (
+                      <button
+                        key={opt.code}
+                        type="button"
+                        onClick={() => {
+                          setSwitcherOpen(false);
+                          setSwitcherQuery("");
+                          if (mode === "portfolio") {
+                            void navigate({ to: "/dashboard/hubs/$code", params: { code: opt.code } });
+                          } else {
+                            void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: opt.code } });
+                          }
+                        }}
+                        className="flex w-full items-center justify-between rounded-[2px] px-2 py-1.5 text-left text-[11px] hover:bg-[var(--bg-elevated)]"
+                      >
+                        <span className="flex items-center gap-2">
+                          <AssetLogo symbol={opt.code} size={16} />
+                          <span className="font-mono font-semibold text-[var(--text-primary)]">{opt.code}</span>
+                        </span>
+                        <span className="max-w-[110px] truncate text-[10px] text-[var(--text-muted)]">{opt.name}</span>
+                      </button>
+                    ))}
+                    {switcherOptions.length === 0 ? (
+                      <div className="px-2 py-3 text-center text-[11px] text-[var(--text-muted)]">Ничего не найдено</div>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* AI BRIEF INLINE PANEL (plain text & bullets only — strictly no Markdown tables) */}
-      {aiOpen ? (
-        <div className="shrink-0 border-b border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-2">
-          <div className="mb-1 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-[var(--text-primary)]">AI Обзор 24ч — {displayCode}</span>
-              {aiModel ? (
-                <span className="rounded-[2px] border border-[var(--border-strong)] bg-[var(--bg-canvas)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">
-                  {aiModel}
-                </span>
-              ) : null}
+            <span className="hidden max-w-[140px] truncate text-[12px] text-[var(--text-secondary)] 2xl:inline">
+              {displayName}
+            </span>
+            <span className="hidden shrink-0 rounded-[3px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1.5 py-0.5 font-mono text-[10px] uppercase text-[var(--text-secondary)] sm:inline-block">
+              {displayClass}
+            </span>
+
+            <div className="mx-0.5 hidden h-5 w-px shrink-0 bg-[var(--border-subtle)] sm:block" />
+
+            {/* Live Price + 24h % */}
+            <div className="flex shrink-0 items-baseline gap-2 font-mono tabular-nums">
+              <span
+                className={`rounded-[2px] px-1 text-[15px] font-semibold text-[var(--text-primary)] ${
+                  priceFlash === "bull" ? "ht-flash-bull" : priceFlash === "bear" ? "ht-flash-bear" : ""
+                }`}
+              >
+                {displayPrice !== null ? (
+                  formatQuotePrice(displayPrice)
+                ) : (
+                  <span className="inline-block h-3.5 w-16 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar align-middle" />
+                )}
+              </span>
+              <span
+                className={`text-[12px] font-medium ${
+                  changePct >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"
+                }`}
+              >
+                {changePct >= 0 ? "+" : ""}
+                {changePct.toFixed(2)}%
+              </span>
             </div>
+
+            <div className="mx-1 hidden h-5 w-px shrink-0 bg-[var(--border-subtle)] xl:block" />
+
+            {/* Mode-specific 1-line KPIs or 24h Market Stats */}
+            {mode === "portfolio" ? (
+              <div className="hidden items-center gap-4 font-mono text-[11px] tabular-nums xl:flex">
+                <KpiInline
+                  label="Эквити"
+                  value={hub ? formatUsd(hub.stats.total_equity_usd, privacyMode) : "—"}
+                />
+                <KpiInline
+                  label="PnL 24ч"
+                  value={hub ? formatSignedUsd(hub.stats.pnl_24h_usd ?? 0, privacyMode) : "—"}
+                  tone={hub ? ((hub.stats.pnl_24h_usd ?? 0) >= 0 ? "bull" : "bear") : "neutral"}
+                />
+                <KpiInline
+                  label="Win Rate"
+                  value={hub ? `${hub.stats.win_rate_pct.toFixed(1)}%` : "—"}
+                />
+                <KpiInline
+                  label="Роботы"
+                  value={hub ? `${hub.stats.robots_count}` : "—"}
+                />
+              </div>
+            ) : (
+              <div className="hidden items-center gap-4 font-mono text-[11px] tabular-nums xl:flex">
+                <KpiInline label="24h High" value={formatQuotePrice(marketStats?.high_24h)} />
+                <KpiInline label="24h Low" value={formatQuotePrice(marketStats?.low_24h)} />
+                <KpiInline
+                  label="24h Vol"
+                  value={marketStats?.volume_24h ? formatDynamicVolume(marketStats.volume_24h) : "—"}
+                />
+                <KpiInline
+                  label="Spread"
+                  value={
+                    marketStats?.spread_bps
+                      ? `${marketStats.spread_bps.toFixed(1)} bps`
+                      : "—"
+                  }
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Right Actions */}
+          <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
             <button
               type="button"
-              onClick={() => setAiOpen(false)}
-              className="flex size-5 items-center justify-center rounded-[2px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              disabled={aiLoading}
+              onClick={() => void handleAiBrief()}
+              className="inline-flex h-7 shrink-0 items-center whitespace-nowrap rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-2.5 text-[11px] font-medium text-[var(--text-primary)] transition-colors duration-75 hover:border-[var(--accent-blue)] hover:text-[var(--accent-blue)] disabled:opacity-60"
             >
-              <X className="size-3.5" />
+              {aiLoading ? "Анализ..." : "AI Обзор"}
             </button>
-          </div>
-          <div className="pro-scroll max-h-36 overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--text-secondary)]">
-            {aiLoading ? "Формирование сводки по рынку и новостям..." : aiText}
-          </div>
-        </div>
-      ) : null}
 
-      {/* 2. MAIN WORKSPACE: CHART (left) + 4px DRAG HANDLE + MICROSTRUCTURE (right) */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-h-0 min-w-0 flex-1">
-          <KLineChartPro
-            symbol={displayCode}
-            mode={mode}
-            mt5Zones={mt5Zones}
-            latestTick={latestTick}
-            feedHealth={feedHealth}
-            feedProvider={feedProvider}
-            feedLatencyMs={feedLatencyMs}
-            onBundleLoaded={handleBundleLoaded}
-          />
-        </div>
-
-        {/* 4px horizontal resize handle */}
-        <div
-          onMouseDown={startRightResize}
-          className="w-1 shrink-0 cursor-col-resize bg-[var(--border-subtle)] transition-colors duration-75 hover:bg-[var(--accent-blue)]"
-          title="Изменить ширину правой колонки"
-        />
-
-        {/* Right column (DOM + Tick Chart) */}
-        <div className="min-h-0 min-w-[280px] shrink-0 overflow-hidden" style={{ width: rightWidth }}>
-          <MicrostructurePanel
-            symbol={displayCode}
-            initialPrice={displayPrice}
-            latestTick={latestTick}
-            latestOrderbook={latestOrderbook}
-            liquidations={liquidations}
-            feedHealth={feedHealth}
-            feedProvider={feedProvider}
-            feedLatencyMs={feedLatencyMs}
-          />
-        </div>
-      </div>
-
-      {/* 3. ACTIVE MT5 ROBOTS COMPACT STRIP (36px) — STRICTLY ONLY IN mode="portfolio" */}
-      {mode === "portfolio" ? (
-        <div className="flex h-9 shrink-0 items-center gap-2 overflow-x-auto border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 font-mono text-[11px] tabular-nums">
-          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            MT5 EA ({robots.length})
-          </span>
-          <div className="h-3.5 w-px shrink-0 bg-[var(--border-subtle)]" />
-          {robots.length === 0 ? (
-            <span className="text-[11px] text-[var(--text-muted)]">
-              Активных роботов по {displayCode} не обнаружено (автоподключение через /ws/account)
-            </span>
-          ) : (
-            robots.map((r) => {
-              const isSelected = activeRobot?.id === r.id;
-              const rsi = extractTelemetryNum(r.live_state_json, "rsi_m5");
-              const er = extractTelemetryNum(r.live_state_json, "er_h1");
-              const dayPnl = extractTelemetryNum(r.live_state_json, "day_pnl");
-              const statusUpper = (r.live_status || "RUNNING").toUpperCase();
-              const isRunning = statusUpper.includes("RUN") || statusUpper.includes("ACTIVE");
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedRobotId(r.id);
-                    setDockTab("robots");
-                    setDockCollapsed(false);
-                  }}
-                  className={`inline-flex h-6 shrink-0 items-center gap-2 rounded-[3px] border px-2 transition-colors duration-75 ${
-                    isSelected
-                      ? "border-[var(--accent-blue)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-                      : "border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-                  }`}
+            {mode === "market" ? (
+              inPortfolio ? (
+                <Link
+                  to="/dashboard/hubs/$code"
+                  params={{ code: displayCode }}
+                  className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] border border-[var(--bull)]/40 bg-[var(--bull)]/10 px-2.5 text-[11px] font-medium text-[var(--bull)] transition-colors duration-75 hover:bg-[var(--bull)]/20"
                 >
-                  <span
-                    className={`inline-block size-1.5 rounded-full ${
-                      isRunning ? "bg-[var(--bull)]" : "bg-[var(--accent-amber)]"
-                    }`}
-                  />
-                  <span className="font-semibold text-[var(--text-primary)]">
-                    {r.name} #{r.magic_number}
-                  </span>
-                  <span className="text-[var(--text-muted)]">
-                    ({r.symbol || displayCode}
-                    {r.account_login ? ` · MT5 ${r.account_login}` : ""} · {statusUpper}
-                    {r.seq ? ` · seq #${r.seq}` : ""} · {formatRelativeAge(r.updated_at_utc || r.last_heartbeat_at)})
-                  </span>
-                  {rsi !== null ? <span className="text-[var(--text-secondary)]">RSI {rsi.toFixed(1)}</span> : null}
-                  {er !== null ? <span className="text-[var(--text-secondary)]">ER {er.toFixed(2)}</span> : null}
-                  {dayPnl !== null ? (
-                    <span className={dayPnl >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"}>
-                      {formatSignedUsd(dayPnl, privacyMode)}
-                    </span>
-                  ) : null}
+                  <Star className="size-3 shrink-0 fill-current" />
+                  В Моих активах
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  disabled={addingPortfolio}
+                  onClick={() => void handleAddToPortfolio()}
+                  className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-[4px] border border-[var(--accent-blue)] bg-[var(--accent-blue)] px-2.5 text-[11px] font-medium text-white transition-colors duration-75 hover:bg-[var(--accent-blue)]/90 disabled:opacity-60"
+                >
+                  <Star className="size-3 shrink-0" />
+                  {addingPortfolio ? "Добавление..." : "Добавить в Мои активы"}
                 </button>
-              );
-            })
-          )}
-        </div>
-      ) : null}
-
-      {/* 4. 4px VERTICAL RESIZE HANDLE + BOTTOM DOCK */}
-      <div
-        onMouseDown={startDockResize}
-        className="h-1 shrink-0 cursor-row-resize bg-[var(--border-subtle)] transition-colors duration-75 hover:bg-[var(--accent-blue)]"
-        title="Изменить высоту нижней панели"
-      />
-
-      <div
-        className="flex shrink-0 flex-col bg-[var(--bg-panel)]"
-        style={{ height: dockCollapsed ? 36 : dockHeight }}
-      >
-        {/* Dock Tab Bar (36px) */}
-        <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-3">
+              )
+            ) : (
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+                  title="Действия актива"
+                >
+                  <MoreVertical className="size-3.5" />
+                </button>
+                {menuOpen && hub ? (
+                  <div className="absolute top-8 right-0 z-50 w-48 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1 text-[11px]">
+                    <Link
+                      to="/dashboard/hubs/$code/edit"
+                      params={{ code: hub.code }}
+                      onClick={() => setMenuOpen(false)}
+                      className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+                    >
+                      <Pencil className="size-3 text-[var(--text-secondary)]" />
+                      Редактировать
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(hub.id);
+                        notify.success("UUID скопирован", hub.id);
+                        setMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 font-mono text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                      title={hub.id}
+                    >
+                      <Copy className="size-3" />
+                      UUID: {hub.id.slice(0, 8)}...
+                    </button>
+                    <div className="my-1 h-px bg-[var(--border-subtle)]" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setDeleteOpen(true);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-[2px] px-2 py-1.5 text-[var(--bear)] hover:bg-[var(--bear)]/10"
+                    >
+                      <Trash2 className="size-3" />
+                      Удалить актив
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </>
+      }
+      banner={
+        aiOpen ? (
+          <div className="shrink-0 border-b border-[var(--border-strong)] bg-[var(--bg-panel)] px-3 py-2">
+            <div className="mb-1 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-[var(--text-primary)]">AI Обзор 24ч — {displayCode}</span>
+                {aiModel ? (
+                  <span className="rounded-[2px] border border-[var(--border-strong)] bg-[var(--bg-canvas)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]">
+                    {aiModel}
+                  </span>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiOpen(false)}
+                className="flex size-5 items-center justify-center rounded-[2px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+            <div className="pro-scroll max-h-36 overflow-y-auto whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--text-secondary)]">
+              {aiLoading ? "Формирование сводки по рынку и новостям..." : aiText}
+            </div>
+          </div>
+        ) : null
+      }
+      mainPane={
+        <KLineChartPro
+          symbol={displayCode}
+          mode={mode}
+          mt5Zones={mt5Zones}
+          latestTick={latestTick}
+          feedHealth={feedHealth}
+          feedProvider={feedProvider}
+          feedLatencyMs={feedLatencyMs}
+          onBundleLoaded={handleBundleLoaded}
+        />
+      }
+      sidePane={
+        <MicrostructurePanel
+          symbol={displayCode}
+          initialPrice={displayPrice}
+          latestTick={latestTick}
+          latestOrderbook={latestOrderbook}
+          liquidations={liquidations}
+          feedHealth={feedHealth}
+          feedProvider={feedProvider}
+          feedLatencyMs={feedLatencyMs}
+        />
+      }
+      strip={
+        mode === "portfolio" ? (
+          <div className="flex h-9 shrink-0 items-center gap-2 overflow-x-auto border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 font-mono text-[11px] tabular-nums">
+            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+              MT5 EA ({robots.length})
+            </span>
+            <div className="h-3.5 w-px shrink-0 bg-[var(--border-subtle)]" />
+            {robots.length === 0 ? (
+              <span className="text-[11px] text-[var(--text-muted)]">
+                Активных роботов по {displayCode} не обнаружено (автоподключение через /ws/account)
+              </span>
+            ) : (
+              robots.map((r) => {
+                const isSelected = activeRobot?.id === r.id;
+                const rsi = extractTelemetryNum(r.live_state_json, "rsi_m5");
+                const er = extractTelemetryNum(r.live_state_json, "er_h1");
+                const dayPnl = extractTelemetryNum(r.live_state_json, "day_pnl");
+                const statusUpper = (r.live_status || "RUNNING").toUpperCase();
+                const isRunning = statusUpper.includes("RUN") || statusUpper.includes("ACTIVE");
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRobotId(r.id);
+                      setDockTab("robots");
+                      setDockCollapsed(false);
+                    }}
+                    className={`inline-flex h-6 shrink-0 items-center gap-2 rounded-[3px] border px-2 transition-colors duration-75 ${
+                      isSelected
+                        ? "border-[var(--accent-blue)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+                        : "border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block size-1.5 rounded-full ${
+                        isRunning ? "bg-[var(--bull)]" : "bg-[var(--accent-amber)]"
+                      }`}
+                    />
+                    <span className="font-semibold text-[var(--text-primary)]">
+                      {r.name} #{r.magic_number}
+                    </span>
+                    <span className="text-[var(--text-muted)]">
+                      ({r.symbol || displayCode}
+                      {r.account_login ? ` · MT5 ${r.account_login}` : ""} · {statusUpper}
+                      {r.seq ? ` · seq #${r.seq}` : ""} · {formatRelativeAge(r.updated_at_utc || r.last_heartbeat_at)})
+                    </span>
+                    {rsi !== null ? <span className="text-[var(--text-secondary)]">RSI {rsi.toFixed(1)}</span> : null}
+                    {er !== null ? <span className="text-[var(--text-secondary)]">ER {er.toFixed(2)}</span> : null}
+                    {dayPnl !== null ? (
+                      <span className={dayPnl >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"}>
+                        {formatSignedUsd(dayPnl, privacyMode)}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        ) : null
+      }
+      bottomDock={
+        <>
+          {/* Dock Tab Bar (36px) */}
+          <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-3">
           <div className="flex h-full items-center gap-4 overflow-x-auto">
             {dockTabs.map((tab) => (
               <button
@@ -1460,18 +1441,19 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
             )}
           </div>
         ) : null}
-      </div>
-
-      {/* Confirm Delete Modal (only in portfolio mode) */}
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="Удалить актив из «Моих активов»?"
-        description={`${displayCode} — ${displayName}`}
-        loading={deleting}
-        onConfirm={handleDeletePortfolioAsset}
-      />
-    </div>
+        </>
+      }
+      overlays={
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title="Удалить актив из «Моих активов»?"
+          description={`${displayCode} — ${displayName}`}
+          loading={deleting}
+          onConfirm={handleDeletePortfolioAsset}
+        />
+      }
+    />
   );
 }
 
