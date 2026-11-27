@@ -123,7 +123,7 @@
       const LEGACY_HOSTS = new Set(["terminal.huseynovlar.com", "api.huseynovlar.com"]);
 
       function normalizeServerUrl(value) {
-        const candidate = (value || DEFAULT_URL).trim().replace(/\\/+$/, "");
+        const candidate = (value || DEFAULT_URL).trim().replace(/[/]+$/, "");
         try {
           const parsed = new URL(candidate);
           if (LEGACY_HOSTS.has(parsed.hostname.toLowerCase())) return DEFAULT_URL;

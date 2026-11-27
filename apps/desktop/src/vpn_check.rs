@@ -55,7 +55,7 @@ fn detect_vpn_interface() -> (bool, Option<String>) {
 
 /// Two-stage VPN Pre-Flight Check:
 /// 1) Informative OS tunnel interface check
-/// 2) Strict 2500ms timeout HTTPS /healthz probe to the private terminal server
+/// 2) Strict 5000ms timeout HTTPS /healthz probe to the private terminal server
 #[tauri::command]
 pub async fn check_vpn_status(endpoint: Option<String>) -> VpnStatusResponse {
     let target = endpoint
