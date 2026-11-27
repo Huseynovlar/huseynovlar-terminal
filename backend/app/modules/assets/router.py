@@ -1006,6 +1006,22 @@ async def seed_default_assets(
     return {"seeded": created}
 
 
+def _is_bridge_robot(robot: Robot) -> bool:
+    """Identify ExnessPanelBridge / non-strategy sibling chart handles so they are never shown as trading EAs."""
+    name_l = (robot.name or "").strip().lower()
+    st = robot.live_state_json or {}
+    ea_l = str(st.get("ea_name") or "").strip().lower()
+    if "bridge" in name_l or "bridge" in ea_l:
+        return True
+    has_strategy_telemetry = any(
+        st.get(k) is not None
+        for k in ("rsi_m5", "er_h1", "regime", "signal_bias", "bb_upper", "zones", "risk_mode")
+    )
+    if not has_strategy_telemetry and st.get("discovery_source") == "sibling_chart":
+        return True
+    return not has_strategy_telemetry and name_l.startswith("ea #") and int(robot.magic_number or 0) < 1_000_000
+
+
 @router.get("")
 async def list_assets(
     q: str | None = Query(default=None),
@@ -1055,7 +1071,8 @@ async def list_assets(
         matched_robots = [
             rb
             for rb in robots
-            if rb.asset_id == hub.id or symbol_matches_asset(rb.symbol, hub.code, hub.broker_symbols)
+            if not _is_bridge_robot(rb)
+            and (rb.asset_id == hub.id or symbol_matches_asset(rb.symbol, hub.code, hub.broker_symbols))
         ]
         matched_positions = [
             pos for pos in open_positions if symbol_matches_asset(pos.symbol, hub.code, hub.broker_symbols)
@@ -1213,6 +1230,8 @@ async def get_asset_detail(
     linked_robots: list[Robot] = []
     healed = False
     for r in all_robots:
+        if _is_bridge_robot(r):
+            continue
         if r.asset_id == asset.id or symbol_matches_asset(r.symbol, asset.code, asset.broker_symbols):
             if r.asset_id is None:
                 r.asset_id = asset.id

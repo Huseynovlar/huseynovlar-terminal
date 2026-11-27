@@ -331,43 +331,96 @@ function ensureMt5ZonesIndicator() {
       const levels = ext.levels ?? null;
       const series = ext.series ?? [];
 
-      if (series.length > 0) {
-        const sorted = [...series].sort((a, b) => a.bar_time - b.bar_time);
-        let cursor = 0;
-        let lastMatched: Mt5ZonePoint | null = null;
-        return dataList.map((bar) => {
-          const barSec = Math.floor(bar.timestamp / 1000);
-          while (cursor < sorted.length && sorted[cursor]!.bar_time <= barSec) {
-            lastMatched = sorted[cursor]!;
-            cursor += 1;
+      const sortedSeries = series.length > 0 ? [...series].sort((a, b) => a.bar_time - b.bar_time) : [];
+      let sCursor = 0;
+      const exactByIdx = new Map<number, Mt5ZonePoint>();
+
+      if (sortedSeries.length > 0) {
+        for (let i = 0; i < dataList.length; i++) {
+          const barSec = Math.floor(dataList[i]!.timestamp / 1000);
+          const nextSec = i + 1 < dataList.length ? Math.floor(dataList[i + 1]!.timestamp / 1000) : barSec + 86400;
+          while (sCursor < sortedSeries.length && sortedSeries[sCursor]!.bar_time < barSec) {
+            sCursor += 1;
           }
-          if (lastMatched) {
-            return {
-              sell: lastMatched.sell ?? undefined,
-              fair: lastMatched.fair ?? undefined,
-              mean: lastMatched.mean ?? undefined,
-              buy: lastMatched.buy ?? undefined,
-            };
+          if (sCursor < sortedSeries.length && sortedSeries[sCursor]!.bar_time >= barSec && sortedSeries[sCursor]!.bar_time < nextSec) {
+            exactByIdx.set(i, sortedSeries[sCursor]!);
           }
+        }
+      }
+
+      // Compute smooth Bollinger(20, 2.0) + UTC-day VWAP across candles (matching GoldPulse / NasdaqPulse EA)
+      const BB_PERIOD = 20;
+      const BB_MULT = 2.0;
+      let vwapDay = -1;
+      let cumPV = 0;
+      let cumV = 0;
+
+      const isSane = (val: number | null | undefined, ref: number): val is number =>
+        typeof val === "number" && Number.isFinite(val) && val > 0 && ref > 0 && Math.abs(val - ref) / ref < 0.25;
+
+      return dataList.map((bar, idx) => {
+        const close = bar.close;
+        // Rolling UTC-day VWAP for FAIR line
+        const dayKey = Math.floor(bar.timestamp / 86_400_000);
+        if (dayKey !== vwapDay) {
+          vwapDay = dayKey;
+          cumPV = 0;
+          cumV = 0;
+        }
+        const typical = (bar.high + bar.low + bar.close) / 3;
+        const vol = bar.volume && bar.volume > 0 ? bar.volume : 1;
+        cumPV += typical * vol;
+        cumV += vol;
+        const calcFair = cumV > 0 ? cumPV / cumV : typical;
+
+        let calcMean: number | undefined;
+        let calcSell: number | undefined;
+        let calcBuy: number | undefined;
+        if (idx >= BB_PERIOD - 1) {
+          let sum = 0;
+          for (let j = idx - BB_PERIOD + 1; j <= idx; j++) {
+            sum += dataList[j]!.close;
+          }
+          const mean = sum / BB_PERIOD;
+          let sq = 0;
+          for (let j = idx - BB_PERIOD + 1; j <= idx; j++) {
+            const d = dataList[j]!.close - mean;
+            sq += d * d;
+          }
+          const sd = Math.sqrt(sq / BB_PERIOD);
+          calcMean = mean;
+          calcSell = mean + BB_MULT * sd;
+          calcBuy = mean - BB_MULT * sd;
+        }
+
+        // Override with exact ep_ipc bar point if available and on matching price scale
+        const exact = exactByIdx.get(idx);
+        if (exact) {
           return {
-            sell: undefined,
-            fair: undefined,
-            mean: undefined,
-            buy: undefined,
+            sell: isSane(exact.sell, close) ? exact.sell : calcSell,
+            fair: isSane(exact.fair, close) ? exact.fair : calcFair,
+            mean: isSane(exact.mean, close) ? exact.mean : calcMean,
+            buy: isSane(exact.buy, close) ? exact.buy : calcBuy,
           };
-        });
-      }
+        }
 
-      if (levels && (levels.sellZone || levels.fair || levels.mean || levels.buyZone)) {
-        return dataList.map(() => ({
-          sell: levels.sellZone ?? undefined,
-          fair: levels.fair ?? undefined,
-          mean: levels.mean ?? undefined,
-          buy: levels.buyZone ?? undefined,
-        }));
-      }
+        // Anchor the latest bar to exact robot scalar levels if on matching price scale
+        if (idx === dataList.length - 1 && levels) {
+          return {
+            sell: isSane(levels.sellZone, close) ? levels.sellZone : calcSell,
+            fair: isSane(levels.fair, close) ? levels.fair : calcFair,
+            mean: isSane(levels.mean, close) ? levels.mean : calcMean,
+            buy: isSane(levels.buyZone, close) ? levels.buyZone : calcBuy,
+          };
+        }
 
-      return dataList.map(() => ({}));
+        return {
+          sell: calcSell,
+          fair: calcFair,
+          mean: calcMean,
+          buy: calcBuy,
+        };
+      });
     },
   });
 }

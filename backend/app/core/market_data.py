@@ -620,6 +620,13 @@ _STOOQ_INDEX_MAP: dict[str, str] = {
     "^STOXX50E": "^sx5e",
 }
 
+_INDEX_ETF_SCALE: dict[str, float] = {
+    "^NDX": 41.35,
+    "^GSPC": 10.0,
+    "^DJI": 100.0,
+    "^RUT": 10.0,
+}
+
 
 async def binance_bars(
     http: httpx.AsyncClient,
@@ -857,13 +864,27 @@ async def fetch_chart_with_fallback(
     async def _try_alpaca() -> dict[str, Any] | None:
         a_bars = await alpaca_stock_bars(client, yahoo_sym, timeframe, limit=1000, before_ts=before_ts)
         src = "alpaca_iex"
+        scale = 1.0
         if not a_bars:
             proxy_etf = _INDEX_ETF_PROXY.get(yahoo_sym.upper())
             if proxy_etf:
                 a_bars = await alpaca_stock_bars(client, proxy_etf, timeframe, limit=1000, before_ts=before_ts)
                 src = f"alpaca_{proxy_etf.lower()}"
+                scale = _INDEX_ETF_SCALE.get(yahoo_sym.upper(), 1.0)
         if not a_bars:
             return None
+        if scale != 1.0:
+            a_bars = [
+                {
+                    "time": b["time"],
+                    "open": round(b["open"] * scale, 2),
+                    "high": round(b["high"] * scale, 2),
+                    "low": round(b["low"] * scale, 2),
+                    "close": round(b["close"] * scale, 2),
+                    "volume": b["volume"],
+                }
+                for b in a_bars
+            ]
         prev = a_bars[-2]["close"] if len(a_bars) >= 2 else None
         return {
             "bars": a_bars[-1000:],
@@ -924,6 +945,19 @@ async def fetch_chart_with_fallback(
             proxy_etf = _INDEX_ETF_PROXY.get(yahoo_sym.upper())
             if proxy_etf:
                 bars_fb = await stooq_daily_bars(client, proxy_etf)
+                scale = _INDEX_ETF_SCALE.get(yahoo_sym.upper(), 1.0)
+                if bars_fb and scale != 1.0:
+                    bars_fb = [
+                        {
+                            "time": b["time"],
+                            "open": round(b["open"] * scale, 2),
+                            "high": round(b["high"] * scale, 2),
+                            "low": round(b["low"] * scale, 2),
+                            "close": round(b["close"] * scale, 2),
+                            "volume": b["volume"],
+                        }
+                        for b in bars_fb
+                    ]
         if not bars_fb:
             return None
         if before_ts is not None:
@@ -964,8 +998,13 @@ async def fetch_chart_with_fallback(
         }
 
     try:
-        # Order providers according to explicit user preference, with automatic fallback if unsupported
-        default_chain = [_try_binance, _try_tiingo, _try_alpaca, _try_yahoo, _try_stooq, _try_frankfurter]
+        # For indices (^NDX, ^GSPC, ^DJI, ^GDAXI, etc.) prefer real index points (Yahoo) before scaled ETF proxy
+        is_index = yahoo_sym.startswith("^") or yahoo_sym.upper() == "DX-Y.NYB"
+        default_chain = (
+            [_try_yahoo, _try_alpaca, _try_stooq, _try_binance, _try_tiingo, _try_frankfurter]
+            if is_index
+            else [_try_binance, _try_tiingo, _try_alpaca, _try_yahoo, _try_stooq, _try_frankfurter]
+        )
         preferred_map = {
             "binance": _try_binance,
             "binance_ws": _try_binance,

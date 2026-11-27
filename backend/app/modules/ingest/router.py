@@ -291,6 +291,8 @@ async def ingest_snapshot(
     snap_utc = body.updated_at_utc or body.sent_at_utc or now.isoformat()
     for rs in body.robot_states:
         ea_label = rs.ea_name or rs.program_name or str(rs.state_json.get("ea_name") or "")
+        if "bridge" in ea_label.lower():
+            continue
         sym = rs.symbol or str(rs.state_json.get("symbol") or body.symbol or "")
         enriched_state = dict(rs.state_json or {})
         eff_seq = rs.seq or body.seq or int(enriched_state.get("seq") or 0)
@@ -319,8 +321,10 @@ async def ingest_snapshot(
         updated_robots.append(robot)
         seen_magics.add(rs.magic_number)
 
-    # 2. Process sibling-chart EA discoveries reported by ExnessPanelBridge.mq5
+    # 2. Process sibling-chart EA discoveries reported by ExnessPanelBridge.mq5 (skip Bridge itself)
     for sea in body.sibling_eas:
+        if "bridge" in (sea.ea_name or "").lower():
+            continue
         if sea.magic_number > 0 and sea.magic_number not in seen_magics:
             robot = await _upsert_robot_telemetry(
                 db,

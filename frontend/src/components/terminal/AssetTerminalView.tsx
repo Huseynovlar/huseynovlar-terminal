@@ -1063,7 +1063,7 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                       }`}
                     />
                     <span className="font-semibold text-[var(--text-primary)]">
-                      {r.name} #{r.magic_number}
+                      {r.name.includes(String(r.magic_number)) ? r.name : `${r.name} #${r.magic_number}`}
                     </span>
                     <span className="text-[var(--text-muted)]">
                       ({r.symbol || displayCode}
@@ -1125,14 +1125,14 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
               <table className="w-full border-collapse text-[11px]">
                 <thead className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)]">
                   <tr className="h-7">
-                    <th className="px-3 text-left font-medium">Робот / Мост</th>
-                    <th className="px-3 text-left font-medium">Символ</th>
-                    <th className="px-3 text-left font-medium">Статус</th>
-                    <th className="px-3 text-right font-medium">Seq / Возраст</th>
-                    <th className="px-3 text-right font-medium">RSI (M5)</th>
-                    <th className="px-3 text-right font-medium">ER (H1)</th>
-                    <th className="px-3 text-right font-medium">VWAP / Z</th>
-                    <th className="px-3 text-right font-medium">Day PnL (USD)</th>
+                    <th className="px-3 text-left font-medium">Робот MT5</th>
+                    <th className="px-3 text-left font-medium">Режим / Тренд</th>
+                    <th className="px-3 text-left font-medium">Условие входа</th>
+                    <th className="px-3 text-right font-medium">RSI / ER</th>
+                    <th className="px-3 text-right font-medium">Спред / Лот</th>
+                    <th className="px-3 text-right font-medium">Сделки / DD%</th>
+                    <th className="px-3 text-right font-medium">Work / Bank</th>
+                    <th className="px-3 text-right font-medium">Day PnL</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-subtle)]/60">
@@ -1144,53 +1144,72 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                     </tr>
                   ) : (
                     robots.map((r) => {
-                      const rsi = extractTelemetryNum(r.live_state_json, "rsi_m5");
-                      const er = extractTelemetryNum(r.live_state_json, "er_h1");
-                      const vwapZ = extractTelemetryNum(r.live_state_json, "vwap_z");
-                      const dayPnl = extractTelemetryNum(r.live_state_json, "day_pnl");
+                      const st = r.live_state_json ?? {};
+                      const rsi = extractTelemetryNum(st, "rsi_m5");
+                      const er = extractTelemetryNum(st, "er_h1");
+                      const spread = extractTelemetryNum(st, "spread");
+                      const nextLot = extractTelemetryNum(st, "next_lot");
+                      const ddPct = extractTelemetryNum(st, "dd_pct");
+                      const dayTrades = extractTelemetryNum(st, "day_trades");
+                      const dayWins = extractTelemetryNum(st, "day_wins");
+                      const workBal = extractTelemetryNum(st, "work_balance");
+                      const bankBal = extractTelemetryNum(st, "bank_balance");
+                      const dayPnl = extractTelemetryNum(st, "day_pnl");
+                      const regime = String(st.regime ?? r.live_status ?? "RUNNING");
+                      const bias = String(st.signal_bias ?? "");
+                      const waitReason = String(st.wait_reason ?? st.day_reason ?? "—");
+                      const riskMode = String(st.risk_mode ?? "");
+                      const label = r.name.includes(String(r.magic_number))
+                        ? r.name
+                        : `${r.name} #${r.magic_number}`;
+
                       return (
                         <tr
                           key={r.id}
                           onClick={() => setSelectedRobotId(r.id)}
-                          className={`h-8 cursor-pointer transition-colors duration-75 hover:bg-[var(--bg-elevated)] ${
+                          className={`h-9 cursor-pointer transition-colors duration-75 hover:bg-[var(--bg-elevated)] ${
                             activeRobot?.id === r.id ? "bg-[var(--bg-elevated)]/70" : ""
                           }`}
                         >
                           <td className="px-3 text-left font-medium text-[var(--text-primary)]">
-                            {r.name} <span className="font-mono text-[var(--text-muted)]">#{r.magic_number}</span>
-                            {r.account_name ? (
-                              <span className="ml-1.5 text-[10px] text-[var(--text-muted)]">
-                                · {r.account_name} ({r.account_login})
-                              </span>
-                            ) : null}
+                            <div>{label}</div>
+                            <div className="font-mono text-[10px] text-[var(--text-muted)]">
+                              {r.symbol}
+                              {r.account_login ? ` · MT5 ${r.account_login}` : ""}
+                              {r.seq ? ` · seq #${r.seq}` : ""} ·{" "}
+                              {formatRelativeAge(r.updated_at_utc || r.last_heartbeat_at)}
+                            </div>
                           </td>
-                          <td className="px-3 text-left font-mono text-[var(--text-secondary)]">{r.symbol}</td>
                           <td className="px-3 text-left font-mono">
-                            <span
-                              className={
-                                (r.live_status || "").toUpperCase().includes("RUN")
-                                  ? "text-[var(--bull)]"
-                                  : "text-[var(--accent-amber)]"
-                              }
-                            >
-                              {r.live_status || "RUNNING"}
-                            </span>
-                          </td>
-                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-secondary)]">
-                            {r.seq ? `#${r.seq} · ` : ""}
-                            {formatRelativeAge(r.updated_at_utc || r.last_heartbeat_at)}
-                          </td>
-                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-primary)]">
-                            {rsi !== null ? rsi.toFixed(1) : "—"}
-                          </td>
-                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-primary)]">
-                            {er !== null ? er.toFixed(3) : "—"}
-                          </td>
-                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-secondary)]">
-                            {vwapZ !== null ? `${vwapZ >= 0 ? "+" : ""}${vwapZ.toFixed(2)}σ` : "—"}
+                            <div className="text-[var(--bull)]">{regime}</div>
+                            <div className="text-[10px] text-[var(--text-secondary)]">
+                              {bias || "—"}
+                              {riskMode ? ` · ${riskMode}` : ""}
+                            </div>
                           </td>
                           <td
-                            className={`px-3 text-right font-mono tabular-nums ${
+                            className="max-w-[220px] truncate px-3 text-left font-mono text-[10px] text-[var(--text-secondary)]"
+                            title={waitReason}
+                          >
+                            {waitReason}
+                          </td>
+                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-primary)]">
+                            {rsi !== null ? rsi.toFixed(1) : "—"} / {er !== null ? er.toFixed(2) : "—"}
+                          </td>
+                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-secondary)]">
+                            {spread !== null ? spread.toFixed(2) : "—"} ·{" "}
+                            {nextLot !== null ? `${nextLot.toFixed(2)}L` : "—"}
+                          </td>
+                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-secondary)]">
+                            {dayTrades !== null ? `${Math.round(dayTrades)} (${Math.round(dayWins ?? 0)}W)` : "—"} ·{" "}
+                            {ddPct !== null ? `${ddPct.toFixed(1)}%` : "0.0%"}
+                          </td>
+                          <td className="px-3 text-right font-mono tabular-nums text-[var(--text-secondary)]">
+                            {workBal !== null ? workBal.toFixed(0) : "—"} /{" "}
+                            {bankBal !== null ? bankBal.toFixed(0) : "0"}
+                          </td>
+                          <td
+                            className={`px-3 text-right font-mono font-semibold tabular-nums ${
                               (dayPnl ?? 0) >= 0 ? "text-[var(--bull)]" : "text-[var(--bear)]"
                             }`}
                           >
