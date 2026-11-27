@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 
+import { OnchainWalletsPanel } from "@/components/institutional/OnchainWalletsPanel";
 import { formatSignedUsd, formatUsd } from "@/components/m5/chart-indicators";
 import {
   type CashflowPoint,
@@ -68,6 +69,8 @@ const KIND_BADGE: Record<string, { label: string; color: string }> = {
 function TreasuryListPage() {
   const privacyMode = useTerminalStore((s) => s.privacyMode);
 
+  const [activeTab, setActiveTab] = useState<"mt5" | "wallets">("mt5");
+  const [onchainUsd, setOnchainUsd] = useState<number>(0);
   const [report, setReport] = useState<TreasuryReport | null>(null);
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
   const [accountFilter, setAccountFilter] = useState("");
@@ -83,6 +86,9 @@ function TreasuryListPage() {
   useEffect(() => {
     apiRequest<Array<{ id: string; name: string }>>("/accounts")
       .then((rows) => setAccounts(Array.isArray(rows) ? rows : []))
+      .catch(() => {});
+    apiRequest<{ summary?: { total_usd?: number } }>("/institutional/wallets")
+      .then((res) => setOnchainUsd(Number(res?.summary?.total_usd ?? 0)))
       .catch(() => {});
   }, []);
 
@@ -173,31 +179,89 @@ function TreasuryListPage() {
 
   const mask = (v: string) => (privacyMode ? "••••••" : v);
   const sum = report?.summary;
+  const mt5CapitalUsd = sum ? sum.working_capital_usd : 0;
+  const totalNetWorthUsd = mt5CapitalUsd + onchainUsd;
 
   return (
     <TerminalPageShell
       title="Казна и переводы"
-      subtitle="Реальное движение капитала (USD) · ALLINT и парные 60с-переводы исключены из Net Invested и PnL"
+      subtitle="MT5/Брокерский капитал + Ончейн-кошельки = Total Net Worth (кривая торгового ROI MT5 не смешивается с ончейн-переводами)"
       actions={
-        <>
-          <button
-            type="button"
-            onClick={() => void loadReport(false)}
-            className="inline-flex h-8 items-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] px-2.5 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
-          >
-            <RefreshCw className="mr-1.5 size-3.5" />
-            Обновить
-          </button>
-          <Link
-            to="/dashboard/treasury/new"
-            className="inline-flex h-8 items-center rounded-[4px] bg-[var(--accent-blue)] px-3 text-xs font-medium text-white hover:opacity-90"
-          >
-            <Plus className="mr-1.5 size-3.5" />
-            Добавить операцию
-          </Link>
-        </>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-0.5 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setActiveTab("mt5")}
+              className={`rounded-[3px] px-2.5 py-1 font-semibold ${
+                activeTab === "mt5" ? "bg-[var(--accent-blue)] text-white" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Казна и MT5 переводы
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("wallets")}
+              className={`rounded-[3px] px-2.5 py-1 font-semibold ${
+                activeTab === "wallets" ? "bg-[var(--accent-blue)] text-white" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Ончейн-кошельки (Read-Only)
+            </button>
+          </div>
+          {activeTab === "mt5" ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void loadReport(false)}
+                className="inline-flex h-8 items-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] px-2.5 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+              >
+                <RefreshCw className="mr-1.5 size-3.5" />
+                Обновить
+              </button>
+              <Link
+                to="/dashboard/treasury/new"
+                className="inline-flex h-8 items-center rounded-[4px] bg-[var(--accent-blue)] px-3 text-xs font-medium text-white hover:opacity-90"
+              >
+                <Plus className="mr-1.5 size-3.5" />
+                Добавить операцию
+              </Link>
+            </>
+          ) : null}
+        </div>
       }
     >
+      {/* Unified Total Net Worth Bar (MT5 + On-Chain Wallets) */}
+      <div className="mb-3 grid grid-cols-1 gap-px overflow-hidden rounded-[4px] border border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-3">
+        <div className="bg-[var(--bg-panel)] px-3 py-2 tabular-nums">
+          <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">
+            Совокупный капитал (Total Net Worth)
+          </div>
+          <div className="text-[18px] font-bold text-[var(--text-primary)]">
+            {mask(formatUsd(totalNetWorthUsd))}
+          </div>
+        </div>
+        <div className="bg-[var(--bg-panel)] px-3 py-2 tabular-nums">
+          <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">
+            MT5 / Брокерский капитал (USC ÷ 100)
+          </div>
+          <div className="text-[15px] font-semibold text-[var(--accent-blue)]">
+            {mask(formatUsd(mt5CapitalUsd))}
+          </div>
+        </div>
+        <div className="bg-[var(--bg-panel)] px-3 py-2 tabular-nums">
+          <div className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--text-muted)]">
+            Ончейн-кошельки (BTC / EVM / TRON / SOL)
+          </div>
+          <div className="text-[15px] font-semibold text-[var(--bull)]">
+            {mask(formatUsd(onchainUsd))}
+          </div>
+        </div>
+      </div>
+
+      {activeTab === "wallets" ? (
+        <OnchainWalletsPanel onSummaryChange={setOnchainUsd} />
+      ) : (
+        <>
       {/* 4 Top KPI Cards */}
       {sum && (
         <div className="grid grid-cols-1 gap-px overflow-hidden rounded-[4px] border border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-2 lg:grid-cols-4">
@@ -454,6 +518,8 @@ function TreasuryListPage() {
           if (!o) setDeleteTarget(null);
         }}
       />
+        </>
+      )}
     </TerminalPageShell>
   );
 }

@@ -533,3 +533,88 @@ export function NetLiquidityChart({
 
   return <div ref={elRef} className="h-[220px] w-full" />;
 }
+
+export function CexNetFlowChart({
+  flows,
+}: {
+  flows: Array<{ exchange: string; net_flow_24h_m: number; net_flow_7d_m: number }>;
+}) {
+  const elRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+  const isDark = usePreferencesStore((s) => s.resolvedThemeMode) !== "light";
+
+  useEffect(() => {
+    if (!elRef.current) return;
+    const c = echarts.init(elRef.current, undefined, { renderer: "canvas" });
+    chartRef.current = c;
+    const ro = new ResizeObserver(() => c.resize());
+    ro.observe(elRef.current);
+    return () => {
+      ro.disconnect();
+      c.dispose();
+    };
+  }, []);
+
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c) return;
+    const font = getRootFont();
+    const gridColor = isDark ? "#1E2634" : "#E2E8F0";
+    const textMuted = isDark ? "#8B949E" : "#475569";
+    const bull = isDark ? "#00D488" : "#00A86B";
+    const bear = isDark ? "#FF4757" : "#DC2626";
+
+    c.setOption(
+      {
+        animation: false,
+        backgroundColor: "transparent",
+        textStyle: { fontFamily: font, color: textMuted },
+        tooltip: {
+          trigger: "axis",
+          axisPointer: { type: "shadow" },
+          backgroundColor: isDark ? "#161C26" : "#FFFFFF",
+          borderColor: isDark ? "#2A3446" : "#CBD5E1",
+          borderWidth: 1,
+          textStyle: { color: isDark ? "#E8EDF5" : "#0F172A", fontSize: 11, fontFamily: font },
+          formatter: (params: unknown) => {
+            const arr = params as Array<{ name: string; value: number }>;
+            if (!arr?.length) return "";
+            const p = arr[0];
+            const dir = p.value < 0 ? "Вывод с биржи (накопление)" : "Завод на биржу (давление продаж)";
+            return `<b>${p.name}</b><br/>24h Net Flow: <b>${p.value >= 0 ? "+" : ""}$${p.value.toFixed(1)}M</b><br/>${dir}`;
+          },
+        },
+        grid: { left: 54, right: 16, top: 16, bottom: 24 },
+        xAxis: {
+          type: "category",
+          data: flows.map((f) => f.exchange),
+          axisLine: { lineStyle: { color: gridColor } },
+          axisLabel: { color: textMuted, fontSize: 10 },
+        },
+        yAxis: {
+          type: "value",
+          splitLine: { lineStyle: { color: gridColor, type: "dashed" } },
+          axisLabel: { color: textMuted, fontSize: 10, formatter: "${value}M" },
+        },
+        series: [
+          {
+            name: "Net Flow 24h ($M)",
+            type: "bar",
+            barMaxWidth: 34,
+            data: flows.map((f) => ({
+              value: f.net_flow_24h_m,
+              // Green = outflow from exchange (accumulation); Red = inflow to exchange (sell pressure)
+              itemStyle: {
+                color: f.net_flow_24h_m < 0 ? bull : bear,
+                borderRadius: [2, 2, 0, 0],
+              },
+            })),
+          },
+        ],
+      },
+      true,
+    );
+  }, [flows, isDark]);
+
+  return <div ref={elRef} className="h-[220px] w-full" />;
+}
