@@ -21,6 +21,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.charts.router import router as charts_router
 from app.modules.files.router import router as files_router
 from app.modules.ingest.router import router as ingest_router
+from app.modules.institutional.router import router as institutional_router
 from app.modules.intelligence.router import router as intelligence_router
 from app.modules.ops.router import router as ops_router
 from app.modules.profile.router import router as profile_router
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
             ModuleSpec("ingest", ingest_router),
             ModuleSpec("charts", charts_router),
             ModuleSpec("analytics", analytics_router),
+            ModuleSpec("institutional", institutional_router),
             ModuleSpec("intelligence", intelligence_router),
             ModuleSpec("ops", ops_router),
             ModuleSpec("search", search_router),
