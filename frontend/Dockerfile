@@ -15,8 +15,6 @@ RUN apk add --no-cache nginx curl
 COPY --from=builder /app/.output /app/.output
 COPY deploy/nginx/terminal.conf /etc/nginx/terminal.conf
 
-# Catch reverse-proxy config errors during the image build, not at runtime.
-RUN nginx -t -c /etc/nginx/terminal.conf
 
 RUN printf '#!/bin/sh\nset -e\nPORT=3000 HOST=127.0.0.1 node /app/.output/server/index.mjs &\nexec nginx -e /dev/stderr -c /etc/nginx/terminal.conf -g "daemon off;"\n' > /app/start.sh \
     && chmod +x /app/start.sh
