@@ -22,14 +22,14 @@ import { apiRequest } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
 import { canonicalMarketSymbol } from "@/framework/open-market-ws";
 import { useTerminalStore } from "@/framework/terminal-store";
-import { useLiveEvents, useLiveSocket } from "@/framework/use-live-socket";
+import { useLiveEvents } from "@/framework/use-live-socket";
 import { useMarketListStream } from "@/framework/use-market-list-stream";
 import {
   type LiveNewsItem,
   stripHtmlSafe,
   useNewsStream,
 } from "@/framework/use-news-stream";
-import { formatTerminalClock, useUtcClock } from "@/framework/use-utc-clock";
+import { useUtcClock } from "@/framework/use-utc-clock";
 
 export const Route = createFileRoute("/(main)/dashboard/home/")({
   component: HomeCommandCenterPage,
@@ -187,8 +187,8 @@ function HomeCommandCenterPage() {
   const now = useUtcClock();
   const nowMs = now.getTime();
 
-  const { connected: accountWsConnected, rttMs } = useLiveSocket();
   const livePortfolio = useTerminalStore((s) => s.livePortfolio);
+  const setWsTelemetry = useTerminalStore((s) => s.setWsTelemetry);
 
   const tradeRefreshTimerRef = useRef<number | null>(null);
 
@@ -235,7 +235,7 @@ function HomeCommandCenterPage() {
     [summary?.ticker_symbols],
   );
   const liveQuotes = useMarketListStream(tickerSymbols);
-  const marketWsActive = Object.keys(liveQuotes).length > 0;
+  const marketActiveCount = Object.keys(liveQuotes).length;
 
   // Dedicated /ws/news subscription (auto-unsubscribes on unmount)
   const handleLiveNews = useCallback((item: LiveNewsItem) => {
@@ -397,108 +397,35 @@ function HomeCommandCenterPage() {
     () => (summary?.accounts_pulse ?? []).filter((a) => a.terminal_connected).length,
     [summary?.accounts_pulse],
   );
+  const bridgeTotalCount = summary?.accounts_pulse.length ?? 0;
+
+  // Publish live WS telemetry channel status to the global header "В реальном времени" mini-menu
+  useEffect(() => {
+    setWsTelemetry({
+      marketSubscribed: true,
+      marketActiveCount,
+      newsConnected: newsWsConnected,
+      bridgeOnline: bridgeConnectedCount,
+      bridgeTotal: bridgeTotalCount,
+    });
+  }, [setWsTelemetry, marketActiveCount, newsWsConnected, bridgeConnectedCount, bridgeTotalCount]);
+
+  useEffect(() => {
+    return () => {
+      setWsTelemetry({
+        marketSubscribed: false,
+        marketActiveCount: 0,
+        newsConnected: false,
+      });
+    };
+  }, [setWsTelemetry]);
 
   if (initialLoading && !summary) {
     return <DashboardSkeleton />;
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-52px)] flex-col gap-2 bg-[var(--bg-canvas)] p-3 font-sans text-[var(--text-primary)]">
-      {/* 1. HEADER (40px) */}
-      <header className="flex h-10 shrink-0 items-center justify-between rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-[13px] font-semibold tracking-tight text-[var(--text-primary)]">
-            Главная панель
-          </h1>
-          <span className="h-3.5 w-px bg-[var(--border-subtle)]" />
-          <span className="text-[12px] font-medium tabular-nums text-[var(--text-secondary)]">
-            {(() => {
-              const clk = formatTerminalClock(now);
-              return `${clk.time} ${clk.label}`;
-            })()}
-          </span>
-        </div>
-
-        {/* Unified WS Channels Indicator with Tooltip */}
-        <div className="group relative flex items-center gap-2">
-          <div
-            className="flex cursor-default items-center gap-1.5 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 py-1 text-[11px] font-medium tabular-nums"
-            title={`/ws/account: ${accountWsConnected ? "LIVE" : "OFF"} | /ws/market: ${marketWsActive ? "LIVE" : "SUB"} | /ws/news: ${newsWsConnected ? "LIVE" : "OFF"} | MT5 Bridge: ${bridgeConnectedCount}/${summary?.accounts_pulse.length ?? 0}`}
-          >
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{
-                backgroundColor: accountWsConnected
-                  ? "var(--bull)"
-                  : "var(--accent-amber)",
-              }}
-            />
-            <span className="text-[var(--text-primary)]">
-              {accountWsConnected ? "WS LIVE" : "WS SYNC"}
-            </span>
-            {rttMs != null && (
-              <span className="text-[10px] text-[var(--text-muted)]">{rttMs}ms</span>
-            )}
-          </div>
-
-          {/* Hover Channel Breakdown Popover */}
-          <div className="pointer-events-none absolute right-0 top-full z-40 mt-1 hidden w-56 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] p-2.5 text-[11px] group-hover:block">
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-muted)]">
-              Каналы телеметрии
-            </div>
-            <div className="space-y-1 tabular-nums">
-              <div className="flex items-center justify-between">
-                <span className="text-[var(--text-secondary)]">/ws/account</span>
-                <span
-                  className="font-semibold"
-                  style={{
-                    color: accountWsConnected ? "var(--bull)" : "var(--bear)",
-                  }}
-                >
-                  {accountWsConnected ? "● LIVE" : "○ OFF"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[var(--text-secondary)]">/ws/market</span>
-                <span
-                  className="font-semibold"
-                  style={{
-                    color: marketWsActive ? "var(--bull)" : "var(--accent-amber)",
-                  }}
-                >
-                  {marketWsActive
-                    ? `● ${Object.keys(liveQuotes).length} тик.`
-                    : "● SUB"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[var(--text-secondary)]">/ws/news</span>
-                <span
-                  className="font-semibold"
-                  style={{
-                    color: newsWsConnected ? "var(--bull)" : "var(--bear)",
-                  }}
-                >
-                  {newsWsConnected ? "● LIVE" : "○ OFF"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[var(--text-secondary)]">MT5 Bridge</span>
-                <span
-                  className="font-semibold"
-                  style={{
-                    color:
-                      bridgeConnectedCount > 0 ? "var(--bull)" : "var(--text-muted)",
-                  }}
-                >
-                  {bridgeConnectedCount}/{summary?.accounts_pulse.length ?? 0} онл.
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
+    <div className="flex min-h-[calc(100vh-52px)] flex-col gap-2 bg-[var(--bg-canvas)] font-sans text-[var(--text-primary)]">
       {errorMsg && (
         <div className="rounded-[4px] border border-[var(--bear)]/40 bg-[var(--bear)]/10 px-3 py-1.5 text-[11px] text-[var(--bear)]">
           {errorMsg}

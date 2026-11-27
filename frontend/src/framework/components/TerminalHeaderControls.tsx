@@ -1,3 +1,6 @@
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
 import { Clock, Eye, EyeOff, Languages, Radio, Volume2, VolumeX } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -18,11 +21,26 @@ export function TerminalHeaderControls() {
     language,
     tickerEnabled,
     soundEnabled,
+    livePortfolio,
+    wsTelemetry,
     togglePrivacyMode,
     toggleSound,
     cycleLanguage,
     setTickerEnabled,
   } = useTerminalStore();
+
+  const pillRef = useRef<HTMLDivElement | null>(null);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; right: number } | null>(null);
+
+  const openPopover = () => {
+    const rect = pillRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPopoverPos({
+      top: rect.bottom + 6,
+      right: Math.max(12, window.innerWidth - rect.right),
+    });
+  };
+  const closePopover = () => setPopoverPos(null);
 
   const wsBadgeColor =
     status === "live"
@@ -40,12 +58,6 @@ export function TerminalHeaderControls() {
 
   const livePhrase =
     language === "en" ? "Real-time" : language === "az" ? "Real vaxt" : "В реальном времени";
-  const liveTooltip =
-    language === "en"
-      ? "All data streams in real time via WebSocket push (zero polling)"
-      : language === "az"
-        ? "Bütün məlumatlar WebSocket push ilə real vaxtda yenilənir"
-        : "Данные обновляются в реальном времени по WebSocket без периодических опросов";
 
   const wsLabel =
     status === "live"
@@ -56,11 +68,17 @@ export function TerminalHeaderControls() {
           ? t.header.wsReconnecting
           : t.header.wsOffline;
 
+  const accountLive = status === "live";
+  const bridgeOnline = wsTelemetry.bridgeTotal > 0 ? wsTelemetry.bridgeOnline : (livePortfolio?.accounts_count ?? 0);
+  const bridgeTotal = wsTelemetry.bridgeTotal > 0 ? wsTelemetry.bridgeTotal : (livePortfolio?.accounts_count ?? 0);
+
   return (
     <div className="hidden items-center gap-1.5 md:flex">
       <div
-        className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 font-mono text-[10px] font-semibold tracking-wide tabular-nums ${wsBadgeColor}`}
-        title={liveTooltip}
+        ref={pillRef}
+        onMouseEnter={openPopover}
+        onMouseLeave={closePopover}
+        className={`inline-flex h-7 cursor-default items-center gap-1.5 rounded-full border px-2.5 font-sans text-[10px] font-semibold tracking-wide tabular-nums ${wsBadgeColor}`}
       >
         <span className="relative flex size-2">
           {status === "live" ? (
@@ -70,6 +88,69 @@ export function TerminalHeaderControls() {
         </span>
         <span>{wsLabel}</span>
       </div>
+
+      {popoverPos &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            style={{ top: popoverPos.top, right: popoverPos.right }}
+            className="pointer-events-none fixed z-[9999] w-60 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] p-2.5 font-sans text-[11px]"
+          >
+            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--text-muted)]">
+              Каналы телеметрии
+            </div>
+            <div className="space-y-1.5 tabular-nums">
+              <div className="flex items-center justify-between">
+                <span className="text-[var(--text-secondary)]">/ws/account</span>
+                <span
+                  className="font-semibold"
+                  style={{ color: accountLive ? "var(--bull)" : "var(--bear)" }}
+                >
+                  {accountLive ? "● LIVE" : "○ OFF"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[var(--text-secondary)]">/ws/market</span>
+                <span
+                  className="font-semibold"
+                  style={{
+                    color:
+                      wsTelemetry.marketActiveCount > 0
+                        ? "var(--bull)"
+                        : wsTelemetry.marketSubscribed
+                          ? "var(--accent-amber)"
+                          : "var(--text-muted)",
+                  }}
+                >
+                  {wsTelemetry.marketActiveCount > 0
+                    ? `● ${wsTelemetry.marketActiveCount} тик.`
+                    : wsTelemetry.marketSubscribed
+                      ? "● SUB"
+                      : "○ IDLE"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[var(--text-secondary)]">/ws/news</span>
+                <span
+                  className="font-semibold"
+                  style={{ color: wsTelemetry.newsConnected ? "var(--bull)" : "var(--text-muted)" }}
+                >
+                  {wsTelemetry.newsConnected ? "● LIVE" : "○ IDLE"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[var(--text-secondary)]">MT5 Bridge</span>
+                <span
+                  className="font-semibold"
+                  style={{ color: bridgeOnline > 0 ? "var(--bull)" : "var(--text-muted)" }}
+                >
+                  {bridgeOnline}/{bridgeTotal} онл.
+                </span>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       <Button
         variant={privacyMode ? "secondary" : "ghost"}

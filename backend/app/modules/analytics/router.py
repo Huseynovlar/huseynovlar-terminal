@@ -550,7 +550,7 @@ async def get_home_summary(
                 "impact": ev.impact,
                 "forecast": ev.forecast,
                 "previous": ev.previous,
-                "actual": ev.actual,
+                "actual": getattr(ev, "actual", ""),
                 "event_time": ev.event_time.isoformat(),
             }
             for ev in upcoming_rows
@@ -1965,6 +1965,8 @@ async def generate_analytics_ai_review(
         magic_number=body.magic_number,
         side=body.side,
         days=body.days,
+        from_date=None,
+        to_date=None,
         _=user,
         db=db,
     )

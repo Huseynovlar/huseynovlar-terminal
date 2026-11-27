@@ -28,6 +28,14 @@ export interface LivePortfolioSnapshot {
   active_robots_count: number;
 }
 
+export interface WsTelemetryState {
+  marketSubscribed: boolean;
+  marketActiveCount: number;
+  newsConnected: boolean;
+  bridgeOnline: number;
+  bridgeTotal: number;
+}
+
 export interface TerminalPreferencesState {
   currencyMode: CurrencyMode;
   privacyMode: boolean;
@@ -50,6 +58,7 @@ export interface TerminalPreferencesState {
   serverHydrated: boolean;
   profileAvatarUrl: string | null;
   livePortfolio: LivePortfolioSnapshot | null;
+  wsTelemetry: WsTelemetryState;
 
   toggleCurrencyMode: () => void;
   togglePrivacyMode: () => void;
@@ -76,6 +85,7 @@ export interface TerminalPreferencesState {
   setScreenLocked: (locked: boolean) => void;
   setProfileAvatarUrl: (url: string | null) => void;
   setLivePortfolio: (portfolio: LivePortfolioSnapshot | null) => void;
+  setWsTelemetry: (patch: Partial<WsTelemetryState>) => void;
   hydrateFromServer: (prefs: Record<string, unknown>) => void;
 }
 
@@ -147,9 +157,18 @@ export const useTerminalStore = create<TerminalPreferencesState>()(
       serverHydrated: false,
       profileAvatarUrl: null,
       livePortfolio: null,
+      wsTelemetry: {
+        marketSubscribed: false,
+        marketActiveCount: 0,
+        newsConnected: false,
+        bridgeOnline: 0,
+        bridgeTotal: 0,
+      },
 
       setProfileAvatarUrl: (profileAvatarUrl) => set({ profileAvatarUrl }),
       setLivePortfolio: (livePortfolio) => set({ livePortfolio }),
+      setWsTelemetry: (patch) =>
+        set((s) => ({ wsTelemetry: { ...s.wsTelemetry, ...patch } })),
 
       setTimeFormat: (timeFormat) => {
         set({ timeFormat });
