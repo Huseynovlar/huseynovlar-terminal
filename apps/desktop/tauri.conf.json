@@ -4,10 +4,8 @@
   "version": "2.0.0",
   "identifier": "com.huseynovlar.terminal",
   "build": {
-    "beforeDevCommand": "npm --prefix ../../frontend run dev",
     "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "npm --prefix ../../frontend run build",
-    "frontendDist": "../../frontend/dist"
+    "frontendDist": "./web"
   },
   "app": {
     "withGlobalTauri": false,
@@ -29,7 +27,7 @@
     ],
     "security": {
       "freezePrototype": true,
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; img-src 'self' data: blob: https:; font-src 'self' data:;"
+      "csp": "default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; img-src 'self' data: blob: https:; font-src 'self' data:;"
     }
   },
   "bundle": {
