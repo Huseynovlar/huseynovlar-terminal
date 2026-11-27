@@ -99,14 +99,18 @@ export async function checkVpnStatus(endpoint?: string): Promise<VpnStatusResult
 
 export async function setNativeKeepAwake(enabled: boolean): Promise<boolean> {
   const invoke = getTauriInvoke();
-  if (invoke) {
+  if (!invoke) return false;
+
+  try {
+    return await invoke<boolean>("set_keep_awake", { enabled });
+  } catch {
+    // Never report success when the native power assertion was not acquired.
     try {
-      return await invoke<boolean>("set_keep_awake", { enabled });
+      return await invoke<boolean>("get_keep_awake");
     } catch {
-      return enabled;
+      return false;
     }
   }
-  return enabled;
 }
 
 export async function syncNativeWindowTheme(mode: "dark" | "light"): Promise<void> {
