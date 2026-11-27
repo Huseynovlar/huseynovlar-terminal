@@ -121,7 +121,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(sed -nE 's/.*"version": "([^"]+)".*/\1/p' apps/desktop/tauri.conf.json | head -n 1)"
+          VERSION="$(jq -r '.version' apps/desktop/tauri.conf.json)"
           TAG="v$VERSION"
           REPO="$GITHUB_REPOSITORY"
 
@@ -145,34 +145,18 @@ jobs:
           done
           echo "Verified $TAG (release $CURRENT_ID) with $ASSET_COUNT assets and both Mac installers."
 
-          # An older queued workflow run must never delete a newer release.
-          LATEST_TAG="$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[].tag_name' | grep -E '^v[0-9]+\\.[0-9]+\\.[0-9]+          OLD_RELEASES="$(gh api "repos/$REPO/releases?per_page=100" --jq '.[] | [.id, .tag_name] | @tsv')"
-          while IFS=$'\t' read -r OLD_ID OLD_TAG; do
-            [ -z "$OLD_ID" ] && continue
-            if [ "$OLD_ID" = "$CURRENT_ID" ]; then
-              continue
+          # Do not let an older queued run remove a newer version.
+          LATEST_TAG="$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[].tag_name' | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | sort -V | tail -n 1 || true)"
+          if [ -n "$LATEST_TAG" ]; then
+            HIGHEST_TAG="$( { echo "$TAG"; echo "$LATEST_TAG"; } | sort -V | tail -n 1)"
+            if [ "$HIGHEST_TAG" != "$TAG" ]; then
+              echo "::notice::Skipping cleanup for $TAG because newer release $LATEST_TAG already exists."
+              exit 0
             fi
-            echo "Removing duplicate/obsolete release $OLD_ID ($OLD_TAG)"
-            gh api --silent --method DELETE "repos/$REPO/releases/$OLD_ID"
-            if [ "$OLD_TAG" != "$TAG" ] && gh api --silent "repos/$REPO/git/ref/tags/$OLD_TAG" >/dev/null 2>&1; then
-              gh api --silent --method DELETE "repos/$REPO/git/refs/tags/$OLD_TAG"
-            fi
-          done <<< "$OLD_RELEASES"
-
-          REMAINING="$(gh api "repos/$REPO/releases?per_page=100" --jq 'length')"
-          if [ "$REMAINING" -ne 1 ]; then
-            echo "::error::Expected exactly one release after cleanup, found $REMAINING."
-            exit 1
-          fi
-          echo "Cleanup complete. Only $TAG remains."
- | sort -V | tail -n 1 || true)"
-          if [ -n "$LATEST_TAG" ] && [ "$(printf '%s\\n' "$TAG" "$LATEST_TAG" | sort -V | tail -n 1)" != "$TAG" ]; then
-            echo "::notice::Skipping cleanup for $TAG because newer release $LATEST_TAG already exists."
-            exit 0
           fi
 
-          OLD_RELEASES="$(gh api "repos/$REPO/releases?per_page=100" --jq '.[] | [.id, .tag_name] | @tsv')"
-          while IFS=$'\t' read -r OLD_ID OLD_TAG; do
+          OLD_RELEASES="$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[] | [.id, .tag_name] | @tsv')"
+          while read -r OLD_ID OLD_TAG; do
             [ -z "$OLD_ID" ] && continue
             if [ "$OLD_ID" = "$CURRENT_ID" ]; then
               continue
