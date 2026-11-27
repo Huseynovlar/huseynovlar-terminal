@@ -61,6 +61,9 @@ fn open_external_window(app: AppHandle, url: String) -> Result<(), String> {
                     if !native_ptr.is_null() {
                         let native_window = unsafe { &*(native_ptr as *mut NSWindow) };
                         let mut behavior = native_window.collectionBehavior();
+                        // These three fullscreen modes are mutually exclusive.
+                        behavior.remove(NSWindowCollectionBehavior::FullScreenPrimary);
+                        behavior.remove(NSWindowCollectionBehavior::FullScreenNone);
                         behavior.insert(NSWindowCollectionBehavior::FullScreenAuxiliary);
                         native_window.setCollectionBehavior(behavior);
                     }
