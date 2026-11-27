@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import csv
 import html
 import io
@@ -943,6 +944,205 @@ async def update_journal_deal(
     return _serialize_deal(deal, acc_map, robot_map)
 
 
+@router.get("/journal/trades")
+async def list_journal_round_trip_trades(
+    period: str = Query(default="30D", pattern="^(TODAY|7D|30D|90D|YTD|ALL)$"),
+    account_id: str | None = None,
+    symbol: str | None = None,
+    robot: str | None = None,
+    side: str | None = Query(default=None, pattern="^(LONG|SHORT)$"),
+    result: str | None = Query(default=None, pattern="^(WIN|LOSS)$"),
+    tag: str | None = None,
+    q: str | None = None,
+    from_date: str | None = Query(default=None, alias="from"),
+    to_date: str | None = Query(default=None, alias="to"),
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Server-side Round-Trip Trade Journal (IN + OUT pairing by position_id, USC ÷ 100, zero ALLINT/balance ops)."""
+    now = datetime.now(UTC)
+    from_msc = _parse_iso_to_msc(from_date)
+    to_msc = _parse_iso_to_msc(to_date, end_of_day=True)
+    if from_msc is None:
+        if period == "TODAY":
+            from_msc = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+        elif period == "7D":
+            from_msc = int((now - timedelta(days=7)).timestamp() * 1000)
+        elif period == "30D":
+            from_msc = int((now - timedelta(days=30)).timestamp() * 1000)
+        elif period == "90D":
+            from_msc = int((now - timedelta(days=90)).timestamp() * 1000)
+        elif period == "YTD":
+            from_msc = int(now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+
+    stmt = select(Deal).where(Deal.deal_type.in_([0, 1])).order_by(Deal.time_msc.asc())
+    if account_id:
+        stmt = stmt.where(Deal.account_id == account_id)
+    if symbol and symbol.strip():
+        stmt = stmt.where(
+            or_(Deal.symbol.ilike(f"%{symbol.strip()}%"), sql_symbol_match(Deal.symbol, symbol.strip()))
+        )
+    all_deals = (await db.execute(stmt)).scalars().all()
+
+    acc_map = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}
+    robot_map = {
+        (r.account_id, r.magic_number): r.name
+        for r in (await db.execute(select(Robot))).scalars().all()
+        if not _is_bridge_robot_row(r)
+    }
+
+    # Group clean trading deals by (account_id, position_id)
+    by_pos: dict[tuple[str, int], list[Deal]] = defaultdict(list)
+    standalone_out: list[Deal] = []
+    for d in all_deals:
+        if _is_internal_transfer_deal(d):
+            continue
+        if d.position_id and d.position_id > 0:
+            by_pos[(d.account_id, int(d.position_id))].append(d)
+        elif d.entry_type in (1, 2):
+            standalone_out.append(d)
+
+    def _build_trade(group: list[Deal]) -> dict[str, Any] | None:
+        outs = [x for x in group if x.entry_type in (1, 2)]
+        if not outs:
+            return None
+        ins = [x for x in group if x.entry_type == 0]
+        first_in = ins[0] if ins else outs[0]
+        last_out = outs[-1]
+
+        close_msc = last_out.time_msc
+        if from_msc is not None and close_msc < from_msc:
+            return None
+        if to_msc is not None and close_msc > to_msc:
+            return None
+
+        acc = acc_map.get(last_out.account_id)
+        div = _deal_divisor(last_out, acc_map)
+        # Side is determined by entry deal (BUY -> LONG, SELL -> SHORT)
+        if ins:
+            trade_side = "LONG" if first_in.deal_type == 0 else "SHORT"
+        else:
+            # Closing deal has opposite direction to original position
+            trade_side = "SHORT" if last_out.deal_type == 0 else "LONG"
+
+        gross_usd = sum(x.profit / div for x in outs)
+        comm_usd = sum(x.commission / div for x in group)
+        swap_usd = sum(x.swap / div for x in group)
+        fee_usd = sum(x.fee / div for x in group)
+        net_usd = sum(_deal_net_usd(x, acc_map) for x in outs)
+        if net_usd == 0.0 and (gross_usd != 0.0 or comm_usd != 0.0 or swap_usd != 0.0):
+            net_usd = gross_usd + comm_usd + swap_usd + fee_usd
+
+        open_msc = first_in.time_msc
+        dur_sec = max(0, int((close_msc - open_msc) // 1000))
+        vol = round(sum(float(x.volume or 0.0) for x in outs), 4)
+
+        raw_tags = [str(t) for t in (last_out.tags or [])]
+        rating: int | None = None
+        clean_tags: list[str] = []
+        for t in raw_tags:
+            if t.startswith("rating:"):
+                with contextlib.suppress(ValueError):
+                    rating = max(1, min(5, int(t.split(":", 1)[1])))
+            else:
+                clean_tags.append(t)
+
+        magic = int(last_out.magic_number or first_in.magic_number or 0)
+        rob_name = robot_map.get((last_out.account_id, magic), "Manual" if magic == 0 else f"EA #{magic}")
+
+        return {
+            "id": last_out.id,
+            "account_id": last_out.account_id,
+            "account_name": acc.name if acc else last_out.account_id,
+            "currency": acc.currency if acc else "USD",
+            "position_id": int(last_out.position_id or last_out.mt5_deal_ticket),
+            "symbol": last_out.symbol,
+            "side": trade_side,
+            "open_time_utc": datetime.fromtimestamp(open_msc / 1000, tz=UTC).isoformat(),
+            "close_time_utc": datetime.fromtimestamp(close_msc / 1000, tz=UTC).isoformat(),
+            "close_time_msc": close_msc,
+            "duration_sec": dur_sec,
+            "volume_lots": vol,
+            "entry_price": first_in.price,
+            "exit_price": last_out.price,
+            "gross_pnl_usd": round(gross_usd, 2),
+            "commission_usd": round(comm_usd, 2),
+            "swap_usd": round(swap_usd, 2),
+            "net_pnl_usd": round(net_usd, 2),
+            "magic_number": magic,
+            "robot_name": rob_name,
+            "notes": last_out.notes or "",
+            "tags": clean_tags,
+            "rating": rating,
+            "comment": last_out.comment or "",
+        }
+
+    trades: list[dict[str, Any]] = []
+    for grp in by_pos.values():
+        t = _build_trade(grp)
+        if t is not None:
+            trades.append(t)
+    for d in standalone_out:
+        t = _build_trade([d])
+        if t is not None:
+            trades.append(t)
+
+    # Apply post-pairing filters
+    if robot and robot != "ALL":
+        if robot == "MANUAL":
+            trades = [t for t in trades if t["magic_number"] == 0]
+        elif robot.isdigit():
+            m = int(robot)
+            trades = [t for t in trades if t["magic_number"] == m]
+    if side:
+        trades = [t for t in trades if t["side"] == side]
+    if result == "WIN":
+        trades = [t for t in trades if t["net_pnl_usd"] > 0]
+    elif result == "LOSS":
+        trades = [t for t in trades if t["net_pnl_usd"] <= 0]
+    if tag and tag.strip():
+        tl = tag.strip().lower()
+        trades = [t for t in trades if any(tl in x.lower() for x in t["tags"])]
+    if q and q.strip():
+        ql = q.strip().lower()
+        trades = [
+            t
+            for t in trades
+            if ql in t["symbol"].lower()
+            or ql in t["robot_name"].lower()
+            or ql in t["notes"].lower()
+            or ql in t["comment"].lower()
+            or any(ql in x.lower() for x in t["tags"])
+        ]
+
+    trades.sort(key=lambda x: x["close_time_msc"], reverse=True)
+
+    # Server-computed summary bar
+    pnls = [t["net_pnl_usd"] for t in trades]
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+    gross_win = sum(wins)
+    gross_loss = abs(sum(losses))
+    pf = round(gross_win / gross_loss, 2) if gross_loss > 0 else (99.99 if gross_win > 0 else 0.0)
+    wr = round((len(wins) / len(pnls)) * 100.0, 1) if pnls else 0.0
+    avg_win = round(gross_win / len(wins), 2) if wins else 0.0
+    avg_loss = round(gross_loss / len(losses), 2) if losses else 0.0
+    avg_dur = int(sum(t["duration_sec"] for t in trades) / len(trades)) if trades else 0
+
+    return {
+        "summary": {
+            "total_trades": len(trades),
+            "net_pnl_usd": round(sum(pnls), 2),
+            "win_rate_pct": wr,
+            "profit_factor": pf,
+            "avg_win_usd": avg_win,
+            "avg_loss_usd": avg_loss,
+            "avg_duration_sec": avg_dur,
+        },
+        "trades": trades[:500],
+    }
+
+
 @router.get("/journal/positions")
 async def list_journal_positions(
     account_id: str | None = None,
@@ -1048,7 +1248,7 @@ async def get_treasury_report(
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Exness Treasury & Vault Ledger — separates deposits, withdrawals, internal transfers, and Exness Vault."""
+    """Exness Treasury & Vault Ledger — strict ALLINT / 60s pair exclusion & Net Invested cashflow."""
     acc_stmt = select(TradingAccount)
     if account_id:
         acc_stmt = acc_stmt.where(TradingAccount.id == account_id)
@@ -1060,49 +1260,112 @@ async def get_treasury_report(
         op_stmt = op_stmt.where(BalanceOperation.account_id == account_id)
     ops = (await db.execute(op_stmt)).scalars().all()
 
-    deal_stmt = select(Deal).where(Deal.entry_type.in_([1, 2]))
+    deal_stmt = select(Deal).where(Deal.entry_type.in_([1, 2]), Deal.deal_type.in_([0, 1]))
     if account_id:
         deal_stmt = deal_stmt.where(Deal.account_id == account_id)
-    deals = (await db.execute(deal_stmt)).scalars().all()
+    deals = [d for d in (await db.execute(deal_stmt)).scalars().all() if not _is_internal_transfer_deal(d)]
 
-    def _is_internal_transfer(o: BalanceOperation) -> bool:
-        if o.op_kind == "INTERNAL_TRANSFER":
-            return True
+    # Detect paired opposite operations within 60 seconds across user's accounts (same USD amount)
+    paired_internal_ids: set[str] = set()
+    for i, a in enumerate(ops):
+        for j in range(i + 1, len(ops)):
+            b = ops[j]
+            if abs(a.time_msc - b.time_msc) > 60_000:
+                break
+            if a.account_id == b.account_id:
+                continue
+            if a.amount_usd * b.amount_usd < 0:
+                tol = max(0.05, abs(a.amount_usd) * 0.01)
+                if abs(a.amount_usd + b.amount_usd) <= tol:
+                    paired_internal_ids.add(a.id)
+                    paired_internal_ids.add(b.id)
+
+    def _effective_kind(o: BalanceOperation) -> str:
+        if o.op_kind == "INTERNAL_TRANSFER" or o.id in paired_internal_ids:
+            return "INTERNAL_TRANSFER"
         c = (o.comment or "").lower()
-        keywords = ("internal transfer", "transfer between", "transfer from", "transfer to", "int. transfer")
-        return any(k in c for k in keywords)
+        keywords = ("allint", "internal", "transfer between", "transfer from", "transfer to", "int. transfer")
+        if any(k in c for k in keywords):
+            return "INTERNAL_TRANSFER"
+        if o.op_kind in ("REBATE", "BONUS", "FEE", "EXNESS_VAULT"):
+            return o.op_kind
+        if o.amount_usd > 0:
+            return "DEPOSIT"
+        if o.amount_usd < 0:
+            return "WITHDRAWAL"
+        return o.op_kind
 
-    total_deposited = sum(
-        o.amount_usd for o in ops if o.op_kind == "DEPOSIT" and o.amount_usd > 0 and not _is_internal_transfer(o)
-    )
-    total_withdrawn = abs(
-        sum(
-            o.amount_usd
-            for o in ops
-            if o.op_kind == "WITHDRAWAL" and o.amount_usd < 0 and not _is_internal_transfer(o)
+    classified_ops: list[dict[str, Any]] = []
+    dep_list: list[float] = []
+    wd_list: list[float] = []
+    int_list: list[float] = []
+    vault_list: list[float] = []
+    rebate_list: list[float] = []
+    monthly: dict[str, dict[str, float]] = defaultdict(lambda: {"deposits": 0.0, "withdrawals": 0.0})
+
+    for o in ops:
+        eff = _effective_kind(o)
+        row = _serialize_treasury_op(o, acc_map)
+        row["effective_kind"] = eff
+        classified_ops.append(row)
+        ym = datetime.fromtimestamp(o.time_msc / 1000, tz=UTC).strftime("%Y-%m")
+        if eff == "INTERNAL_TRANSFER":
+            int_list.append(abs(o.amount_usd))
+        elif eff == "DEPOSIT":
+            dep_list.append(abs(o.amount_usd))
+            monthly[ym]["deposits"] += abs(o.amount_usd)
+        elif eff == "WITHDRAWAL":
+            wd_list.append(abs(o.amount_usd))
+            monthly[ym]["withdrawals"] += abs(o.amount_usd)
+        elif eff == "EXNESS_VAULT":
+            vault_list.append(abs(o.amount_usd))
+        elif eff in ("REBATE", "BONUS"):
+            rebate_list.append(o.amount_usd)
+
+    total_deposited = round(sum(dep_list), 2)
+    total_withdrawn = round(sum(wd_list), 2)
+    net_invested = round(total_deposited - total_withdrawn, 2)
+    total_internal = round(sum(int_list), 2)
+    total_vault = round(sum(vault_list), 2)
+    total_rebates = round(sum(rebate_list), 2)
+    working_capital = round(sum(a.last_equity / (a.currency_divisor or 1.0) for a in accounts), 2)
+    realized_profit = round(sum(_deal_net_usd(d, acc_map) for d in deals), 2)
+    profit_ready = round(max(0.0, realized_profit - total_vault - total_withdrawn), 2)
+
+    cashflow_series: list[dict[str, Any]] = []
+    cum_net = 0.0
+    for ym in sorted(monthly.keys()):
+        dep = round(monthly[ym]["deposits"], 2)
+        wd = round(monthly[ym]["withdrawals"], 2)
+        cum_net = round(cum_net + dep - wd, 2)
+        cashflow_series.append(
+            {
+                "month": ym,
+                "deposits_usd": dep,
+                "withdrawals_usd": wd,
+                "net_invested_cum_usd": cum_net,
+            }
         )
-    )
-    total_internal_transfers = sum(abs(o.amount_usd) for o in ops if _is_internal_transfer(o))
-    total_vault = abs(sum(o.amount_usd for o in ops if o.op_kind == "EXNESS_VAULT" and o.amount_usd < 0))
-    total_rebates = sum(o.amount_usd for o in ops if o.op_kind == "REBATE")
-    working_capital = sum(a.last_equity / (a.currency_divisor or 1.0) for a in accounts)
-    realized_profit = sum(_deal_net_usd(d, acc_map) for d in deals)
-    profit_ready = max(0.0, realized_profit - total_vault - total_withdrawn)
 
     return {
         "summary": {
-            "working_capital_usd": round(working_capital, 2),
-            "total_deposited_usd": round(total_deposited, 2),
-            "total_withdrawn_usd": round(total_withdrawn, 2),
-            "total_internal_transfers_usd": round(total_internal_transfers, 2),
-            "total_vault_usd": round(total_vault, 2),
-            "total_rebates_usd": round(total_rebates, 2),
-            "realized_trading_profit_usd": round(realized_profit, 2),
-            "profit_ready_for_vault_usd": round(profit_ready, 2),
+            "working_capital_usd": working_capital,
+            "net_invested_usd": net_invested,
+            "total_deposited_usd": total_deposited,
+            "deposits_count": len(dep_list),
+            "total_withdrawn_usd": total_withdrawn,
+            "withdrawals_count": len(wd_list),
+            "total_internal_transfers_usd": total_internal,
+            "internal_transfers_count": len(int_list),
+            "total_vault_usd": total_vault,
+            "total_rebates_usd": total_rebates,
+            "realized_trading_profit_usd": realized_profit,
+            "profit_ready_for_vault_usd": profit_ready,
             "vault_target_usd": vault_target_usd,
             "vault_target_reached": profit_ready >= vault_target_usd,
         },
-        "operations": [_serialize_treasury_op(o, acc_map) for o in ops],
+        "cashflow_series": cashflow_series,
+        "operations": classified_ops,
     }
 
 
@@ -1234,20 +1497,23 @@ async def update_treasury_operation(
     op = await db.get(BalanceOperation, op_id)
     if not op:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Treasury operation not found")
-    if not op.is_manual:
+    if not op.is_manual and (body.amount is not None or body.comment is not None):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Broker-synced transactions are read-only and cannot be edited",
+            detail=(
+                "Broker-synced transaction amount/comment cannot be edited; "
+                "only op_kind reclassification and notes are allowed"
+            ),
         )
     acc = await db.get(TradingAccount, op.account_id)
     div = (acc.currency_divisor if acc and acc.currency_divisor else 1.0)
 
     if body.op_kind is not None:
         op.op_kind = body.op_kind
-    if body.amount is not None:
+    if body.amount is not None and op.is_manual:
         op.amount = body.amount
         op.amount_usd = round(body.amount / div, 4)
-    if body.comment is not None:
+    if body.comment is not None and op.is_manual:
         op.comment = body.comment.strip()
     if body.notes is not None:
         op.notes = body.notes.strip()

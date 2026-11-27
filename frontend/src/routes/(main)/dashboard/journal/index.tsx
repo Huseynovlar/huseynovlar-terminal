@@ -1,22 +1,28 @@
-import { formatTerminalDateTime } from "@/framework/use-utc-clock";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Download, Eye, FileSpreadsheet, RefreshCw } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import {
+  ArrowDownUp,
+  Download,
+  ExternalLink,
+  Save,
+  Search,
+  Star,
+  X,
+} from "lucide-react";
 
-import { formatSignedUsd } from "@/components/m5/chart-indicators";
+import { formatSignedUsd, formatUsd } from "@/components/m5/chart-indicators";
 import { AsyncButton } from "@/components/ui/async-button";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiDownload, apiRequest } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
-import { useI18n } from "@/framework/i18n";
+import { canonicalMarketSymbol } from "@/framework/open-market-ws";
 import { TerminalPageShell } from "@/framework/templates/TerminalPageShell";
 import { useTerminalStore } from "@/framework/terminal-store";
 import { useLiveEvents } from "@/framework/use-live-socket";
+import { formatTerminalDateTime } from "@/framework/use-utc-clock";
 
 export const Route = createFileRoute("/(main)/dashboard/journal/")({
   component: JournalPage,
@@ -46,278 +52,667 @@ export interface JournalDeal {
   tags?: string[];
 }
 
-interface LivePosition {
-  position_ticket: number;
+interface RoundTripTrade {
+  id: string;
+  account_id: string;
   account_name: string;
+  currency: string;
+  position_id: number;
   symbol: string;
-  side: string;
-  volume: number;
-  open_price: number;
-  current_price: number;
-  sl: number;
-  tp: number;
-  profit_usd: number;
-  mae_usd: number;
-  mfe_usd: number;
+  side: "LONG" | "SHORT";
+  open_time_utc: string;
+  close_time_utc: string;
+  close_time_msc: number;
+  duration_sec: number;
+  volume_lots: number;
+  entry_price: number;
+  exit_price: number;
+  gross_pnl_usd: number;
+  commission_usd: number;
+  swap_usd: number;
+  net_pnl_usd: number;
+  magic_number: number;
+  robot_name: string;
+  notes: string;
+  tags: string[];
+  rating: number | null;
+  comment: string;
 }
 
-interface TransferOp {
-  id: string;
-  account_name: string;
-  op_kind: string;
-  amount_usd: number;
-  comment: string;
-  timestamp: string;
+interface JournalResponse {
+  summary: {
+    total_trades: number;
+    net_pnl_usd: number;
+    win_rate_pct: number;
+    profit_factor: number;
+    avg_win_usd: number;
+    avg_loss_usd: number;
+    avg_duration_sec: number;
+  };
+  trades: RoundTripTrade[];
+}
+
+type PeriodKey = "TODAY" | "7D" | "30D" | "90D" | "YTD" | "ALL";
+type SortField = "close_time_msc" | "symbol" | "volume_lots" | "duration_sec" | "net_pnl_usd";
+
+const QUICK_TAGS = ["#setup-A", "#news", "#overtrade", "#fomo", "#breakeven"];
+
+function formatDuration(sec: number): string {
+  if (!Number.isFinite(sec) || sec <= 0) return "<1m";
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return `${h}h ${m}m`;
 }
 
 function JournalPage() {
-  const { t } = useI18n();
+  const navigate = useNavigate();
   const privacyMode = useTerminalStore((s) => s.privacyMode);
-  const [tab, setTab] = useState<"deals" | "positions" | "transfers">("deals");
-  const [deals, setDeals] = useState<JournalDeal[]>([]);
-  const [positions, setPositions] = useState<LivePosition[]>([]);
-  const [transfers, setTransfers] = useState<TransferOp[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState<string | null>(null);
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [dRows, pRows, tRows] = await Promise.all([
-        apiRequest<JournalDeal[]>("/journal/deals?limit=150").catch(() => [] as JournalDeal[]),
-        apiRequest<LivePosition[]>("/journal/positions").catch(() => [] as LivePosition[]),
-        apiRequest<TransferOp[]>("/treasury/operations?limit=100").catch(() => [] as TransferOp[]),
-      ]);
-      setDeals(Array.isArray(dRows) ? dRows : []);
-      setPositions(Array.isArray(pRows) ? pRows : []);
-      setTransfers(Array.isArray(tRows) ? tRows : []);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Filters (40px bar)
+  const [period, setPeriod] = useState<PeriodKey>("30D");
+  const [accountId, setAccountId] = useState("");
+  const [robotFilter, setRobotFilter] = useState("ALL");
+  const [sideFilter, setSideFilter] = useState<"" | "LONG" | "SHORT">("");
+  const [resultFilter, setResultFilter] = useState<"" | "WIN" | "LOSS">("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [searchQ, setSearchQ] = useState("");
+
+  const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
+  const [robots, setRobots] = useState<Array<{ id: string; name: string; magic_number: number }>>([]);
+  const [data, setData] = useState<JournalResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  // Sorting
+  const [sortField, setSortField] = useState<SortField>("close_time_msc");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  // Right Trade Detail Drawer
+  const [selected, setSelected] = useState<RoundTripTrade | null>(null);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [tagsDraft, setTagsDraft] = useState<string[]>([]);
+  const [customTag, setCustomTag] = useState("");
+  const [ratingDraft, setRatingDraft] = useState<number>(0);
+  const [savingNote, setSavingNote] = useState(false);
 
   useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+    apiRequest<Array<{ id: string; name: string }>>("/accounts")
+      .then((rows) => setAccounts(Array.isArray(rows) ? rows : []))
+      .catch(() => {});
+    apiRequest<Array<{ id: string; name: string; magic_number: number }>>("/robots")
+      .then((rows) => setRobots(Array.isArray(rows) ? rows : []))
+      .catch(() => {});
+  }, []);
 
-  useLiveEvents(["trade_event", "snapshot"], () => {
-    void loadAll();
-  });
+  const loadTrades = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const params = new URLSearchParams({ period });
+        if (accountId) params.set("account_id", accountId);
+        if (robotFilter !== "ALL") params.set("robot", robotFilter);
+        if (sideFilter) params.set("side", sideFilter);
+        if (resultFilter) params.set("result", resultFilter);
+        if (tagFilter) params.set("tag", tagFilter);
+        if (searchQ.trim()) params.set("q", searchQ.trim());
+        const res = await apiRequest<JournalResponse>(`/journal/trades?${params.toString()}`);
+        setData(res);
+      } catch (err) {
+        if (!silent) notify.error("Ошибка загрузки журнала", err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [period, accountId, robotFilter, sideFilter, resultFilter, tagFilter, searchQ],
+  );
 
-  async function handleExport(fmt: "csv" | "xlsx") {
-    setExporting(fmt);
-    try {
-      const fn = await apiDownload(
-        `/analytics/statement.${fmt}`,
-        `huseynovlar_statement.${fmt}`,
-      );
-      notify.success(t.common.download, fn);
-    } catch (err) {
-      notify.error(t.common.errorTitle, err instanceof Error ? err.message : String(err));
-    } finally {
-      setExporting(null);
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void loadTrades(false);
+    }, 150);
+    return () => window.clearTimeout(id);
+  }, [loadTrades]);
+
+  // Zero REST polling — silent refresh strictly on /ws/account trade_event
+  useLiveEvents(
+    ["trade_event"],
+    useCallback(() => {
+      void loadTrades(true);
+    }, [loadTrades]),
+  );
+
+  const sortedTrades = useMemo(() => {
+    const list = [...(data?.trades ?? [])];
+    list.sort((a, b) => {
+      const av = a[sortField];
+      const bv = b[sortField];
+      if (typeof av === "string" && typeof bv === "string") {
+        return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+      }
+      const na = Number(av ?? 0);
+      const nb = Number(bv ?? 0);
+      return sortDir === "asc" ? na - nb : nb - na;
+    });
+    return list;
+  }, [data?.trades, sortField, sortDir]);
+
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("desc");
     }
   }
 
+  function openTradeDrawer(tr: RoundTripTrade) {
+    setSelected(tr);
+    setNotesDraft(tr.notes || "");
+    setTagsDraft(tr.tags || []);
+    setRatingDraft(tr.rating || 0);
+    setCustomTag("");
+  }
+
+  function toggleQuickTag(tag: string) {
+    setTagsDraft((prev) => (prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag]));
+  }
+
+  async function handleSaveAnnotation() {
+    if (!selected) return;
+    setSavingNote(true);
+    try {
+      const nextTags = [...tagsDraft];
+      if (ratingDraft >= 1 && ratingDraft <= 5) {
+        nextTags.push(`rating:${ratingDraft}`);
+      }
+      await apiRequest(`/journal/deals/${encodeURIComponent(selected.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          notes: notesDraft,
+          tags: nextTags,
+        }),
+      });
+      notify.success("Заметка и теги сохранены");
+      await loadTrades(true);
+      setSelected((prev) =>
+        prev ? { ...prev, notes: notesDraft, tags: tagsDraft, rating: ratingDraft || null } : null,
+      );
+    } catch (err) {
+      notify.error("Ошибка сохранения", err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingNote(false);
+    }
+  }
+
+  async function handleExportCsv() {
+    setExporting(true);
+    try {
+      const qs = accountId ? `?account_id=${encodeURIComponent(accountId)}` : "";
+      const fn = await apiDownload(`/analytics/statement.csv${qs}`, "huseynovlar_journal.csv");
+      notify.success("CSV экспортирован", fn);
+    } catch (err) {
+      notify.error("Ошибка экспорта", err instanceof Error ? err.message : String(err));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const mask = (v: string) => (privacyMode ? "••••••" : v);
+  const sum = data?.summary;
+
   return (
     <TerminalPageShell
-      title={t.journal.title}
-      subtitle={t.journal.subtitle}
+      title="Журнал сделок"
+      subtitle="Склейка IN + OUT по position_id · строгий USD (USC ÷ 100) · без ALLINT и балансовых операций"
+      badge={sum ? `${sum.total_trades} сделок` : undefined}
       actions={
-        <>
-          <AsyncButton
-            size="sm"
-            variant="outline"
-            loading={exporting === "csv"}
-            loadingText={t.common.loading}
-            onClick={() => void handleExport("csv")}
-          >
-            <Download className="mr-1.5 size-3.5" />
-            {t.journal.exportCsv}
-          </AsyncButton>
-          <AsyncButton
-            size="sm"
-            variant="outline"
-            loading={exporting === "xlsx"}
-            loadingText={t.common.loading}
-            onClick={() => void handleExport("xlsx")}
-          >
-            <FileSpreadsheet className="mr-1.5 size-3.5" />
-            {t.journal.exportXlsx}
-          </AsyncButton>
-          <Button size="sm" variant="outline" onClick={() => void loadAll()}>
-            <RefreshCw className="mr-1.5 size-3.5" />
-            {t.common.refresh}
-          </Button>
-        </>
+        <AsyncButton
+          size="sm"
+          variant="outline"
+          loading={exporting}
+          loadingText="Экспорт..."
+          onClick={() => void handleExportCsv()}
+        >
+          <Download className="mr-1.5 size-3.5" />
+          Экспорт CSV
+        </AsyncButton>
       }
     >
-      <div className="flex flex-wrap gap-1.5">
-        <Button size="sm" variant={tab === "deals" ? "default" : "outline"} onClick={() => setTab("deals")}>
-          {t.journal.tabDeals} ({deals.length})
-        </Button>
-        <Button size="sm" variant={tab === "positions" ? "default" : "outline"} onClick={() => setTab("positions")}>
-          {t.journal.tabPositions} ({positions.length})
-        </Button>
-        <Button size="sm" variant={tab === "transfers" ? "default" : "outline"} onClick={() => setTab("transfers")}>
-          {t.journal.tabTransfers} ({transfers.length})
-        </Button>
+      {/* 1-Row Compact Filter Bar (40px) */}
+      <div className="flex flex-wrap items-center gap-1.5 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] px-2.5 py-1.5 text-xs">
+        <div className="flex items-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-0.5 text-[11px] tabular-nums">
+          {(["TODAY", "7D", "30D", "90D", "YTD", "ALL"] as PeriodKey[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPeriod(p)}
+              className={`rounded-[3px] px-2 py-0.5 font-semibold transition-colors ${
+                period === p
+                  ? "bg-[var(--accent-blue)] text-white"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              {p === "TODAY" ? "Сегодня" : p}
+            </button>
+          ))}
+        </div>
+
+        <select
+          value={accountId}
+          onChange={(e) => setAccountId(e.target.value)}
+          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
+        >
+          <option value="">Все счета</option>
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={robotFilter}
+          onChange={(e) => setRobotFilter(e.target.value)}
+          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
+        >
+          <option value="ALL">Все (EA + Manual)</option>
+          <option value="MANUAL">Только ручные</option>
+          {robots.map((r) => (
+            <option key={r.id} value={String(r.magic_number)}>
+              {r.name} (#{r.magic_number})
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={sideFilter}
+          onChange={(e) => setSideFilter(e.target.value as "" | "LONG" | "SHORT")}
+          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
+        >
+          <option value="">Сторона</option>
+          <option value="LONG">LONG</option>
+          <option value="SHORT">SHORT</option>
+        </select>
+
+        <select
+          value={resultFilter}
+          onChange={(e) => setResultFilter(e.target.value as "" | "WIN" | "LOSS")}
+          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
+        >
+          <option value="">Результат</option>
+          <option value="WIN">Win (+)</option>
+          <option value="LOSS">Loss (-)</option>
+        </select>
+
+        <select
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
+        >
+          <option value="">Все теги</option>
+          {QUICK_TAGS.map((tg) => (
+            <option key={tg} value={tg}>
+              {tg}
+            </option>
+          ))}
+        </select>
+
+        <div className="relative ml-auto w-44">
+          <Search className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-[var(--text-muted)]" />
+          <Input
+            value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            placeholder="Тикер, заметка..."
+            className="h-7 rounded-[4px] border-[var(--border-subtle)] bg-[var(--bg-canvas)] pl-7 text-[11px]"
+          />
+        </div>
       </div>
 
-      {loading ? (
-        <TableSkeleton rows={6} cols={7} />
-      ) : tab === "deals" ? (
-        <Card className="border-border/70">
-          <CardContent className="overflow-x-auto p-0">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Ticket</th>
-                  <th className="px-3 py-2">Symbol</th>
-                  <th className="px-3 py-2">Account / Robot</th>
-                  <th className="px-3 py-2">Side</th>
-                  <th className="px-3 py-2">Vol</th>
-                  <th className="px-3 py-2 text-right">Net PnL</th>
-                  <th className="px-3 py-2 text-right">{t.common.actions}</th>
+      {/* Summary Strip for Current Filter (Server-computed) */}
+      {sum && (
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[4px] border border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-3 lg:grid-cols-6">
+          <div className="flex h-[48px] flex-col justify-center bg-[var(--bg-panel)] px-3">
+            <span className="text-[10px] uppercase text-[var(--text-muted)]">Сделок</span>
+            <span className="text-[14px] font-semibold tabular-nums text-[var(--text-primary)]">
+              {sum.total_trades}
+            </span>
+          </div>
+          <div className="flex h-[48px] flex-col justify-center bg-[var(--bg-panel)] px-3">
+            <span className="text-[10px] uppercase text-[var(--text-muted)]">Net PnL</span>
+            <span
+              className="text-[14px] font-semibold tabular-nums"
+              style={{ color: sum.net_pnl_usd >= 0 ? "var(--bull)" : "var(--bear)" }}
+            >
+              {mask(formatSignedUsd(sum.net_pnl_usd))}
+            </span>
+          </div>
+          <div className="flex h-[48px] flex-col justify-center bg-[var(--bg-panel)] px-3">
+            <span className="text-[10px] uppercase text-[var(--text-muted)]">Winrate</span>
+            <span className="text-[14px] font-semibold tabular-nums text-[var(--text-primary)]">
+              {sum.win_rate_pct.toFixed(1)}%
+            </span>
+          </div>
+          <div className="flex h-[48px] flex-col justify-center bg-[var(--bg-panel)] px-3">
+            <span className="text-[10px] uppercase text-[var(--text-muted)]">Profit Factor</span>
+            <span className="text-[14px] font-semibold tabular-nums text-[var(--text-primary)]">
+              {sum.profit_factor.toFixed(2)}
+            </span>
+          </div>
+          <div className="flex h-[48px] flex-col justify-center bg-[var(--bg-panel)] px-3">
+            <span className="text-[10px] uppercase text-[var(--text-muted)]">Avg Win / Loss</span>
+            <span className="text-[12px] font-semibold tabular-nums">
+              <span className="text-[var(--bull)]">+{formatUsd(sum.avg_win_usd)}</span>
+              <span className="mx-1 text-[var(--text-muted)]">/</span>
+              <span className="text-[var(--bear)]">-{formatUsd(sum.avg_loss_usd)}</span>
+            </span>
+          </div>
+          <div className="flex h-[48px] flex-col justify-center bg-[var(--bg-panel)] px-3">
+            <span className="text-[10px] uppercase text-[var(--text-muted)]">Ср. удержание</span>
+            <span className="text-[14px] font-semibold tabular-nums text-[var(--text-primary)]">
+              {formatDuration(sum.avg_duration_sec)}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Main Split: Table + Right Trade Detail Drawer */}
+      <div className={`grid grid-cols-1 gap-3 ${selected ? "xl:grid-cols-12" : ""}`}>
+        <div
+          className={`max-h-[65vh] overflow-auto rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] ${
+            selected ? "xl:col-span-8" : ""
+          }`}
+        >
+          {loading ? (
+            <div className="p-3">
+              <TableSkeleton rows={8} cols={8} />
+            </div>
+          ) : sortedTrades.length === 0 ? (
+            <div className="py-12 text-center text-xs text-[var(--text-muted)]">
+              Нет закрытых сделок по выбранным фильтрам
+            </div>
+          ) : (
+            <table className="w-full border-collapse text-left text-[11px] tabular-nums">
+              <thead className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--text-muted)]">
+                <tr className="h-8">
+                  <th
+                    className="cursor-pointer px-3 hover:text-[var(--text-primary)]"
+                    onClick={() => toggleSort("close_time_msc")}
+                  >
+                    Закрытие (UTC) <ArrowDownUp className="inline size-2.5" />
+                  </th>
+                  <th
+                    className="cursor-pointer px-2 hover:text-[var(--text-primary)]"
+                    onClick={() => toggleSort("symbol")}
+                  >
+                    Тикер / Сторона
+                  </th>
+                  <th className="px-2">Робот / Счёт</th>
+                  <th
+                    className="cursor-pointer px-2 text-right hover:text-[var(--text-primary)]"
+                    onClick={() => toggleSort("volume_lots")}
+                  >
+                    Лот
+                  </th>
+                  <th className="px-2 text-right">Вход → Выход</th>
+                  <th
+                    className="cursor-pointer px-2 text-right hover:text-[var(--text-primary)]"
+                    onClick={() => toggleSort("duration_sec")}
+                  >
+                    Длит.
+                  </th>
+                  <th
+                    className="cursor-pointer px-3 text-right hover:text-[var(--text-primary)]"
+                    onClick={() => toggleSort("net_pnl_usd")}
+                  >
+                    Net PnL (USD) <ArrowDownUp className="inline size-2.5" />
+                  </th>
                 </tr>
               </thead>
-              <tbody>
-                {deals.length === 0 ? (
-                  <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">{t.common.noData}</td></tr>
-                ) : (
-                  deals.map((d) => (
-                    <tr key={d.id} className="border-b border-border/40 hover:bg-muted/20">
-                      <td className="px-3 py-2 font-mono">
-                        <Link to="/dashboard/journal/deals/$dealId" params={{ dealId: d.id }} className="text-primary hover:underline">
-                          #{d.mt5_deal_ticket}
-                        </Link>
+              <tbody className="divide-y divide-[var(--border-subtle)]">
+                {sortedTrades.map((tr) => {
+                  const isSel = selected?.id === tr.id;
+                  return (
+                    <tr
+                      key={tr.id}
+                      onClick={() => openTradeDrawer(tr)}
+                      className={`h-[38px] cursor-pointer transition-colors ${
+                        isSel ? "bg-[var(--accent-blue)]/10" : "hover:bg-[var(--bg-elevated)]/60"
+                      }`}
+                    >
+                      <td className="px-3 py-1.5 text-[var(--text-secondary)]">
+                        {formatTerminalDateTime(tr.close_time_utc, { timezone: "UTC" })}
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5 font-mono font-semibold">
-                          <AssetLogo symbol={d.symbol} size={16} />
-                          {d.symbol}
+                      <td className="px-2 py-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <AssetLogo symbol={canonicalMarketSymbol(tr.symbol)} size={15} />
+                          <span className="font-semibold text-[var(--text-primary)]">
+                            {tr.symbol}
+                          </span>
+                          <span
+                            className="rounded-[2px] px-1 text-[9px] font-semibold"
+                            style={{
+                              backgroundColor:
+                                tr.side === "LONG"
+                                  ? "rgba(0,212,136,0.14)"
+                                  : "rgba(255,71,87,0.14)",
+                              color: tr.side === "LONG" ? "var(--bull)" : "var(--bear)",
+                            }}
+                          >
+                            {tr.side}
+                          </span>
                         </div>
                       </td>
-                      <td className="px-3 py-2">
-                        <div>{d.account_name}</div>
-                        <div className="font-mono text-[10px] text-muted-foreground">{d.robot_name}</div>
+                      <td className="px-2 py-1.5">
+                        <div className="font-medium text-[var(--text-primary)]">{tr.robot_name}</div>
+                        <div className="text-[10px] text-[var(--text-muted)]">
+                          {tr.account_name}
+                        </div>
                       </td>
-                      <td className="px-3 py-2">
-                        <Badge variant={d.side === "BUY" ? "default" : "destructive"} className="font-mono text-[10px]">
-                          {d.side} {d.entry}
-                        </Badge>
+                      <td className="px-2 py-1.5 text-right text-[var(--text-secondary)]">
+                        {tr.volume_lots.toFixed(2)}
                       </td>
-                      <td className="px-3 py-2 font-mono">{d.volume.toFixed(2)}</td>
-                      <td
-                        className={`px-3 py-2 text-right font-mono font-semibold ${
-                          d.net_profit_usd >= 0 ? "text-emerald-500" : "text-rose-500"
+                      <td className="px-2 py-1.5 text-right text-[var(--text-secondary)]">
+                        {tr.entry_price} → {tr.exit_price}
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-[var(--text-muted)]">
+                        {formatDuration(tr.duration_sec)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right">
+                        <div
+                          className="font-semibold"
+                          style={{ color: tr.net_pnl_usd >= 0 ? "var(--bull)" : "var(--bear)" }}
+                        >
+                          {mask(formatSignedUsd(tr.net_pnl_usd))}
+                        </div>
+                        {tr.tags.length > 0 && (
+                          <div className="text-[9px] text-[var(--accent-blue)]">
+                            {tr.tags.slice(0, 2).join(" ")}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Right Trade Detail Drawer */}
+        {selected && (
+          <div className="flex flex-col rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-panel)] xl:col-span-4">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-3 py-2">
+              <div className="flex items-center gap-2">
+                <AssetLogo symbol={canonicalMarketSymbol(selected.symbol)} size={18} />
+                <div>
+                  <div className="text-[12px] font-semibold text-[var(--text-primary)]">
+                    {selected.symbol} · {selected.side}
+                  </div>
+                  <div className="text-[10px] tabular-nums text-[var(--text-muted)]">
+                    Pos #{selected.position_id} · {selected.robot_name}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="rounded-[3px] p-1 text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-3 overflow-y-auto p-3 text-xs">
+              {/* Breakdown Grid */}
+              <div className="grid grid-cols-2 gap-2 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-2.5 text-[11px] tabular-nums">
+                <div>
+                  <span className="text-[10px] text-[var(--text-muted)]">Net PnL</span>
+                  <div
+                    className="text-[14px] font-semibold"
+                    style={{
+                      color: selected.net_pnl_usd >= 0 ? "var(--bull)" : "var(--bear)",
+                    }}
+                  >
+                    {mask(formatSignedUsd(selected.net_pnl_usd))}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-[var(--text-muted)]">Gross / Comm / Swap</span>
+                  <div className="text-[var(--text-secondary)]">
+                    {formatSignedUsd(selected.gross_pnl_usd)} / {formatSignedUsd(selected.commission_usd)} /{" "}
+                    {formatSignedUsd(selected.swap_usd)}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-[var(--text-muted)]">Открытие (UTC)</span>
+                  <div className="text-[var(--text-secondary)]">
+                    {formatTerminalDateTime(selected.open_time_utc, { timezone: "UTC" })}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] text-[var(--text-muted)]">Длительность</span>
+                  <div className="text-[var(--text-secondary)]">
+                    {formatDuration(selected.duration_sec)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Rating 1-5 */}
+              <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase text-[var(--text-muted)]">
+                  Оценка исполнения (1–5)
+                </div>
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setRatingDraft(star)}
+                      className="rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-1 hover:bg-[var(--bg-elevated)]"
+                    >
+                      <Star
+                        className="size-3.5"
+                        style={{
+                          color: star <= ratingDraft ? "var(--accent-amber)" : "var(--text-muted)",
+                          fill: star <= ratingDraft ? "var(--accent-amber)" : "none",
+                        }}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tags */}
+              <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase text-[var(--text-muted)]">
+                  Теги
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {QUICK_TAGS.map((tg) => {
+                    const active = tagsDraft.includes(tg);
+                    return (
+                      <button
+                        key={tg}
+                        type="button"
+                        onClick={() => toggleQuickTag(tg)}
+                        className={`rounded-[3px] border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                          active
+                            ? "border-[var(--accent-blue)] bg-[var(--accent-blue)]/15 text-[var(--accent-blue)]"
+                            : "border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-muted)]"
                         }`}
                       >
-                        {formatSignedUsd(d.net_profit_usd, privacyMode)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <Link
-                          to="/dashboard/journal/deals/$dealId"
-                          params={{ dealId: d.id }}
-                          className="inline-flex h-7 items-center rounded-md border border-input px-2 hover:bg-accent"
-                        >
-                          <Eye className="size-3.5" />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      ) : tab === "positions" ? (
-        <Card className="border-border/70">
-          <CardContent className="overflow-x-auto p-0">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Ticket</th>
-                  <th className="px-3 py-2">Symbol</th>
-                  <th className="px-3 py-2">Side</th>
-                  <th className="px-3 py-2">Vol</th>
-                  <th className="px-3 py-2">Open / Current</th>
-                  <th className="px-3 py-2">MAE / MFE</th>
-                  <th className="px-3 py-2 text-right">Float PnL</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.length === 0 ? (
-                  <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">{t.common.noData}</td></tr>
-                ) : (
-                  positions.map((p) => (
-                    <tr key={p.position_ticket} className="border-b border-border/40">
-                      <td className="px-3 py-2 font-mono">#{p.position_ticket}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5 font-mono font-semibold">
-                          <AssetLogo symbol={p.symbol} size={16} />
-                          {p.symbol}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2"><Badge variant={p.side === "BUY" ? "default" : "destructive"}>{p.side}</Badge></td>
-                      <td className="px-3 py-2 font-mono">{p.volume.toFixed(2)}</td>
-                      <td className="px-3 py-2 font-mono">{p.open_price.toFixed(2)} → {p.current_price.toFixed(2)}</td>
-                      <td className="px-3 py-2 font-mono text-[11px]">{formatSignedUsd(p.mae_usd, privacyMode)} / {formatSignedUsd(p.mfe_usd, privacyMode)}</td>
-                      <td className={`px-3 py-2 text-right font-mono font-semibold ${p.profit_usd >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                        {formatSignedUsd(p.profit_usd, privacyMode)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="border-border/70">
-          <CardContent className="overflow-x-auto p-0">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-border/60 bg-muted/30 font-mono text-[11px] text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 font-medium">ID</th>
-                  <th className="px-3 py-2">Time (UTC)</th>
-                  <th className="px-3 py-2">Account</th>
-                  <th className="px-3 py-2">Kind</th>
-                  <th className="px-3 py-2">Comment</th>
-                  <th className="px-3 py-2 text-right">Amount USD</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transfers.length === 0 ? (
-                  <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">{t.common.noData}</td></tr>
-                ) : (
-                  transfers.map((op) => (
-                    <tr key={op.id} className="border-b border-border/40 hover:bg-muted/20">
-                      <td className="px-3 py-2 font-mono text-[11px]">
-                        <Link
-                          to="/dashboard/treasury/$opId"
-                          params={{ opId: op.id }}
-                          title={String(op.id)}
-                          className="text-primary hover:underline"
-                        >
-                          {String(op.id).slice(0, 8)}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2 font-mono tabular-nums">{formatTerminalDateTime(op.timestamp)}</td>
-                      <td className="px-3 py-2">{op.account_name}</td>
-                      <td className="px-3 py-2"><Badge variant="outline" className="font-mono text-[10px]">{op.op_kind}</Badge></td>
-                      <td className="px-3 py-2 text-muted-foreground">{op.comment || "—"}</td>
-                      <td className={`px-3 py-2 text-right font-mono font-semibold tabular-nums ${op.amount_usd >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                        {formatSignedUsd(op.amount_usd, privacyMode)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
+                        {tg}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-1.5 flex gap-1">
+                  <Input
+                    value={customTag}
+                    onChange={(e) => setCustomTag(e.target.value)}
+                    placeholder="#свой-тег"
+                    className="h-7 rounded-[4px] border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[11px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const clean = customTag.trim();
+                      if (clean && !tagsDraft.includes(clean)) {
+                        setTagsDraft((p) => [...p, clean]);
+                        setCustomTag("");
+                      }
+                    }}
+                    className="rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] hover:bg-[var(--bg-elevated)]"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase text-[var(--text-muted)]">
+                  Заметки трейдера (Markdown)
+                </div>
+                <textarea
+                  rows={4}
+                  value={notesDraft}
+                  onChange={(e) => setNotesDraft(e.target.value)}
+                  placeholder="Разбор входа, контекст рынка, ошибки..."
+                  className="w-full rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] p-2 text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)]"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <AsyncButton
+                  size="sm"
+                  loading={savingNote}
+                  loadingText="Сохранение..."
+                  onClick={() => void handleSaveAnnotation()}
+                >
+                  <Save className="mr-1.5 size-3.5" />
+                  Сохранить
+                </AsyncButton>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void navigate({
+                      to: "/dashboard/tickers/$symbol",
+                      params: { symbol: canonicalMarketSymbol(selected.symbol) || selected.symbol },
+                    })
+                  }
+                  className="inline-flex items-center gap-1 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--accent-blue)] hover:bg-[var(--bg-elevated)]"
+                >
+                  Показать в терминале
+                  <ExternalLink className="size-3" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </TerminalPageShell>
   );
 }
