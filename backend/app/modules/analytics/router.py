@@ -380,7 +380,7 @@ async def get_home_summary(
     benchmarks = ["BTCUSD", "XAUUSD", "USTEC", "EURUSD", "DXY", "US10Y"]
     ticker_symbols = list(dict.fromkeys([*(h.code.upper() for h in asset_hubs), *benchmarks]))[:12]
 
-    # Treemap caches (US Sectors + Crypto Top)
+    # Treemap caches (US Sectors + Crypto Top) — strictly exclude non-live 0% stubs
     def _extract_treemap_items(cache_row: MarketCache | None) -> list[dict[str, Any]]:
         if not cache_row or not isinstance(cache_row.payload_json, dict):
             return []
@@ -389,6 +389,10 @@ async def get_home_summary(
             sec_name = str(sec.get("sector") or "")
             for it in sec.get("items") or []:
                 chg = it.get("change_pct")
+                price = it.get("price")
+                is_live = bool(it.get("live"))
+                if price is None and not is_live:
+                    continue
                 val = float(it.get("market_cap") or it.get("weight") or 1.0)
                 sym = str(it.get("symbol") or it.get("ticker") or "")
                 if not sym or chg is None:
@@ -399,7 +403,7 @@ async def get_home_summary(
                         "sector": sec_name,
                         "value": max(1.0, val),
                         "change_pct": round(float(chg), 2),
-                        "price": it.get("price"),
+                        "price": price,
                     }
                 )
         return items_out[:24]
@@ -408,6 +412,24 @@ async def get_home_summary(
     crypto_cache = await db.get(MarketCache, "treemap:crypto_majors:1D")
     treemap_us = _extract_treemap_items(us_cache)
     treemap_crypto = _extract_treemap_items(crypto_cache)
+
+    # Initial cached quotes fallback for Live Ticker Strip (used before first /ws/market tick or on weekends)
+    initial_ticker_quotes: dict[str, dict[str, float | None]] = {}
+    for item in [*treemap_us, *treemap_crypto]:
+        sym_key = str(item.get("name") or "").upper()
+        if sym_key and item.get("price") is not None:
+            initial_ticker_quotes[sym_key] = {
+                "price": float(item["price"]),
+                "change_pct": float(item.get("change_pct") or 0.0),
+            }
+    forex_cache = await db.get(MarketCache, "treemap:forex_majors:1D")
+    for item in _extract_treemap_items(forex_cache):
+        sym_key = str(item.get("name") or "").upper()
+        if sym_key and item.get("price") is not None and sym_key not in initial_ticker_quotes:
+            initial_ticker_quotes[sym_key] = {
+                "price": float(item["price"]),
+                "change_pct": float(item.get("change_pct") or 0.0),
+            }
 
     sector_pulse: list[dict[str, Any]] = []
     if us_cache and us_cache.payload_json:
@@ -467,6 +489,7 @@ async def get_home_summary(
         "server_time_utc": now.isoformat(),
         "period": period,
         "ticker_symbols": ticker_symbols,
+        "initial_ticker_quotes": initial_ticker_quotes,
         "kpis": {
             "total_balance_usd": total_balance_usd,
             "total_equity_usd": total_equity_usd,

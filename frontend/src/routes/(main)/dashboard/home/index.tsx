@@ -80,6 +80,7 @@ interface HomeSummary {
   server_time_utc: string;
   period: EquityPeriod;
   ticker_symbols: string[];
+  initial_ticker_quotes?: Record<string, { price?: number | null; change_pct?: number | null }>;
   kpis: {
     total_balance_usd: number;
     total_equity_usd: number;
@@ -509,7 +510,9 @@ function HomeCommandCenterPage() {
         {tickerSymbols.map((rawSym) => {
           const sym = canonicalMarketSymbol(rawSym);
           const q = liveQuotes[sym];
-          const chg = q?.changePct ?? null;
+          const fallback = summary?.initial_ticker_quotes?.[sym];
+          const displayPrice = q?.price ?? fallback?.price ?? null;
+          const chg = q?.changePct ?? fallback?.change_pct ?? null;
           const chgColor =
             chg == null
               ? "var(--text-muted)"
@@ -529,7 +532,7 @@ function HomeCommandCenterPage() {
               <AssetLogo symbol={sym} size={16} />
               <span className="font-semibold text-[var(--text-primary)]">{sym}</span>
               <span className="font-medium text-[var(--text-secondary)]">
-                {q ? formatTickerPrice(q.price) : "—"}
+                {displayPrice != null ? formatTickerPrice(displayPrice) : "—"}
               </span>
               {chg != null && (
                 <span className="text-[10px] font-semibold" style={{ color: chgColor }}>
