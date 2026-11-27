@@ -41,11 +41,7 @@ export function HotkeyEngine() {
         return;
       }
 
-      if (e.key === "?" && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        setHelpOpen((o) => !o);
-        return;
-      }
+      // '?' is handled by HotkeysHelpModal in dashboard/route.tsx
 
       if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const upper = e.key.toUpperCase();

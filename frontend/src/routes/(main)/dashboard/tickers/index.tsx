@@ -3,8 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, ArrowUpDown, Plus, RefreshCw, Search, Star, X } from "lucide-react";
 
+import { MarketScannerPanel } from "@/components/pro/MarketScannerPanel";
 import { formatDynamicVolume } from "@/components/terminal/MicrostructurePanel";
 import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
+import { SearchSelect } from "@/components/ui/search-select";
 import { notify } from "@/components/ui/toast";
 import { apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
@@ -66,6 +68,10 @@ function MarketTickersPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [activeTab, setActiveTab] = useState<"directory" | "scanner">(() => {
+    if (typeof window === "undefined") return "directory";
+    return new URLSearchParams(window.location.search).get("tab") === "scanner" ? "scanner" : "directory";
+  });
   const [search, setSearch] = useState(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("q") || "";
@@ -277,6 +283,36 @@ function MarketTickersPage() {
         </>
       }
     >
+      {/* Top View Tabs: Directory vs Market Anomaly Scanner */}
+      <div className="flex items-center gap-1 border-b border-[var(--border-subtle)] pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab("directory")}
+          className={`rounded-[4px] border px-3 py-1 text-[11px] font-semibold transition-colors ${
+            activeTab === "directory"
+              ? "border-[var(--accent-blue)] bg-[var(--accent-blue)]/15 text-[var(--text-primary)]"
+              : "border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          }`}
+        >
+          Справочник рынков ({total})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("scanner")}
+          className={`rounded-[4px] border px-3 py-1 text-[11px] font-semibold transition-colors ${
+            activeTab === "scanner"
+              ? "border-[var(--accent-amber)] bg-[var(--accent-amber)]/15 text-[var(--text-primary)]"
+              : "border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          }`}
+        >
+          Скринер аномалий (RVOL / ATR / Funding)
+        </button>
+      </div>
+
+      {activeTab === "scanner" ? (
+        <MarketScannerPanel />
+      ) : (
+        <>
       {/* Inline Manual Ticker Creation Form */}
       {manualOpen ? (
         <form
@@ -298,17 +334,16 @@ function MarketTickersPage() {
             placeholder="Название (Palantir Technologies)"
             className="h-7 w-52 rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)]"
           />
-          <select
-            value={manualClass}
-            onChange={(e) => setManualClass(e.target.value)}
-            className="h-7 rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)] outline-none focus:border-[var(--accent-blue)]"
-          >
-            {CLASSES.filter((c) => c.id !== "all").map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+          <div className="w-36">
+            <SearchSelect
+              value={manualClass}
+              onValueChange={setManualClass}
+              options={CLASSES.filter((c) => c.id !== "all").map((c) => ({
+                value: c.id,
+                label: c.label,
+              }))}
+            />
+          </div>
           <input
             value={manualExchange}
             onChange={(e) => setManualExchange(e.target.value)}
@@ -575,6 +610,8 @@ function MarketTickersPage() {
           </table>
         )}
       </TerminalDataPanel>
+        </>
+      )}
     </TerminalPageShell>
   );
 }
