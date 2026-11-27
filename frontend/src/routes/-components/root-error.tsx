@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 function redactDiagnosticText(value: string): string {
   return value
     .replace(
-      /((?:[?&]|\\b)(?:access_token|refresh_token|token|authorization|cookie|api[_-]?key)\\s*[=:]\\s*)[^&#\\s)"']+/gi,
+      /((?:[?&]|\b)(?:access_token|refresh_token|token|authorization|cookie|api[_-]?key)\s*[=:]\s*)[^&#\s)"']+/gi,
       "$1[REDACTED]",
     )
-    .replace(/((?:authorization|cookie)\\s*:\\s*)[^\\r\\n]+/gi, "$1[REDACTED]");
+    .replace(/((?:authorization|cookie)\s*:\s*)[^\r\n]+/gi, "$1[REDACTED]");
 }
 
 function buildDiagnosticReport(error: unknown): string {
@@ -18,7 +18,7 @@ function buildDiagnosticReport(error: unknown): string {
   const stack = isError && error.stack ? error.stack : "(stack trace unavailable)";
   const cause =
     isError && error.cause instanceof Error
-      ? `\\n${error.cause.name}: ${error.cause.message}\\n${error.cause.stack ?? ""}`
+      ? "\n" + error.cause.name + ": " + error.cause.message + "\n" + (error.cause.stack ?? "")
       : "";
 
   const isTauri =
@@ -29,25 +29,25 @@ function buildDiagnosticReport(error: unknown): string {
   const location =
     typeof window === "undefined"
       ? "(window unavailable)"
-      : `${window.location.origin}${window.location.pathname}`;
+      : window.location.origin + window.location.pathname;
   const userAgent = typeof navigator === "undefined" ? "(unavailable)" : navigator.userAgent;
 
   return [
     "HUSEYNOVLAR TERMINAL — CLIENT ERROR DIAGNOSTIC",
-    `time_utc: ${new Date().toISOString()}`,
-    `runtime: ${runtime}`,
-    `build_mode: ${import.meta.env.MODE}`,
-    `location: ${location}`,
-    `user_agent: ${userAgent}`,
-    `error_name: ${name}`,
-    `error_message: ${message}`,
+    "time_utc: " + new Date().toISOString(),
+    "runtime: " + runtime,
+    "build_mode: " + import.meta.env.MODE,
+    "location: " + location,
+    "user_agent: " + userAgent,
+    "error_name: " + name,
+    "error_message: " + message,
     "stack:",
     stack,
-    cause ? `cause:${cause}` : "",
+    cause ? "cause:" + cause : "",
   ]
     .filter(Boolean)
     .map((line) => redactDiagnosticText(line))
-    .join("\\n");
+    .join("\n");
 }
 
 export function RootError({ error, reset }: ErrorComponentProps) {
