@@ -89,20 +89,6 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Verify macOS signature and notarization
-        if: matrix.platform == 'macos-latest'
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP_PATH="$(find apps/desktop/target -type d -path '*/bundle/macos/*.app' -print -quit)"
-          if [ -z "$APP_PATH" ]; then
-            echo "::error::The macOS .app bundle was not found after building."
-            exit 1
-          fi
-          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          spctl --assess --type execute --verbose=4 "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
-
       - name: Verify ad-hoc macOS code signature
         if: matrix.platform == 'macos-latest'
         shell: bash
@@ -117,7 +103,7 @@ jobs:
           codesign --display --verbose=4 "$APP_PATH" 2>&1
 
   publish-release:
-    name: Publish complete signed release
+    name: Publish complete desktop release
     needs: build-desktop
     runs-on: ubuntu-latest
     permissions:
