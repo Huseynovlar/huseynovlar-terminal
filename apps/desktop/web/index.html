@@ -95,20 +95,16 @@
         <img class="logo" src="./icon.png" alt="Huseynovlar Terminal" />
         <div>
           <div class="title">HUSEYNOVLAR TERMINAL</div>
-          <div class="sub">TAURI V2 · VPN PRE-FLIGHT GATE</div>
+          <div class="sub">TAURI V2 · SERVER PRE-FLIGHT CHECK</div>
         </div>
       </div>
 
       <div id="statusBox" class="status-box">
-        Проверка защищённого соединения и VPN-туннеля...
+        Проверка доступности сервера терминала...
       </div>
 
-      <div class="row">
-        <span style="color:#94A3B8">VPN-туннель ОС</span>
-        <span id="tunnelLabel" style="color:#94A3B8">ПРОВЕРКА...</span>
-      </div>
 
-      <label for="serverUrl">Адрес закрытого сервера терминала (VPN)</label>
+      <label for="serverUrl">Адрес сервера терминала</label>
       <input id="serverUrl" type="url" placeholder="https://terminal.huseynovlar.org" />
 
       <div class="actions">
@@ -134,7 +130,6 @@
       }
       const input = document.getElementById("serverUrl");
       const statusBox = document.getElementById("statusBox");
-      const tunnelLabel = document.getElementById("tunnelLabel");
       const retryBtn = document.getElementById("retryBtn");
 
       const savedUrl = normalizeServerUrl(localStorage.getItem(STORAGE_KEY));
@@ -160,17 +155,24 @@
           if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === "function") {
             res = await window.__TAURI_INTERNALS__.invoke("check_vpn_status", { endpoint: healthUrl });
           } else {
-            const r = await fetch(healthUrl);
-            res = { connected: r.ok, tunnel_detected: r.ok, message: r.ok ? "VPN: OK" : "HTTP " + r.status };
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 5000);
+            try {
+              const response = await fetch(healthUrl, { method: "GET", cache: "no-store", signal: controller.signal });
+              res = {
+                connected: response.ok,
+                message: response.ok
+                  ? "Сервер доступен — /healthz вернул успешный ответ"
+                  : "Сервер ответил HTTP " + response.status + " на " + healthUrl
+              };
+            } finally {
+              clearTimeout(timer);
+            }
           }
-          tunnelLabel.textContent = res.tunnel_detected
-            ? "● " + (res.interface_name || "ACTIVE")
-            : "○ НЕ ОБНАРУЖЕН";
-          tunnelLabel.style.color = res.tunnel_detected ? "#10B981" : "#F43F5E";
 
           if (res.connected) {
             statusBox.className = "status-box ok";
-            statusBox.textContent = "VPN: OK — подключение к терминалу...";
+            statusBox.textContent = "Сервер доступен — подключение к терминалу...";
             window.location.replace(base + "/dashboard/home");
             return;
           }
@@ -178,7 +180,7 @@
           statusBox.textContent = res.message || "Сервер не прошёл проверку доступности. Подробности ответа указаны ниже.";
         } catch (err) {
           statusBox.className = "status-box warn";
-          statusBox.textContent = "Сервер не прошёл проверку доступности. Подробности ответа указаны ниже.";
+          statusBox.textContent = "Ошибка проверки " + healthUrl + ": " + (err instanceof Error ? err.message : String(err));
         } finally {
           checking = false;
           retryBtn.disabled = false;
