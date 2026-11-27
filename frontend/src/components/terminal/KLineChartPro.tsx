@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 
 import { apiRequest } from "@/framework/api-client";
+import { TerminalDropdown } from "@/framework/templates";
 import {
   formatProviderLabel,
   type MarketFeedHealth,
@@ -821,47 +822,50 @@ export function KLineChartPro({
 
           <div className="mx-1.5 h-4 w-px shrink-0 bg-[var(--border-subtle)]" />
 
-          {/* Indicators dropdown */}
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => setIndicatorsMenuOpen((v) => !v)}
-              className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-[3px] px-2 text-[11px] text-[var(--text-secondary)] transition-colors duration-75 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              <SlidersHorizontal className="size-3 shrink-0" />
-              + Индикаторы{activeIndicators.length > 0 ? ` (${activeIndicators.length})` : ""}
-            </button>
-            {indicatorsMenuOpen ? (
-              <div className="absolute top-7 left-0 z-40 w-44 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1">
-                {["EMA", "MA", "BOLL", "VOL", "RSI", "MACD"].map((ind) => {
-                  const on = activeIndicators.includes(ind);
-                  return (
-                    <button
-                      key={ind}
-                      type="button"
-                      onClick={() => toggleIndicator(ind)}
-                      className="flex w-full items-center justify-between rounded-[2px] px-2 py-1 font-mono text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
-                    >
-                      <span>{ind}</span>
-                      <span className={on ? "text-[var(--bull)]" : "text-[var(--text-muted)]"}>{on ? "ON" : "OFF"}</span>
-                    </button>
-                  );
-                })}
-                {mode === "portfolio" ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowMt5Zones((v) => !v)}
-                    className="mt-1 flex w-full items-center justify-between border-t border-[var(--border-subtle)] px-2 py-1 pt-1.5 font-mono text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
-                  >
-                    <span>Зоны MT5</span>
-                    <span className={showMt5Zones ? "text-[var(--bull)]" : "text-[var(--text-muted)]"}>
-                      {showMt5Zones ? "ON" : "OFF"}
-                    </span>
-                  </button>
-                ) : null}
-              </div>
+          {/* Indicators dropdown (Portal-based: never clipped by overflow-x-auto) */}
+          <TerminalDropdown
+            open={indicatorsMenuOpen}
+            onOpenChange={setIndicatorsMenuOpen}
+            align="left"
+            widthClassName="w-44"
+            trigger={
+              <button
+                type="button"
+                onClick={() => setIndicatorsMenuOpen((v) => !v)}
+                className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-[3px] px-2 text-[11px] text-[var(--text-secondary)] transition-colors duration-75 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <SlidersHorizontal className="size-3 shrink-0" />
+                + Индикаторы{activeIndicators.length > 0 ? ` (${activeIndicators.length})` : ""}
+              </button>
+            }
+          >
+            {["EMA", "MA", "BOLL", "VOL", "RSI", "MACD"].map((ind) => {
+              const on = activeIndicators.includes(ind);
+              return (
+                <button
+                  key={ind}
+                  type="button"
+                  onClick={() => toggleIndicator(ind)}
+                  className="flex w-full items-center justify-between rounded-[2px] px-2 py-1 font-mono text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+                >
+                  <span>{ind}</span>
+                  <span className={on ? "text-[var(--bull)]" : "text-[var(--text-muted)]"}>{on ? "ON" : "OFF"}</span>
+                </button>
+              );
+            })}
+            {mode === "portfolio" ? (
+              <button
+                type="button"
+                onClick={() => setShowMt5Zones((v) => !v)}
+                className="mt-1 flex w-full items-center justify-between border-t border-[var(--border-subtle)] px-2 py-1 pt-1.5 font-mono text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+              >
+                <span>Зоны MT5</span>
+                <span className={showMt5Zones ? "text-[var(--bull)]" : "text-[var(--text-muted)]"}>
+                  {showMt5Zones ? "ON" : "OFF"}
+                </span>
+              </button>
             ) : null}
-          </div>
+          </TerminalDropdown>
 
           {mode === "portfolio" && mt5Zones && (mt5Zones.sellZone || mt5Zones.buyZone) ? (
             <button
@@ -895,45 +899,49 @@ export function KLineChartPro({
           ) : null}
         </div>
 
-        {/* Right side: Single API Provider selector + live status dot */}
-        <div className="relative flex shrink-0 items-center gap-2 whitespace-nowrap">
+        {/* Right side: Single API Provider selector + live status dot (Portal-based) */}
+        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
           {loadingBars ? (
             <span className="h-2.5 w-12 shrink-0 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
           ) : null}
-          <button
-            type="button"
-            onClick={() => setProviderMenuOpen((v) => !v)}
-            className="inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 font-mono text-[10px] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-            title="Переключить API-источник графика"
+          <TerminalDropdown
+            open={providerMenuOpen}
+            onOpenChange={setProviderMenuOpen}
+            align="right"
+            widthClassName="w-44"
+            trigger={
+              <button
+                type="button"
+                onClick={() => setProviderMenuOpen((v) => !v)}
+                className="inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 font-mono text-[10px] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+                title="Переключить API-источник графика"
+              >
+                <span className={`inline-block size-1.5 shrink-0 rounded-full ${dotColor}`} />
+                <span>{effectiveProviderLabel}</span>
+                {effectiveLatency !== null ? (
+                  <span className="text-[var(--text-muted)] tabular-nums">· {effectiveLatency}ms</span>
+                ) : null}
+              </button>
+            }
           >
-            <span className={`inline-block size-1.5 shrink-0 rounded-full ${dotColor}`} />
-            <span>{effectiveProviderLabel}</span>
-            {effectiveLatency !== null ? (
-              <span className="text-[var(--text-muted)] tabular-nums">· {effectiveLatency}ms</span>
-            ) : null}
-          </button>
-
-          {providerMenuOpen ? (
-            <div className="absolute top-7 right-0 z-40 w-40 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1">
-              <div className="px-2 py-1 text-[10px] text-[var(--text-muted)]">Провайдер графика</div>
-              {MARKET_PROVIDERS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    setProvider(p.id);
-                    setProviderMenuOpen(false);
-                  }}
-                  className={`flex w-full items-center justify-between rounded-[2px] px-2 py-1 font-mono text-[11px] hover:bg-[var(--bg-elevated)] ${
-                    provider === p.id ? "text-[var(--accent-blue)]" : "text-[var(--text-primary)]"
-                  }`}
-                >
-                  <span>{p.label}</span>
-                  {provider === p.id ? <span className="text-[10px]">●</span> : null}
-                </button>
-              ))}
-            </div>
-          ) : null}
+            <div className="px-2 py-1 text-[10px] text-[var(--text-muted)]">Провайдер графика</div>
+            {MARKET_PROVIDERS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setProvider(p.id);
+                  setProviderMenuOpen(false);
+                }}
+                className={`flex w-full items-center justify-between rounded-[2px] px-2 py-1 font-mono text-[11px] hover:bg-[var(--bg-elevated)] ${
+                  provider === p.id ? "text-[var(--accent-blue)]" : "text-[var(--text-primary)]"
+                }`}
+              >
+                <span>{p.label}</span>
+                {provider === p.id ? <span className="text-[10px]">●</span> : null}
+              </button>
+            ))}
+          </TerminalDropdown>
         </div>
       </div>
 

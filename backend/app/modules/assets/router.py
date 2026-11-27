@@ -5,7 +5,7 @@ import hashlib
 import html
 import re
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, record_audit, require_admin
 from app.core.ip_utils import extract_client_ip
+from app.core.market_ws_hub import market_ws_hub
 from app.core.pagination import Page
 from app.core.symbols import (
     asset_related_currencies,
@@ -736,19 +737,67 @@ async def list_market_tickers(
         ordered_stmt = stmt.order_by(core_rank, MarketTicker.symbol.asc()).limit(page.limit).offset(page.offset)
 
     rows = (await db.execute(ordered_stmt)).scalars().all()
-    return [
-        {
-            "symbol": r.symbol,
-            "name": r.name,
-            "asset_class": r.asset_class,
-            "exchange": r.exchange,
-            "source": r.source,
-            "logo_url": f"/api/v1/assets/logo/{r.symbol}",
-            "broker_symbols": build_ticker_broker_symbols(r.symbol, r.asset_class),
-            "news_keywords": build_ticker_news_keywords(r.symbol, r.name, r.asset_class, r.exchange),
-        }
-        for r in rows
-    ]
+    out_tickers: list[dict[str, Any]] = []
+    for idx, r in enumerate(rows):
+        canon = canonical_asset_code(r.symbol) or r.symbol.upper()
+        last_tick = market_ws_hub.get_latest_tick(canon) if hasattr(market_ws_hub, "get_latest_tick") else None
+        out_tickers.append(
+            {
+                "id": page.offset + idx + 1,
+                "symbol": r.symbol,
+                "name": r.name,
+                "asset_class": r.asset_class,
+                "exchange": r.exchange,
+                "source": r.source,
+                "logo_url": f"/api/v1/assets/logo/{r.symbol}",
+                "broker_symbols": build_ticker_broker_symbols(r.symbol, r.asset_class),
+                "news_keywords": build_ticker_news_keywords(r.symbol, r.name, r.asset_class, r.exchange),
+                "price": last_tick.get("price") if isinstance(last_tick, dict) else None,
+                "spread_bps": last_tick.get("spread_bps") if isinstance(last_tick, dict) else None,
+                "ws_source": last_tick.get("source") if isinstance(last_tick, dict) else None,
+            }
+        )
+    return out_tickers
+
+
+class ManualTickerCreateRequest(BaseModel):
+    symbol: str = Field(..., min_length=1, max_length=32)
+    name: str = Field(..., min_length=1, max_length=128)
+    asset_class: str = Field(default="crypto", max_length=32)
+    exchange: str = Field(default="CUSTOM", max_length=64)
+    source: str = Field(default="manual", max_length=32)
+
+
+@router.post("/tickers", status_code=status.HTTP_201_CREATED)
+async def create_market_ticker(
+    body: ManualTickerCreateRequest,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Manually add a rare or custom instrument to the master MarketTicker directory."""
+    sym = body.symbol.strip().upper().replace(" ", "")
+    if not sym:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Symbol is required")
+    existing = (await db.execute(select(MarketTicker).where(MarketTicker.symbol == sym))).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Ticker {sym} already exists")
+    tk = MarketTicker(
+        symbol=sym,
+        name=body.name.strip(),
+        asset_class=body.asset_class.strip().lower() or "crypto",
+        exchange=body.exchange.strip().upper() or "CUSTOM",
+        source=body.source.strip().lower() or "manual",
+    )
+    db.add(tk)
+    await db.commit()
+    return {
+        "symbol": tk.symbol,
+        "name": tk.name,
+        "asset_class": tk.asset_class,
+        "exchange": tk.exchange,
+        "source": tk.source,
+        "logo_url": f"/api/v1/assets/logo/{tk.symbol}",
+    }
 
 
 @router.post("/tickers/sync")
@@ -890,10 +939,25 @@ async def list_assets(
     accounts = (await db.execute(select(TradingAccount))).scalars().all()
     robots = (await db.execute(select(Robot))).scalars().all()
     open_positions = (await db.execute(select(OpenPositionLive))).scalars().all()
-    deal_pairs = (
-        await db.execute(select(Deal.account_id, Deal.symbol).where(Deal.deal_type.in_([0, 1])).distinct())
+    since_24h = datetime.now(UTC) - timedelta(hours=24)
+    since_24h_msc = int(since_24h.timestamp() * 1000)
+    recent_deals = (
+        await db.execute(
+            select(Deal.account_id, Deal.symbol, Deal.net_profit_usd, Deal.time_msc).where(
+                Deal.deal_type.in_([0, 1]),
+                Deal.time_msc >= since_24h_msc,
+            )
+        )
+    ).all()
+    recent_news = (
+        await db.execute(
+            select(NewsItem.title, NewsItem.sentiment, NewsItem.affected_assets)
+            .where(NewsItem.published_at >= since_24h)
+            .limit(200)
+        )
     ).all()
 
+    now_utc = datetime.now(UTC)
     out_items: list[dict[str, Any]] = []
     for hub in rows:
         matched_robots = [
@@ -901,14 +965,71 @@ async def list_assets(
             for rb in robots
             if rb.asset_id == hub.id or symbol_matches_asset(rb.symbol, hub.code, hub.broker_symbols)
         ]
+        matched_positions = [
+            pos for pos in open_positions if symbol_matches_asset(pos.symbol, hub.code, hub.broker_symbols)
+        ]
         matched_acc_ids: set[str] = {a.id for a in accounts if a.primary_asset_id == hub.id}
         matched_acc_ids.update(rb.account_id for rb in matched_robots)
-        for pos in open_positions:
-            if symbol_matches_asset(pos.symbol, hub.code, hub.broker_symbols):
-                matched_acc_ids.add(pos.account_id)
-        for acc_id, sym in deal_pairs:
+        for pos in matched_positions:
+            matched_acc_ids.add(pos.account_id)
+
+        realized_24h_usd = 0.0
+        for acc_id, sym, net_usd, _ in recent_deals:
             if symbol_matches_asset(sym, hub.code, hub.broker_symbols):
                 matched_acc_ids.add(acc_id)
+                realized_24h_usd += float(net_usd or 0.0)
+
+        floating_pnl_usd = sum(float(p.profit_usd or 0.0) for p in matched_positions)
+        open_lots = sum(float(p.volume or 0.0) for p in matched_positions)
+        pnl_24h_usd = round(realized_24h_usd + floating_pnl_usd, 2)
+
+        robots_running = 0
+        robots_paused = 0
+        robots_error = 0
+        mt5_zone: str | None = None
+        for rb in matched_robots:
+            st_u = (rb.live_status or "").upper()
+            stale = (
+                rb.last_heartbeat_at is not None
+                and (now_utc - rb.last_heartbeat_at.replace(tzinfo=UTC)).total_seconds() > 300
+            )
+            if "ERR" in st_u or stale:
+                robots_error += 1
+            elif "PAUS" in st_u or "STOP" in st_u or "BLOCK" in st_u:
+                robots_paused += 1
+            else:
+                robots_running += 1
+
+            st = rb.live_state_json or {}
+            z_obj = st.get("zones") if isinstance(st.get("zones"), dict) else None
+            sell_lvl = float((z_obj or {}).get("sell") or st.get("bb_upper") or 0.0)
+            buy_lvl = float((z_obj or {}).get("buy") or st.get("bb_lower") or 0.0)
+            bid_px = float(st.get("bid") or 0.0)
+            if mt5_zone is None and sell_lvl > 0 and buy_lvl > 0:
+                if bid_px > 0:
+                    if bid_px >= sell_lvl:
+                        mt5_zone = "SELL ZONE"
+                    elif bid_px <= buy_lvl:
+                        mt5_zone = "BUY ZONE"
+                    else:
+                        mt5_zone = "FAIR"
+                else:
+                    mt5_zone = "FAIR"
+
+        # Aggregate 24h news sentiment for this asset
+        bull_hits = 0
+        bear_hits = 0
+        tags = {hub.code.upper(), *(str(t).upper() for t in (hub.news_tags or []))}
+        for title, sent, syms_json in recent_news:
+            syms_set = {str(s).upper() for s in (syms_json or [])}
+            title_up = (title or "").upper()
+            if (syms_set & tags) or any(t in title_up for t in tags if len(t) >= 3):
+                s_u = (sent or "").upper()
+                if "BULL" in s_u or "POS" in s_u:
+                    bull_hits += 1
+                elif "BEAR" in s_u or "NEG" in s_u:
+                    bear_hits += 1
+        news_sentiment = "BULL" if bull_hits > bear_hits else "BEAR" if bear_hits > bull_hits else "NEUTRAL"
 
         out_items.append(
             _serialize_asset(
@@ -916,6 +1037,15 @@ async def list_assets(
                 extra={
                     "accounts_count": len(matched_acc_ids),
                     "robots_count": len(matched_robots),
+                    "robots_running": robots_running,
+                    "robots_paused": robots_paused,
+                    "robots_error": robots_error,
+                    "open_positions_count": len(matched_positions),
+                    "open_positions_lots": round(open_lots, 2),
+                    "floating_pnl_usd": round(floating_pnl_usd, 2),
+                    "pnl_24h_usd": pnl_24h_usd,
+                    "mt5_zone": mt5_zone,
+                    "news_sentiment": news_sentiment,
                 },
             )
         )

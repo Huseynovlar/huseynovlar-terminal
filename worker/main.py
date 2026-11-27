@@ -338,6 +338,7 @@ async def run_worker_loop() -> None:
     last_news = 0.0
     last_cal = 0.0
     last_mkt = 0.0
+    last_tickers = 0.0
 
     try:
         while True:
@@ -366,6 +367,17 @@ async def run_worker_loop() -> None:
                 except Exception as exc:  # noqa: BLE001 - worker loop must survive any failure
                     logger.warning("Market cycle error: %s", exc)
                 last_mkt = now_mono
+
+            if now_mono - last_tickers >= 3600:
+                try:
+                    from app.modules.assets.router import sync_market_tickers
+
+                    async with session_factory() as db:
+                        res = await sync_market_tickers(None, db=db, settings=settings)  # type: ignore[arg-type]
+                        logger.info("Hourly MarketTicker sync completed: %s", res)
+                except Exception as exc:  # noqa: BLE001 - worker loop must survive any failure
+                    logger.warning("Hourly MarketTicker sync error: %s", exc)
+                last_tickers = now_mono
 
             try:
                 async with session_factory() as db:

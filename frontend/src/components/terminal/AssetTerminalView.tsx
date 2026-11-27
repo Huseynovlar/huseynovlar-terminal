@@ -29,8 +29,9 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { notify } from "@/components/ui/toast";
 import { apiRequest, apiRequestPaged } from "@/framework/api-client";
 import { AssetLogo } from "@/framework/components/AssetLogo";
+import { getMarketSessionStatus } from "@/framework/market-session";
 import { canonicalMarketSymbol } from "@/framework/open-market-ws";
-import { TerminalWorkspaceShell } from "@/framework/templates";
+import { TerminalDropdown, TerminalWorkspaceShell } from "@/framework/templates";
 import { useTerminalStore } from "@/framework/terminal-store";
 import { useLiveEvents } from "@/framework/use-live-socket";
 import {
@@ -715,6 +716,8 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
           { id: "derivatives", label: "Деривативы / COT" },
         ];
 
+  const marketSession = getMarketSessionStatus(displayClass, displayCode);
+
   return (
     <TerminalWorkspaceShell
       sideWidth={rightWidth}
@@ -733,59 +736,62 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
               <ArrowLeft className="size-3.5" />
             </Link>
 
-            {/* Clickable Quick Ticker Switcher [Icon BTCUSD v] */}
-            <div className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => setSwitcherOpen((v) => !v)}
-                className="flex items-center gap-2 rounded-[4px] border border-transparent px-1.5 py-1 transition-colors duration-75 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)]"
-                title="Быстрое переключение инструмента"
-              >
-                <AssetLogo symbol={displayCode} size={22} />
-                <span className="font-mono text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
-                  {displayCode}
-                </span>
-                <ChevronDown className="size-3.5 text-[var(--text-muted)]" />
-              </button>
-              {switcherOpen ? (
-                <div className="absolute top-9 left-0 z-50 w-64 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1.5">
-                  <input
-                    autoFocus
-                    value={switcherQuery}
-                    onChange={(e) => setSwitcherQuery(e.target.value)}
-                    placeholder="Перейти к тикеру..."
-                    className="mb-1.5 h-7 w-full rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent-blue)]"
-                  />
-                  <div className="pro-scroll max-h-56 overflow-y-auto">
-                    {switcherOptions.map((opt) => (
-                      <button
-                        key={opt.code}
-                        type="button"
-                        onClick={() => {
-                          setSwitcherOpen(false);
-                          setSwitcherQuery("");
-                          if (mode === "portfolio") {
-                            void navigate({ to: "/dashboard/hubs/$code", params: { code: opt.code } });
-                          } else {
-                            void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: opt.code } });
-                          }
-                        }}
-                        className="flex w-full items-center justify-between rounded-[2px] px-2 py-1.5 text-left text-[11px] hover:bg-[var(--bg-elevated)]"
-                      >
-                        <span className="flex items-center gap-2">
-                          <AssetLogo symbol={opt.code} size={16} />
-                          <span className="font-mono font-semibold text-[var(--text-primary)]">{opt.code}</span>
-                        </span>
-                        <span className="max-w-[110px] truncate text-[10px] text-[var(--text-muted)]">{opt.name}</span>
-                      </button>
-                    ))}
-                    {switcherOptions.length === 0 ? (
-                      <div className="px-2 py-3 text-center text-[11px] text-[var(--text-muted)]">Ничего не найдено</div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            {/* Clickable Quick Ticker Switcher [Icon BTCUSD v] (Portal-based) */}
+            <TerminalDropdown
+              open={switcherOpen}
+              onOpenChange={setSwitcherOpen}
+              align="left"
+              widthClassName="w-64 p-1.5"
+              trigger={
+                <button
+                  type="button"
+                  onClick={() => setSwitcherOpen((v) => !v)}
+                  className="flex items-center gap-2 rounded-[4px] border border-transparent px-1.5 py-1 transition-colors duration-75 hover:border-[var(--border-strong)] hover:bg-[var(--bg-elevated)]"
+                  title="Быстрое переключение инструмента"
+                >
+                  <AssetLogo symbol={displayCode} size={22} />
+                  <span className="font-mono text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
+                    {displayCode}
+                  </span>
+                  <ChevronDown className="size-3.5 text-[var(--text-muted)]" />
+                </button>
+              }
+            >
+              <input
+                autoFocus
+                value={switcherQuery}
+                onChange={(e) => setSwitcherQuery(e.target.value)}
+                placeholder="Перейти к тикеру..."
+                className="mb-1.5 h-7 w-full rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent-blue)]"
+              />
+              <div className="pro-scroll max-h-56 overflow-y-auto">
+                {switcherOptions.map((opt) => (
+                  <button
+                    key={opt.code}
+                    type="button"
+                    onClick={() => {
+                      setSwitcherOpen(false);
+                      setSwitcherQuery("");
+                      if (mode === "portfolio") {
+                        void navigate({ to: "/dashboard/hubs/$code", params: { code: opt.code } });
+                      } else {
+                        void navigate({ to: "/dashboard/tickers/$symbol", params: { symbol: opt.code } });
+                      }
+                    }}
+                    className="flex w-full items-center justify-between rounded-[2px] px-2 py-1.5 text-left text-[11px] hover:bg-[var(--bg-elevated)]"
+                  >
+                    <span className="flex items-center gap-2">
+                      <AssetLogo symbol={opt.code} size={16} />
+                      <span className="font-mono font-semibold text-[var(--text-primary)]">{opt.code}</span>
+                    </span>
+                    <span className="max-w-[110px] truncate text-[10px] text-[var(--text-muted)]">{opt.name}</span>
+                  </button>
+                ))}
+                {switcherOptions.length === 0 ? (
+                  <div className="px-2 py-3 text-center text-[11px] text-[var(--text-muted)]">Ничего не найдено</div>
+                ) : null}
+              </div>
+            </TerminalDropdown>
 
             <span className="hidden max-w-[140px] truncate text-[12px] text-[var(--text-secondary)] 2xl:inline">
               {displayName}
@@ -796,8 +802,8 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
 
             <div className="mx-0.5 hidden h-5 w-px shrink-0 bg-[var(--border-subtle)] sm:block" />
 
-            {/* Live Price + 24h % */}
-            <div className="flex shrink-0 items-baseline gap-2 font-mono tabular-nums">
+            {/* Live Price + 24h % + Market Closed / Extended Session Indicator */}
+            <div className="flex shrink-0 items-center gap-2 font-mono tabular-nums">
               <span
                 className={`rounded-[2px] px-1 text-[15px] font-semibold text-[var(--text-primary)] ${
                   priceFlash === "bull" ? "ht-flash-bull" : priceFlash === "bear" ? "ht-flash-bear" : ""
@@ -817,6 +823,18 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                 {changePct >= 0 ? "+" : ""}
                 {changePct.toFixed(2)}%
               </span>
+              {!marketSession.isOpen ? (
+                <span
+                  title={marketSession.detail}
+                  className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] font-medium ${
+                    marketSession.tone === "extended"
+                      ? "border-[var(--accent-amber)]/40 bg-[var(--accent-amber)]/10 text-[var(--accent-amber)]"
+                      : "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {marketSession.label}
+                </span>
+              ) : null}
             </div>
 
             <div className="mx-1 hidden h-5 w-px shrink-0 bg-[var(--border-subtle)] xl:block" />
@@ -895,17 +913,24 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                 </button>
               )
             ) : (
-              <div className="relative shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setMenuOpen((v) => !v)}
-                  className="flex size-7 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-                  title="Действия актива"
-                >
-                  <MoreVertical className="size-3.5" />
-                </button>
-                {menuOpen && hub ? (
-                  <div className="absolute top-8 right-0 z-50 w-48 rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-panel)] p-1 text-[11px]">
+              <TerminalDropdown
+                open={Boolean(menuOpen && hub)}
+                onOpenChange={setMenuOpen}
+                align="right"
+                widthClassName="w-48"
+                trigger={
+                  <button
+                    type="button"
+                    onClick={() => setMenuOpen((v) => !v)}
+                    className="flex size-7 shrink-0 items-center justify-center rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] transition-colors duration-75 hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+                    title="Действия актива"
+                  >
+                    <MoreVertical className="size-3.5" />
+                  </button>
+                }
+              >
+                {hub ? (
+                  <>
                     <Link
                       to="/dashboard/hubs/$code/edit"
                       params={{ code: hub.code }}
@@ -940,9 +965,9 @@ export function AssetTerminalView({ symbol, mode }: AssetTerminalViewProps) {
                       <Trash2 className="size-3" />
                       Удалить актив
                     </button>
-                  </div>
+                  </>
                 ) : null}
-              </div>
+              </TerminalDropdown>
             )}
           </div>
         </>
