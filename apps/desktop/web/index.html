@@ -175,10 +175,10 @@
             return;
           }
           statusBox.className = "status-box warn";
-          statusBox.textContent = res.message || "Нет доступа к закрытому серверу — проверьте подключение к VPN";
+          statusBox.textContent = res.message || "Сервер не прошёл проверку доступности. Подробности ответа указаны ниже.";
         } catch (err) {
           statusBox.className = "status-box warn";
-          statusBox.textContent = "Нет доступа к закрытому серверу — проверьте подключение к VPN";
+          statusBox.textContent = "Сервер не прошёл проверку доступности. Подробности ответа указаны ниже.";
         } finally {
           checking = false;
           retryBtn.disabled = false;
