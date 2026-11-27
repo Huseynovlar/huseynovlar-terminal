@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import csv
+import html
 import io
 import math
+import re
 import time
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
@@ -22,6 +25,7 @@ from app.core.ip_utils import extract_client_ip
 from app.core.pagination import Page
 from app.core.symbols import sql_symbol_match
 from app.db.models import (
+    AssetHub,
     BalanceOperation,
     Deal,
     EconomicEvent,
@@ -211,84 +215,258 @@ def _compute_market_sessions(now: datetime) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+_FNG_CACHE: dict[str, Any] = {"value": None, "classification": None, "ts": 0.0}
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html(text: str | None) -> str:
+    if not text:
+        return ""
+    cleaned = _HTML_TAG_RE.sub(" ", html.unescape(text))
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _is_internal_transfer_deal(d: Deal) -> bool:
+    """Exclude ALLINT / internal transfers & balance ops from trading PnL and equity curve."""
+    if d.deal_type not in (0, 1):
+        return True
+    c = (d.comment or "").upper()
+    return "ALLINT" in c or "INTERNAL" in c or "TRANSFER" in c
+
+
+def _is_bridge_robot_row(r: Robot) -> bool:
+    name_l = (r.name or "").strip().lower()
+    st = r.live_state_json or {}
+    ea_l = str(st.get("ea_name") or "").strip().lower()
+    if "bridge" in name_l or "bridge" in ea_l:
+        return True
+    has_strat = any(
+        st.get(k) is not None
+        for k in ("rsi_m5", "er_h1", "regime", "signal_bias", "bb_upper", "zones", "risk_mode")
+    )
+    if not has_strat and st.get("discovery_source") == "sibling_chart":
+        return True
+    return not has_strat and name_l.startswith("ea #") and int(r.magic_number or 0) < 1_000_000
+
+
+async def _get_crypto_fear_greed() -> dict[str, Any] | None:
+    now_m = time.monotonic()
+    if now_m - float(_FNG_CACHE.get("ts") or 0.0) < 600.0 and _FNG_CACHE.get("value") is not None:
+        return {"value": _FNG_CACHE["value"], "classification": _FNG_CACHE["classification"]}
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as http:
+            resp = await http.get("https://api.alternative.me/fng/?limit=1")
+            if resp.status_code == 200:
+                rows = (resp.json() or {}).get("data") or []
+                if rows:
+                    _FNG_CACHE["value"] = int(rows[0].get("value") or 50)
+                    _FNG_CACHE["classification"] = str(rows[0].get("value_classification") or "Neutral")
+                    _FNG_CACHE["ts"] = now_m
+                    return {"value": _FNG_CACHE["value"], "classification": _FNG_CACHE["classification"]}
+    except Exception:  # noqa: BLE001
+        pass
+    return (
+        {"value": _FNG_CACHE["value"], "classification": _FNG_CACHE["classification"]}
+        if _FNG_CACHE.get("value") is not None
+        else None
+    )
+
+
 @router.get("/analytics/home-summary")
 async def get_home_summary(
+    period: str = Query(default="7D", pattern="^(24H|7D|30D|90D|ALL)$"),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     accounts = (await db.execute(select(TradingAccount).order_by(TradingAccount.created_at.asc()))).scalars().all()
     acc_map = {a.id: a for a in accounts}
-    robots = (await db.execute(select(Robot).order_by(Robot.created_at.asc()))).scalars().all()
+    all_robots = (await db.execute(select(Robot).order_by(Robot.created_at.asc()))).scalars().all()
+    robots = [r for r in all_robots if not _is_bridge_robot_row(r)]
     open_positions = (await db.execute(select(OpenPositionLive))).scalars().all()
+    asset_hubs = (await db.execute(select(AssetHub).order_by(AssetHub.code.asc()))).scalars().all()
 
     start_today_msc = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
     start_week_msc = int((now - timedelta(days=7)).timestamp() * 1000)
     start_30d_msc = int((now - timedelta(days=30)).timestamp() * 1000)
 
-    deals_30d = (
+    period_days_map = {"24H": 1, "7D": 7, "30D": 30, "90D": 90, "ALL": 3650}
+    curve_days = period_days_map.get(period, 7)
+    curve_start_dt = now - timedelta(days=curve_days)
+    curve_start_msc = int(curve_start_dt.timestamp() * 1000)
+
+    fetch_since_msc = min(start_30d_msc, curve_start_msc)
+    raw_deals = (
         (
             await db.execute(
                 select(Deal)
-                .where(Deal.entry_type.in_([1, 2]), Deal.time_msc >= start_30d_msc)
+                .where(Deal.entry_type.in_([1, 2]), Deal.deal_type.in_([0, 1]), Deal.time_msc >= fetch_since_msc)
                 .order_by(Deal.time_msc.asc())
             )
         )
         .scalars()
         .all()
     )
+    clean_deals = [d for d in raw_deals if not _is_internal_transfer_deal(d)]
+    deals_30d = [d for d in clean_deals if d.time_msc >= start_30d_msc]
+    deals_period = [d for d in clean_deals if d.time_msc >= curve_start_msc]
 
     total_balance_usd = round(sum(a.last_balance / (a.currency_divisor or 1.0) for a in accounts), 2)
     total_equity_usd = round(sum(a.last_equity / (a.currency_divisor or 1.0) for a in accounts), 2)
     total_floating_usd = round(sum(a.last_floating_pnl / (a.currency_divisor or 1.0) for a in accounts), 2)
-    today_pnl_usd = round(sum(_deal_net_usd(d, acc_map) for d in deals_30d if d.time_msc >= start_today_msc), 2)
+    today_pnl_usd = round(
+        sum(_deal_net_usd(d, acc_map) for d in deals_30d if d.time_msc >= start_today_msc) + total_floating_usd, 2
+    )
     week_pnl_usd = round(sum(_deal_net_usd(d, acc_map) for d in deals_30d if d.time_msc >= start_week_msc), 2)
-    stats_30d = _compute_trade_stats(list(deals_30d), acc_map)
+    stats_30d = _compute_trade_stats(deals_30d, acc_map)
+    expectancy_30d = round(stats_30d["net_pnl_usd"] / len(deals_30d), 2) if deals_30d else 0.0
 
+    # Build clean trading-only equity curve (strictly excluding ALLINT transfers) over requested period (default 7D)
+    period_pnl_total = sum(_deal_net_usd(d, acc_map) for d in deals_period)
+    base_equity = round(max(0.01, total_balance_usd - period_pnl_total), 2)
     equity_curve: list[dict[str, Any]] = []
     cum = 0.0
-    for d in deals_30d[-60:]:
+    peak_eq = base_equity
+
+    # Anchor start of period so 7D always spans at least 7 days cleanly
+    equity_curve.append(
+        {
+            "time_sec": int(curve_start_dt.timestamp()),
+            "date": curve_start_dt.strftime("%m-%d %H:%M"),
+            "equity_usd": base_equity,
+            "cum_pnl_usd": 0.0,
+            "pnl_pct": 0.0,
+            "dd_pct": 0.0,
+        }
+    )
+
+    for d in deals_period:
         cum += _deal_net_usd(d, acc_map)
+        eq = round(base_equity + cum, 2)
+        if eq > peak_eq:
+            peak_eq = eq
+        dd = round(((peak_eq - eq) / peak_eq) * 100.0, 2) if peak_eq > 0 else 0.0
+        pct = round((cum / base_equity) * 100.0, 2) if base_equity > 0 else 0.0
         equity_curve.append(
             {
                 "time_sec": d.time_msc // 1000,
-                "date": datetime.fromtimestamp(d.time_msc / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M"),
+                "date": datetime.fromtimestamp(d.time_msc / 1000, tz=UTC).strftime("%m-%d %H:%M"),
+                "equity_usd": eq,
                 "cum_pnl_usd": round(cum, 2),
+                "pnl_pct": pct,
+                "dd_pct": dd,
             }
         )
 
-    macro_cache = await db.get(MarketCache, "macro:quotes")
-    macro_ribbon = (macro_cache.payload_json or {}).get("quotes", []) if macro_cache else []
-
-    treemap_cache = await db.get(MarketCache, "treemap:sp500_top:1D") or await db.get(
-        MarketCache, "treemap:nasdaq100:1D"
+    # Always append current live equity point at `now`
+    live_eq = total_equity_usd if total_equity_usd > 0 else round(base_equity + cum, 2)
+    if live_eq > peak_eq:
+        peak_eq = live_eq
+    live_dd = round(((peak_eq - live_eq) / peak_eq) * 100.0, 2) if peak_eq > 0 else 0.0
+    live_cum = round(cum + total_floating_usd, 2)
+    live_pct = round((live_cum / base_equity) * 100.0, 2) if base_equity > 0 else 0.0
+    equity_curve.append(
+        {
+            "time_sec": int(now.timestamp()),
+            "date": now.strftime("%m-%d %H:%M"),
+            "equity_usd": live_eq,
+            "cum_pnl_usd": live_cum,
+            "pnl_pct": live_pct,
+            "dd_pct": live_dd,
+        }
     )
+
+    # Live Ticker Strip symbols: user's My Assets + core global benchmarks (zero broken ASS stubs)
+    benchmarks = ["BTCUSD", "XAUUSD", "USTEC", "EURUSD", "DXY", "US10Y"]
+    ticker_symbols = list(dict.fromkeys([*(h.code.upper() for h in asset_hubs), *benchmarks]))[:12]
+
+    # Treemap caches (US Sectors + Crypto Top)
+    def _extract_treemap_items(cache_row: MarketCache | None) -> list[dict[str, Any]]:
+        if not cache_row or not isinstance(cache_row.payload_json, dict):
+            return []
+        items_out: list[dict[str, Any]] = []
+        for sec in cache_row.payload_json.get("sectors", []):
+            sec_name = str(sec.get("sector") or "")
+            for it in sec.get("items") or []:
+                chg = it.get("change_pct")
+                val = float(it.get("market_cap") or it.get("weight") or 1.0)
+                sym = str(it.get("symbol") or it.get("ticker") or "")
+                if not sym or chg is None:
+                    continue
+                items_out.append(
+                    {
+                        "name": sym,
+                        "sector": sec_name,
+                        "value": max(1.0, val),
+                        "change_pct": round(float(chg), 2),
+                        "price": it.get("price"),
+                    }
+                )
+        return items_out[:24]
+
+    us_cache = await db.get(MarketCache, "treemap:sp500_top:1D") or await db.get(MarketCache, "treemap:nasdaq100:1D")
+    crypto_cache = await db.get(MarketCache, "treemap:crypto_majors:1D")
+    treemap_us = _extract_treemap_items(us_cache)
+    treemap_crypto = _extract_treemap_items(crypto_cache)
+
     sector_pulse: list[dict[str, Any]] = []
-    if treemap_cache and treemap_cache.payload_json:
-        for sec in treemap_cache.payload_json.get("sectors", []):
+    if us_cache and us_cache.payload_json:
+        for sec in us_cache.payload_json.get("sectors", []):
             items = sec.get("items") or []
             changes = [float(i["change_pct"]) for i in items if i.get("change_pct") is not None]
             avg_chg = round(sum(changes) / len(changes), 2) if changes else 0.0
             sector_pulse.append({"sector": sec.get("sector", ""), "avg_change_pct": avg_chg, "count": len(items)})
 
     breaking_news = (
-        (await db.execute(select(NewsItem).order_by(NewsItem.published_at.desc()).limit(6))).scalars().all()
+        (await db.execute(select(NewsItem).order_by(NewsItem.published_at.desc()).limit(10))).scalars().all()
     )
-    next_event = (
+    upcoming_rows = (
         (
             await db.execute(
                 select(EconomicEvent)
                 .where(EconomicEvent.event_time >= now)
                 .order_by(EconomicEvent.event_time.asc())
-                .limit(1)
+                .limit(3)
             )
         )
         .scalars()
-        .first()
+        .all()
     )
+    next_event = upcoming_rows[0] if upcoming_rows else None
+    fear_greed = await _get_crypto_fear_greed()
+
+    stale_robots_count = 0
+    robots_pulse_out: list[dict[str, Any]] = []
+    for r in robots:
+        st = r.live_state_json or {}
+        hb = r.last_heartbeat_at
+        age_sec = (now - hb.replace(tzinfo=UTC)).total_seconds() if hb else 999999
+        is_stale = age_sec > 15 or "ERR" in (r.live_status or "").upper()
+        if is_stale and r.is_active:
+            stale_robots_count += 1
+        robots_pulse_out.append(
+            {
+                "id": r.id,
+                "account_id": r.account_id,
+                "name": r.name,
+                "symbol": r.symbol,
+                "magic_number": r.magic_number,
+                "live_status": r.live_status,
+                "is_active": r.is_active,
+                "seq": int(st.get("seq") or 0),
+                "updated_at_utc": str(st.get("updated_at_utc") or (hb.isoformat() if hb else "")),
+                "regime": str(st.get("regime") or ""),
+                "rsi_m5": st.get("rsi_m5"),
+                "er_h1": st.get("er_h1"),
+                "day_pnl": st.get("day_pnl"),
+                "last_heartbeat_at": hb.isoformat() if hb else None,
+            }
+        )
 
     return {
         "server_time_utc": now.isoformat(),
+        "period": period,
+        "ticker_symbols": ticker_symbols,
         "kpis": {
             "total_balance_usd": total_balance_usd,
             "total_equity_usd": total_equity_usd,
@@ -298,10 +476,12 @@ async def get_home_summary(
             "month_pnl_usd": stats_30d["net_pnl_usd"],
             "win_rate_30d_pct": stats_30d["win_rate_pct"],
             "profit_factor_30d": stats_30d["profit_factor"],
+            "expectancy_30d_usd": expectancy_30d,
             "accounts_count": len(accounts),
             "connected_accounts_count": sum(1 for a in accounts if a.terminal_connected),
             "open_positions_count": len(open_positions),
             "active_robots_count": sum(1 for r in robots if r.is_active),
+            "stale_robots_count": stale_robots_count,
         },
         "equity_curve": equity_curve,
         "accounts_pulse": [
@@ -319,26 +499,16 @@ async def get_home_summary(
             }
             for a in accounts
         ],
-        "robots_pulse": [
-            {
-                "id": r.id,
-                "account_id": r.account_id,
-                "name": r.name,
-                "symbol": r.symbol,
-                "magic_number": r.magic_number,
-                "live_status": r.live_status,
-                "is_active": r.is_active,
-                "last_heartbeat_at": r.last_heartbeat_at.isoformat() if r.last_heartbeat_at else None,
-            }
-            for r in robots
-        ],
+        "robots_pulse": robots_pulse_out,
         "market_sessions": _compute_market_sessions(now),
-        "macro_ribbon": macro_ribbon,
+        "treemap_us": treemap_us,
+        "treemap_crypto": treemap_crypto,
+        "fear_greed": fear_greed,
         "sector_pulse": sector_pulse,
         "breaking_news": [
             {
                 "id": n.id,
-                "title": n.title,
+                "title": _strip_html(n.title),
                 "source": n.source,
                 "sentiment": n.sentiment,
                 "impact_score": n.impact_score,
@@ -348,9 +518,22 @@ async def get_home_summary(
             }
             for n in breaking_news
         ],
+        "upcoming_events": [
+            {
+                "id": ev.id,
+                "title": _strip_html(ev.title),
+                "currency": ev.currency,
+                "impact": ev.impact,
+                "forecast": ev.forecast,
+                "previous": ev.previous,
+                "actual": ev.actual,
+                "event_time": ev.event_time.isoformat(),
+            }
+            for ev in upcoming_rows
+        ],
         "next_macro_event": {
             "id": next_event.id,
-            "title": next_event.title,
+            "title": _strip_html(next_event.title),
             "currency": next_event.currency,
             "impact": next_event.impact,
             "forecast": next_event.forecast,

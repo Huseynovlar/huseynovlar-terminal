@@ -1,7 +1,7 @@
 export function TerminalFooter() {
   const year = new Date().getFullYear();
   return (
-    <footer className="flex h-7 shrink-0 items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 font-mono text-[10px] text-[var(--text-muted)] select-none">
+    <footer className="flex h-7 shrink-0 items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] px-3 font-sans text-[11px] tabular-nums text-[var(--text-muted)] select-none">
       <div className="flex min-w-0 items-center gap-2 truncate">
         <span className="font-semibold text-[var(--text-secondary)]">Huseynovlar Terminal</span>
         <span className="hidden text-[var(--border-strong)] sm:inline">|</span>
