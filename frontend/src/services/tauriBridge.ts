@@ -168,3 +168,31 @@ export async function secureStoreDelete(key: string): Promise<void> {
     await invoke("secure_store_delete", { key });
   }
 }
+
+/**
+ * Open an external HTTP(S) URL in a separate native Tauri webview window.
+ * In a regular browser, fall back to the browser's normal new-tab behavior.
+ */
+export async function openExternalWindow(url: string): Promise<boolean> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url, typeof window !== "undefined" ? window.location.href : undefined);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+  const invoke = getTauriInvoke();
+  if (!invoke) {
+    if (typeof window !== "undefined") window.open(parsed.href, "_blank", "noopener,noreferrer");
+    return true;
+  }
+
+  try {
+    await invoke<void>("open_external_window", { url: parsed.href });
+    return true;
+  } catch (error) {
+    console.error("Failed to open external window:", error);
+    return false;
+  }
+}
