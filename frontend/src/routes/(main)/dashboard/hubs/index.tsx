@@ -161,27 +161,34 @@ function MyAssetsListPage() {
   const [busy, setBusy] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const qs = search.trim() ? `?q=${encodeURIComponent(search.trim())}` : "";
-      const res = await apiRequestPaged<AssetHubItem>(`/assets${qs}`, page, DEFAULT_PAGE_SIZE);
-      setHubs(res.items);
-      setTotal(res.total);
-    } catch (e) {
-      notify.error("Ошибка загрузки", e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const qs = search.trim() ? `?q=${encodeURIComponent(search.trim())}` : "";
+        const res = await apiRequestPaged<AssetHubItem>(`/assets${qs}`, page, DEFAULT_PAGE_SIZE);
+        setHubs(res.items);
+        setTotal(res.total);
+      } catch (e) {
+        if (!silent) notify.error("Ошибка загрузки", e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [page, search],
+  );
 
   useEffect(() => {
-    void load();
+    void load(false);
   }, [load]);
 
-  // Live updates via /ws/account (zero REST polling)
+  // Throttled silent updates via /ws/account (zero flicker, zero logo reload, zero REST polling)
+  const lastLiveRefreshRef = useState(() => ({ ts: 0 }))[0];
   useLiveEvents(["trade_event", "account_update", "robot_state"], () => {
-    void load();
+    const now = Date.now();
+    if (now - lastLiveRefreshRef.ts < 5000) return;
+    lastLiveRefreshRef.ts = now;
+    void load(true);
   });
 
   const visibleSymbols = useMemo(() => hubs.map((h) => h.code), [hubs]);

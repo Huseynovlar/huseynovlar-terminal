@@ -740,7 +740,11 @@ async def list_market_tickers(
     out_tickers: list[dict[str, Any]] = []
     for idx, r in enumerate(rows):
         canon = canonical_asset_code(r.symbol) or r.symbol.upper()
-        last_tick = market_ws_hub.get_latest_tick(canon) if hasattr(market_ws_hub, "get_latest_tick") else None
+        recent = market_ws_hub.get_recent_ticks(canon, limit=2)
+        last_tick = recent[-1] if recent else None
+        bid = float(last_tick.get("bid") or 0.0) if isinstance(last_tick, dict) else 0.0
+        ask = float(last_tick.get("ask") or 0.0) if isinstance(last_tick, dict) else 0.0
+        spread_bps = round(((ask - bid) / ((ask + bid) / 2)) * 10_000, 2) if bid > 0 and ask >= bid else None
         out_tickers.append(
             {
                 "id": page.offset + idx + 1,
@@ -753,7 +757,7 @@ async def list_market_tickers(
                 "broker_symbols": build_ticker_broker_symbols(r.symbol, r.asset_class),
                 "news_keywords": build_ticker_news_keywords(r.symbol, r.name, r.asset_class, r.exchange),
                 "price": last_tick.get("price") if isinstance(last_tick, dict) else None,
-                "spread_bps": last_tick.get("spread_bps") if isinstance(last_tick, dict) else None,
+                "spread_bps": spread_bps,
                 "ws_source": last_tick.get("source") if isinstance(last_tick, dict) else None,
             }
         )

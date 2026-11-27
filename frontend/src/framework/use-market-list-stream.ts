@@ -59,7 +59,7 @@ export function useMarketListStream(rawSymbols: string[]): Record<string, LiveRo
       ws.onopen = () => {
         if (!alive) return;
         for (const sym of subscribedRef.current) {
-          ws.send(JSON.stringify({ action: "subscribe", channel: "ticks", symbol: sym }));
+          ws.send(JSON.stringify({ type: "subscribe", channel: "market", symbol: sym }));
         }
       };
 
@@ -69,6 +69,8 @@ export function useMarketListStream(rawSymbols: string[]): Record<string, LiveRo
           const msg = JSON.parse(String(evt.data)) as Record<string, unknown>;
           if (msg.type === "tick" && msg.data && typeof msg.data === "object") {
             const d = msg.data as Record<string, unknown>;
+            const rawSource = String(d.source ?? "");
+            if (rawSource === "mt5_live") return;
             const sym = canonicalMarketSymbol(String(d.symbol ?? ""));
             const bid = Number(d.bid ?? 0);
             const ask = Number(d.ask ?? bid);
@@ -76,7 +78,7 @@ export function useMarketListStream(rawSymbols: string[]): Record<string, LiveRo
             if (!sym || !(price > 0)) return;
             const spreadBps =
               bid > 0 && ask >= bid ? ((ask - bid) / ((ask + bid) / 2)) * 10_000 : null;
-            const src = formatProviderLabel(String(d.source ?? "Market WS"));
+            const src = formatProviderLabel(rawSource || "Market WS");
 
             setQuotes((prev) => {
               const cur = prev[sym];
@@ -112,6 +114,38 @@ export function useMarketListStream(rawSymbols: string[]): Record<string, LiveRo
                 },
               };
             });
+          } else if (msg.type === "orderbook" && msg.data && typeof msg.data === "object") {
+            const d = msg.data as Record<string, unknown>;
+            const sym = canonicalMarketSymbol(String(d.symbol ?? ""));
+            const bids = Array.isArray(d.bids) ? (d.bids as Array<[number, number]>) : [];
+            const asks = Array.isArray(d.asks) ? (d.asks as Array<[number, number]>) : [];
+            if (!sym || bids.length === 0 || asks.length === 0) return;
+            const bestBid = Number(bids[0]?.[0] ?? 0);
+            const bestAsk = Number(asks[0]?.[0] ?? 0);
+            if (!(bestBid > 0) || !(bestAsk >= bestBid)) return;
+            const mid = (bestBid + bestAsk) / 2;
+            const spreadBps = ((bestAsk - bestBid) / mid) * 10_000;
+            const src = formatProviderLabel(String(d.source ?? "Market WS"));
+            setQuotes((prev) => {
+              const cur = prev[sym];
+              if (!cur) {
+                return {
+                  ...prev,
+                  [sym]: {
+                    price: mid,
+                    changePct: 0,
+                    high24h: mid,
+                    low24h: mid,
+                    volume24h: null,
+                    spreadBps,
+                    source: src,
+                    flash: null,
+                    spark: [mid],
+                  },
+                };
+              }
+              return { ...prev, [sym]: { ...cur, spreadBps } };
+            });
           }
         } catch {
           // ignore malformed frames
@@ -133,7 +167,7 @@ export function useMarketListStream(rawSymbols: string[]): Record<string, LiveRo
       if (ws && ws.readyState === WebSocket.OPEN) {
         for (const sym of subscribedRef.current) {
           try {
-            ws.send(JSON.stringify({ action: "unsubscribe", channel: "ticks", symbol: sym }));
+            ws.send(JSON.stringify({ type: "unsubscribe", channel: "market", symbol: sym }));
           } catch {
             // ignore
           }
@@ -155,7 +189,7 @@ export function useMarketListStream(rawSymbols: string[]): Record<string, LiveRo
       if (!nextSet.has(oldSym)) {
         prevSet.delete(oldSym);
         if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ action: "unsubscribe", channel: "ticks", symbol: oldSym }));
+          ws.send(JSON.stringify({ type: "unsubscribe", channel: "market", symbol: oldSym }));
         }
       }
     }
@@ -163,7 +197,7 @@ export function useMarketListStream(rawSymbols: string[]): Record<string, LiveRo
       if (!prevSet.has(sym)) {
         prevSet.add(sym);
         if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ action: "subscribe", channel: "ticks", symbol: sym }));
+          ws.send(JSON.stringify({ type: "subscribe", channel: "market", symbol: sym }));
         }
       }
     }
