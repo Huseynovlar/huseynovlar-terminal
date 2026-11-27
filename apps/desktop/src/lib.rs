@@ -4,7 +4,7 @@ mod vpn_check;
 
 use keep_awake::KeepAwakeState;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem},
     tray::TrayIconBuilder,
     Manager, RunEvent,
 };
@@ -26,14 +26,15 @@ pub fn run() {
         .setup(|app| {
             // System Tray with quick controls (Show, Toggle Keep-Awake, Quit)
             let show_item = MenuItem::with_id(app, "show", "Открыть Huseynovlar Terminal", true, None::<&str>)?;
-            let awake_item = MenuItem::with_id(app, "toggle_awake", "Не гасить экран (Keep Awake)", true, None::<&str>)?;
+            let awake_item = CheckMenuItem::with_id(app, "toggle_awake", "Не гасить экран (Keep Awake)", true, false, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &awake_item, &quit_item])?;
 
+            let awake_item_for_events = awake_item.clone();
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&menu)
                 .tooltip("Huseynovlar Terminal")
-                .on_menu_event(|app, event| match event.id.as_ref() {
+                .on_menu_event(move |app, event| match event.id.as_ref() {
                     "show" => {
                         if let Some(win) = app.get_webview_window("main") {
                             let _ = win.show();
@@ -44,7 +45,15 @@ pub fn run() {
                     "toggle_awake" => {
                         let st = app.state::<KeepAwakeState>();
                         let next = !st.is_enabled();
-                        let _ = st.set(next);
+                        match st.set(next) {
+                            Ok(enabled) => {
+                                let _ = awake_item_for_events.set_checked(enabled);
+                            }
+                            Err(error) => {
+                                let _ = awake_item_for_events.set_checked(st.is_enabled());
+                                eprintln!("Keep Awake toggle failed: {error}");
+                            }
+                        }
                     }
                     "quit" => {
                         app.state::<KeepAwakeState>().release_all();
