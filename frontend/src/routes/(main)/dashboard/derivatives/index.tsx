@@ -31,6 +31,7 @@ interface OnchainResponse {
     binance_symbol: string;
     mark_price: number;
     open_interest_usd: number;
+    oi_change_24h_pct: number | null;
     funding_rate_pct: number;
     long_short_ratio: number;
   }>;
@@ -282,6 +283,7 @@ function OnchainDerivativesPage() {
                     <th className="px-3">Актив</th>
                     <th className="px-2 text-right">Mark Price</th>
                     <th className="px-2 text-right">Open Interest ($)</th>
+                    <th className="px-2 text-right">OI Δ 24h</th>
                     <th className="px-2 text-right">Funding Rate</th>
                     <th className="px-3 text-right">Long / Short</th>
                   </tr>
@@ -309,6 +311,21 @@ function OnchainDerivativesPage() {
                       </td>
                       <td className="px-2 text-right font-semibold text-[var(--text-primary)]">
                         {fmtBillions(d.open_interest_usd)}
+                      </td>
+                      <td
+                        className="px-2 text-right font-semibold"
+                        style={{
+                          color:
+                            d.oi_change_24h_pct === null
+                              ? "var(--text-muted)"
+                              : d.oi_change_24h_pct >= 0
+                                ? "var(--bull)"
+                                : "var(--bear)",
+                        }}
+                      >
+                        {d.oi_change_24h_pct === null
+                          ? "—"
+                          : `${d.oi_change_24h_pct >= 0 ? "+" : ""}${d.oi_change_24h_pct.toFixed(2)}%`}
                       </td>
                       <td
                         className="px-2 text-right font-semibold"

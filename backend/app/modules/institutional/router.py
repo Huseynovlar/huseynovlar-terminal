@@ -691,10 +691,19 @@ async def get_onchain_derivatives(_: User = Depends(get_current_user)) -> dict[s
             )
             for s in _DERIV_SYMBOLS
         ]
-        deriv_res = await asyncio.gather(*oi_tasks, *ls_tasks, return_exceptions=True)
+        oih_tasks = [
+            http.get(
+                "https://fapi.binance.com/futures/data/openInterestHist",
+                params={"symbol": s, "period": "1d", "limit": "2"},
+                headers=_HTTP_HEADERS,
+            )
+            for s in _DERIV_SYMBOLS
+        ]
+        deriv_res = await asyncio.gather(*oi_tasks, *ls_tasks, *oih_tasks, return_exceptions=True)
 
         derivatives: list[dict[str, Any]] = []
         btc_funding_pct = 0.0
+        n_sym = len(_DERIV_SYMBOLS)
         for idx, sym in enumerate(_DERIV_SYMBOLS):
             p_row = prem_map.get(sym, {})
             mark_px = float(p_row.get("markPrice") or 0.0)
@@ -708,12 +717,22 @@ async def get_onchain_derivatives(_: User = Depends(get_current_user)) -> dict[s
                 oi_qty = float((oi_resp.json() or {}).get("openInterest") or 0.0)
             oi_usd = round(oi_qty * mark_px, 0)
 
-            ls_resp = deriv_res[len(_DERIV_SYMBOLS) + idx]
+            ls_resp = deriv_res[n_sym + idx]
             ls_ratio = 1.0
             if isinstance(ls_resp, httpx.Response) and ls_resp.status_code == 200:
                 arr = ls_resp.json() or []
                 if arr:
                     ls_ratio = round(float(arr[0].get("longShortRatio") or 1.0), 2)
+
+            oih_resp = deriv_res[2 * n_sym + idx]
+            oi_change_24h_pct: float | None = None
+            if isinstance(oih_resp, httpx.Response) and oih_resp.status_code == 200:
+                h_arr = oih_resp.json() or []
+                if len(h_arr) >= 2:
+                    prev_oi = float(h_arr[-2].get("sumOpenInterestValue") or 0.0)
+                    curr_oi = float(h_arr[-1].get("sumOpenInterestValue") or 0.0)
+                    if prev_oi > 0 and curr_oi > 0:
+                        oi_change_24h_pct = round(((curr_oi - prev_oi) / prev_oi) * 100.0, 2)
 
             derivatives.append(
                 {
@@ -721,6 +740,7 @@ async def get_onchain_derivatives(_: User = Depends(get_current_user)) -> dict[s
                     "binance_symbol": sym,
                     "mark_price": round(mark_px, 4 if mark_px < 10 else 2),
                     "open_interest_usd": oi_usd,
+                    "oi_change_24h_pct": oi_change_24h_pct,
                     "funding_rate_pct": round(fund, 4),
                     "long_short_ratio": ls_ratio,
                 }
