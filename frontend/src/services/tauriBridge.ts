@@ -17,6 +17,8 @@ interface TauriInternals {
   invoke?: TauriInvokeFn;
 }
 
+const DEFAULT_HEALTH_URL = "https://terminal.huseynovlar.org/healthz";
+
 function getTauriInvoke(): TauriInvokeFn | null {
   if (typeof window === "undefined") return null;
   const internals = (window as unknown as { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
@@ -27,51 +29,62 @@ export function isTauriDesktop(): boolean {
   return getTauriInvoke() !== null;
 }
 
-export async function checkVpnStatus(endpoint?: string): Promise<VpnStatusResult> {
-  const invoke = getTauriInvoke();
-  if (invoke) {
-    try {
-      return await invoke<VpnStatusResult>("check_vpn_status", { endpoint: endpoint ?? null });
-    } catch (err) {
-      return {
-        connected: false,
-        message: err instanceof Error ? err.message : "Ошибка проверки доступности сервера",
-      };
-    }
-  }
-
-  // Browser fallback: use the same /healthz-only access criterion.
+async function checkHealthOverHttp(endpoint: string, invokeError?: unknown): Promise<VpnStatusResult> {
   const started = performance.now();
   const ctrl = new AbortController();
   const timer = window.setTimeout(() => ctrl.abort(), 5000);
+
   try {
-    const resp = await fetch(endpoint ?? "/healthz", {
+    const resp = await fetch(endpoint, {
       method: "GET",
       signal: ctrl.signal,
-      credentials: "same-origin",
+      cache: "no-store",
     });
     if (resp.ok) {
       return {
         connected: true,
         latency_ms: Math.round(performance.now() - started),
-        endpoint: endpoint ?? "/healthz",
+        endpoint,
         message: "Сервер доступен — /healthz вернул успешный ответ",
       };
     }
     return {
       connected: false,
-      endpoint: endpoint ?? "/healthz",
-      message: `Сервер ответил HTTP ${resp.status} на /healthz`,
+      endpoint,
+      message: `Сервер ответил HTTP ${resp.status} на ${endpoint}`,
     };
-  } catch {
+  } catch (error) {
+    const reason = error instanceof Error
+      ? (error.name === "AbortError" ? "превышено время ожидания 5 секунд" : error.message)
+      : String(error);
+    const nativeReason = invokeError
+      ? ` Не удалось выполнить нативную проверку: ${invokeError instanceof Error ? invokeError.message : String(invokeError)}.`
+      : "";
     return {
       connected: false,
-      endpoint: endpoint ?? "/healthz",
-      message: "Сервер недоступен: проверьте сеть и доступ к /healthz",
+      endpoint,
+      message: `Не удалось обратиться к ${endpoint}: ${reason}.${nativeReason}`,
     };
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+export async function checkVpnStatus(endpoint?: string): Promise<VpnStatusResult> {
+  const target = endpoint ?? DEFAULT_HEALTH_URL;
+  const invoke = getTauriInvoke();
+
+  if (invoke) {
+    try {
+      return await invoke<VpnStatusResult>("check_vpn_status", { endpoint: target });
+    } catch (err) {
+      // Keep the app usable if the native command is unavailable in an older
+      // desktop build; perform the same /healthz check from the WebView instead.
+      return checkHealthOverHttp(target, err);
+    }
+  }
+
+  return checkHealthOverHttp(endpoint ?? "/healthz");
 }
 
 export async function setNativeKeepAwake(enabled: boolean): Promise<boolean> {
