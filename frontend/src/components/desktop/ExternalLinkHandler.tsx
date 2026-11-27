@@ -17,7 +17,7 @@ export function ExternalLinkHandler() {
 
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const anchor = target.closest<HTMLAnchorElement>("a[target='_blank'], a[rel~='external']");
+      const anchor = target.closest<HTMLAnchorElement>("a[href]");
       if (!anchor || anchor.hasAttribute("download")) return;
 
       const rawHref = anchor.href;
