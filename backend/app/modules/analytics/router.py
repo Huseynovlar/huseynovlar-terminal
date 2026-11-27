@@ -594,7 +594,7 @@ async def get_analytics_overview(
     from_msc = _parse_iso_to_msc(from_date) or int((datetime.now(UTC) - timedelta(days=days)).timestamp() * 1000)
     to_msc = _parse_iso_to_msc(to_date, end_of_day=True)
 
-    deal_stmt = select(Deal).where(Deal.entry_type.in_([1, 2]), Deal.time_msc >= from_msc)
+    deal_stmt = select(Deal).where(Deal.entry_type.in_([1, 2]), Deal.deal_type.in_([0, 1]), Deal.time_msc >= from_msc)
     if to_msc is not None:
         deal_stmt = deal_stmt.where(Deal.time_msc <= to_msc)
     if account_id:
@@ -608,9 +608,10 @@ async def get_analytics_overview(
     if side:
         norm_side = side.upper()
         deal_stmt = deal_stmt.where(Deal.deal_type == (0 if norm_side in ("BUY", "LONG") else 1))
-    closed_deals = (await db.execute(deal_stmt)).scalars().all()
+    raw_closed = (await db.execute(deal_stmt)).scalars().all()
+    closed_deals = [d for d in raw_closed if not _is_internal_transfer_deal(d)]
 
-    robots = (await db.execute(select(Robot))).scalars().all()
+    robots = [r for r in (await db.execute(select(Robot))).scalars().all() if not _is_bridge_robot_row(r)]
     robot_map = {(r.account_id, r.magic_number): r.name for r in robots}
 
     total_balance_usd = sum(a.last_balance / (a.currency_divisor or 1.0) for a in accounts)
@@ -625,6 +626,10 @@ async def get_analytics_overview(
     hourly_map: dict[int, dict[str, Any]] = {
         h: {"hour": h, "net_pnl_usd": 0.0, "trades": 0, "wins": 0, "losses": 0, "win_rate_pct": 0.0} for h in range(24)
     }
+    weekday_names = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    weekday_map: dict[int, dict[str, Any]] = {
+        w: {"day_idx": w, "day": weekday_names[w], "net_pnl_usd": 0.0, "trades": 0, "wins": 0} for w in range(7)
+    }
     by_symbol: dict[str, list[Deal]] = defaultdict(list)
     by_account: dict[str, list[Deal]] = defaultdict(list)
     by_robot: dict[tuple[str, int], list[Deal]] = defaultdict(list)
@@ -637,9 +642,13 @@ async def get_analytics_overview(
         day_key = dt.strftime("%Y-%m-%d")
         daily_map[day_key]["net_pnl_usd"] = round(daily_map[day_key]["net_pnl_usd"] + pnl_usd, 2)
         daily_map[day_key]["trades"] += 1
+        wd = dt.weekday()
+        weekday_map[wd]["net_pnl_usd"] = round(weekday_map[wd]["net_pnl_usd"] + pnl_usd, 2)
+        weekday_map[wd]["trades"] += 1
         if pnl_usd > 0:
             daily_map[day_key]["wins"] += 1
             hourly_map[dt.hour]["wins"] += 1
+            weekday_map[wd]["wins"] += 1
         elif pnl_usd < 0:
             daily_map[day_key]["losses"] += 1
             hourly_map[dt.hour]["losses"] += 1
@@ -659,7 +668,31 @@ async def get_analytics_overview(
         t = hourly_map[h]["trades"]
         hourly_map[h]["win_rate_pct"] = round((hourly_map[h]["wins"] / t) * 100.0, 2) if t else 0.0
 
-    # Cumulative Equity, Underwater Drawdown, Rolling Win-Rate & MAE/MFE Scatter
+    # Extra institutional risk metrics: Sortino, Calmar, Daily VaR (95%)
+    daily_pnls = [v["net_pnl_usd"] for v in daily_map.values()]
+    neg_daily = [x for x in daily_pnls if x < 0]
+    downside_std = math.sqrt(sum(x * x for x in neg_daily) / len(neg_daily)) if neg_daily else 0.0
+    mean_daily = (sum(daily_pnls) / len(daily_pnls)) if daily_pnls else 0.0
+    sortino = round((mean_daily / downside_std) * math.sqrt(len(daily_pnls)), 2) if downside_std > 0 else 0.0
+    base_cap = max(1.0, total_balance_usd - stats["net_pnl_usd"])
+    twr_total_pct = round((stats["net_pnl_usd"] / base_cap) * 100.0, 2)
+    calmar = (
+        round(twr_total_pct / stats["max_drawdown_pct"], 2)
+        if stats["max_drawdown_pct"] > 0
+        else (round(twr_total_pct, 2) if twr_total_pct > 0 else 0.0)
+    )
+    if daily_pnls:
+        sorted_dp = sorted(daily_pnls)
+        var_idx = max(0, int(len(sorted_dp) * 0.05))
+        daily_var_95 = round(sorted_dp[var_idx], 2)
+    else:
+        daily_var_95 = 0.0
+    stats["sortino_ratio"] = sortino
+    stats["calmar_ratio"] = calmar
+    stats["daily_var_95_usd"] = daily_var_95
+    stats["twr_pct"] = twr_total_pct
+
+    # Cumulative Equity / TWR, Underwater Drawdown, Rolling Win-Rate & MAE/MFE Scatter
     ordered = sorted(closed_deals, key=lambda d: d.time_msc)
     equity_curve: list[dict[str, Any]] = []
     drawdown_curve: list[dict[str, Any]] = []
@@ -667,14 +700,18 @@ async def get_analytics_overview(
     mae_mfe_scatter: list[dict[str, Any]] = []
 
     cum = peak = 0.0
+    peak_eq = base_cap
     window = 10
     recent_outcomes: list[int] = []
     for idx, d in enumerate(ordered, start=1):
         pnl_usd = _deal_net_usd(d, acc_map)
         cum += pnl_usd
+        cur_eq = base_cap + cum
         peak = max(peak, cum)
-        dd_usd = round(cum - peak, 2)
-        dd_pct = round((dd_usd / peak) * 100.0, 2) if peak > 0 else 0.0
+        peak_eq = max(peak_eq, cur_eq)
+        dd_usd = round(cur_eq - peak_eq, 2)
+        dd_pct = round((dd_usd / peak_eq) * 100.0, 2) if peak_eq > 0 else 0.0
+        twr_pct = round((cum / base_cap) * 100.0, 2)
         date_str = datetime.fromtimestamp(d.time_msc / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M")
 
         equity_curve.append(
@@ -682,6 +719,7 @@ async def get_analytics_overview(
                 "time_sec": d.time_msc // 1000,
                 "date": date_str,
                 "cum_pnl_usd": round(cum, 2),
+                "twr_pct": twr_pct,
                 "drawdown_usd": dd_usd,
             }
         )
@@ -720,7 +758,6 @@ async def get_analytics_overview(
             }
         )
 
-    # Include live open positions' exact MAE/MFE in scatter
     pos_stmt = select(OpenPositionLive)
     if account_id:
         pos_stmt = pos_stmt.where(OpenPositionLive.account_id == account_id)
@@ -746,6 +783,15 @@ async def get_analytics_overview(
     snap_count = len((await db.execute(select(EquitySnapshot.id).limit(500))).scalars().all())
     daily_list = [{"date": k, **v} for k, v in sorted(daily_map.items())]
     hourly_list = [hourly_map[h] for h in range(24)]
+    weekday_list = [weekday_map[w] for w in range(7)]
+    abs_total_pnl = sum(abs(_compute_trade_stats(items, acc_map)["net_pnl_usd"]) for items in by_symbol.values()) or 1.0
+
+    by_symbol_out = []
+    for sym, items in sorted(by_symbol.items()):
+        st = _compute_trade_stats(items, acc_map)
+        st["profit_share_pct"] = round((st["net_pnl_usd"] / abs_total_pnl) * 100.0, 1)
+        by_symbol_out.append({"symbol": sym, **st})
+    by_symbol_out.sort(key=lambda x: x["net_pnl_usd"], reverse=True)
 
     return {
         "portfolio": {
@@ -762,9 +808,8 @@ async def get_analytics_overview(
         "daily_pnl": daily_list,
         "hourly_heatmap": hourly_list,
         "hourly_pnl": hourly_list,
-        "by_symbol": [
-            {"symbol": sym, **_compute_trade_stats(items, acc_map)} for sym, items in sorted(by_symbol.items())
-        ],
+        "weekday_pnl": weekday_list,
+        "by_symbol": by_symbol_out,
         "by_account": [
             {
                 "account_id": aid,
@@ -1824,3 +1869,238 @@ async def export_full_exness_statement_xlsx(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Provider-Agnostic AI Portfolio & Risk Review (60s timeout, NO Markdown tables)
+# ---------------------------------------------------------------------------
+
+
+class AiReviewRequest(BaseModel):
+    account_id: str | None = None
+    symbol: str | None = None
+    magic_number: int | None = None
+    side: str | None = None
+    days: int = Field(default=90, ge=1, le=3650)
+
+
+def _strip_markdown_tables(text: str) -> str:
+    """Strictly forbid Markdown pipe tables in AI Review output (Section 5.3)."""
+    cleaned_lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            # Drop separator rows like |---|---|
+            if re.fullmatch(r"[\|\s:\-]+", stripped):
+                continue
+            cells = [c.strip() for c in stripped.strip("|").split("|") if c.strip()]
+            if cells:
+                cleaned_lines.append("- " + " — ".join(cells))
+            continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines).strip()
+
+
+def _deterministic_fallback_review(slice_data: dict[str, Any]) -> str:
+    m = slice_data.get("metrics") or {}
+    trades = int(m.get("total_trades") or 0)
+    wr = float(m.get("win_rate_pct") or 0.0)
+    pf = float(m.get("profit_factor") or 0.0)
+    net = float(m.get("net_pnl_usd") or 0.0)
+    dd = float(m.get("max_drawdown_pct") or 0.0)
+    var95 = float(m.get("daily_var_95_usd") or 0.0)
+    best_syms = slice_data.get("top_symbols") or []
+    worst_syms = slice_data.get("worst_symbols") or []
+
+    s1 = [
+        f"- Обработано {trades} закрытых сделок (без ALLINT, нормализация USC ÷ 100); итог: {net:+.2f} USD.",
+        f"- Текущий Winrate составляет {wr:.1f}% при Profit Factor {pf:.2f}.",
+    ]
+    if best_syms:
+        b = best_syms[0]
+        s1.append(f"- Лучший вклад по тикеру {b['symbol']}: {b['net_pnl_usd']:+.2f} USD (WR {b['win_rate_pct']:.1f}%).")
+
+    s2 = [
+        f"- Максимальная просадка портфеля достигла {dd:.2f}%, дневной VaR (95%): {var95:+.2f} USD.",
+    ]
+    if worst_syms and float(worst_syms[0].get("net_pnl_usd") or 0) < 0:
+        w = worst_syms[0]
+        s2.append(
+            f"- Основной источник просадки — {w['symbol']} ({w['net_pnl_usd']:+.2f} USD за {w['trades']} сделок)."
+        )
+    if pf < 1.1 and trades >= 5:
+        s2.append("- Profit Factor ниже 1.10 указывает на слабый запас прочности по соотношению прибыль/риск.")
+
+    s3 = [
+        "- Ограничьте торговлю в наименее результативные часы UTC (см. график атрибуции по часам).",
+        "- Зафиксируйте дневной стоп-лосс на уровне 1.5× от Daily VaR (95%) для защиты капитала.",
+        "- Для детального LLM-анализа укажите API-ключ провайдера (OpenAI / Gemini / Anthropic) в настройках.",
+    ]
+
+    return (
+        "### 1. Сильные стороны и рабочие паттерны\n"
+        + "\n".join(s1)
+        + "\n\n### 2. Уязвимости и аномалии риска\n"
+        + "\n".join(s2)
+        + "\n\n### 3. Конкретные рекомендации по параметрам\n"
+        + "\n".join(s3)
+    )
+
+
+@router.post("/analytics/ai-review")
+async def generate_analytics_ai_review(
+    body: AiReviewRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Provider-agnostic AI Risk & Performance Review (60s timeout, compact JSON slice, zero Markdown tables)."""
+    import json
+
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    overview = await get_analytics_overview(
+        account_id=body.account_id,
+        symbol=body.symbol,
+        magic_number=body.magic_number,
+        side=body.side,
+        days=body.days,
+        _=user,
+        db=db,
+    )
+
+    m = overview["metrics"]
+    by_sym = overview.get("by_symbol") or []
+    by_rob = overview.get("by_robot") or []
+    hourly = [h for h in (overview.get("hourly_pnl") or []) if h.get("trades", 0) > 0]
+    worst_hours = sorted(hourly, key=lambda x: x["net_pnl_usd"])[:3]
+    best_hours = sorted(hourly, key=lambda x: x["net_pnl_usd"], reverse=True)[:3]
+
+    compact_slice = {
+        "period_days": body.days,
+        "portfolio": overview["portfolio"],
+        "metrics": {
+            "total_trades": m.get("total_trades"),
+            "net_pnl_usd": m.get("net_pnl_usd"),
+            "twr_pct": m.get("twr_pct"),
+            "win_rate_pct": m.get("win_rate_pct"),
+            "profit_factor": m.get("profit_factor"),
+            "expectancy_usd": m.get("expectancy_usd"),
+            "sharpe_ratio": m.get("sharpe_ratio"),
+            "sortino_ratio": m.get("sortino_ratio"),
+            "calmar_ratio": m.get("calmar_ratio"),
+            "recovery_factor": m.get("recovery_factor"),
+            "max_drawdown_pct": m.get("max_drawdown_pct"),
+            "max_drawdown_usd": m.get("max_drawdown_usd"),
+            "daily_var_95_usd": m.get("daily_var_95_usd"),
+            "max_consecutive_wins": m.get("max_consecutive_wins"),
+            "max_consecutive_losses": m.get("max_consecutive_losses"),
+        },
+        "top_symbols": [
+            {
+                "symbol": s["symbol"],
+                "net_pnl_usd": s["net_pnl_usd"],
+                "win_rate_pct": s["win_rate_pct"],
+                "trades": s["total_trades"],
+            }
+            for s in by_sym[:5]
+        ],
+        "worst_symbols": [
+            {
+                "symbol": s["symbol"],
+                "net_pnl_usd": s["net_pnl_usd"],
+                "win_rate_pct": s["win_rate_pct"],
+                "trades": s["total_trades"],
+            }
+            for s in sorted(by_sym, key=lambda x: x["net_pnl_usd"])[:3]
+        ],
+        "robots_summary": [
+            {
+                "name": r["robot_name"],
+                "net_pnl_usd": r["net_pnl_usd"],
+                "win_rate_pct": r["win_rate_pct"],
+                "trades": r["total_trades"],
+            }
+            for r in by_rob[:6]
+        ],
+        "best_hours_utc": [{"hour": h["hour"], "net_pnl_usd": h["net_pnl_usd"]} for h in best_hours],
+        "worst_hours_utc": [{"hour": h["hour"], "net_pnl_usd": h["net_pnl_usd"]} for h in worst_hours],
+    }
+
+    system_prompt = (
+        "Ты — институциональный риск-аналитик торгового терминала. "
+        "Дай краткий и конкретный разбор портфеля на русском языке строго по данным JSON. "
+        "ФОРМАТ ВЫВОДА (СТРОГО): ровно 3 раздела с заголовками:\n"
+        "### 1. Сильные стороны и рабочие паттерны\n"
+        "### 2. Уязвимости и аномалии риска\n"
+        "### 3. Конкретные рекомендации по параметрам\n"
+        "Используй ТОЛЬКО краткий текст и маркированные списки (- ...). "
+        "КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНЫ Markdown-таблицы (никаких символов |)."
+    )
+    user_prompt = f"Срез метрик портфеля (JSON):\n{json.dumps(compact_slice, ensure_ascii=False)}"
+
+    text_out: str | None = None
+    provider_used = "deterministic-risk-engine"
+
+    # 1. OpenAI-compatible provider (OpenAI / Anthropic proxy / Local LLM) — 60s timeout
+    if settings.llm_api_key and settings.llm_base_url:
+        try:
+            url = settings.llm_base_url.rstrip("/")
+            if not url.endswith("/chat/completions"):
+                url = f"{url}/chat/completions"
+            async with httpx.AsyncClient(timeout=60.0) as http:
+                resp = await http.post(
+                    url,
+                    headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+                    json={
+                        "model": settings.llm_model or "gpt-4o-mini",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.25,
+                    },
+                )
+                if resp.status_code == 200:
+                    choices = (resp.json() or {}).get("choices") or []
+                    if choices:
+                        text_out = str((choices[0].get("message") or {}).get("content") or "").strip()
+                        provider_used = settings.llm_model or "openai-compatible"
+        except Exception:  # noqa: BLE001
+            text_out = None
+
+    # 2. Gemini API fallback — 60s timeout
+    if not text_out and settings.google_ai_api_key:
+        model_name = (settings.google_ai_default_model or "gemini-2.5-flash").strip()
+        try:
+            g_url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model_name}:generateContent?key={settings.google_ai_api_key}"
+            )
+            async with httpx.AsyncClient(timeout=60.0) as http:
+                resp = await http.post(
+                    g_url,
+                    json={
+                        "system_instruction": {"parts": [{"text": system_prompt}]},
+                        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+                        "generationConfig": {"temperature": 0.25},
+                    },
+                )
+                if resp.status_code == 200:
+                    cands = (resp.json() or {}).get("candidates") or []
+                    if cands:
+                        parts = ((cands[0].get("content") or {}).get("parts")) or []
+                        text_out = "\n".join(str(p.get("text") or "") for p in parts).strip()
+                        provider_used = model_name
+        except Exception:  # noqa: BLE001
+            text_out = None
+
+    if not text_out:
+        text_out = _deterministic_fallback_review(compact_slice)
+
+    return {
+        "provider": provider_used,
+        "generated_at_utc": datetime.now(UTC).isoformat(),
+        "review": _strip_markdown_tables(text_out),
+    }
+
