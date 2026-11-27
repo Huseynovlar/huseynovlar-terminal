@@ -36,6 +36,7 @@ export interface MarketTickerItem {
   volume_24h?: number | null;
   spread_bps?: number | null;
   ws_source?: string | null;
+  market_session?: "ONLINE" | "PRE_MARKET" | "AFTER_HOURS" | "OFFLINE" | string;
 }
 
 const CLASSES = [
@@ -516,7 +517,30 @@ function MarketTickersPage() {
                       <div className="flex items-center gap-2">
                         <AssetLogo symbol={tk.symbol} size={20} logoUrl={tk.logo_url} />
                         <div className="min-w-0">
-                          <div className="font-mono font-semibold text-[var(--text-primary)]">{tk.symbol}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-semibold text-[var(--text-primary)]">{tk.symbol}</span>
+                            {tk.market_session ? (
+                              <span
+                                className="rounded-[2px] px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase"
+                                style={{
+                                  backgroundColor:
+                                    tk.market_session === "ONLINE"
+                                      ? "color-mix(in srgb, var(--bull) 16%, transparent)"
+                                      : tk.market_session === "OFFLINE"
+                                        ? "var(--bg-elevated)"
+                                        : "color-mix(in srgb, var(--accent-amber) 16%, transparent)",
+                                  color:
+                                    tk.market_session === "ONLINE"
+                                      ? "var(--bull)"
+                                      : tk.market_session === "OFFLINE"
+                                        ? "var(--text-muted)"
+                                        : "var(--accent-amber)",
+                                }}
+                              >
+                                {tk.market_session.replace("_", "-")}
+                              </span>
+                            ) : null}
+                          </div>
                           <div className="max-w-[200px] truncate text-[10px] text-[var(--text-muted)]">{tk.name}</div>
                         </div>
                       </div>

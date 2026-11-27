@@ -124,8 +124,7 @@ def _is_bridge_robot(r: Robot) -> bool:
     if "bridge" in name_l or "bridge" in prog_l or "bridge" in ea_l:
         return True
     has_strat = any(
-        st.get(k) is not None
-        for k in ("rsi_m5", "er_h1", "regime", "signal_bias", "bb_upper", "zones", "risk_mode")
+        st.get(k) is not None for k in ("rsi_m5", "er_h1", "regime", "signal_bias", "bb_upper", "zones", "risk_mode")
     )
     if not has_strat and int(r.magic_number or 0) == 0 and st.get("discovery_source") == "sibling_chart":
         return True
@@ -235,6 +234,56 @@ def _serialize_account(
     return data
 
 
+def _extract_session_state(r: Robot) -> tuple[str | None, str | None]:
+    """Extract OFF SESSION / NEWS FILTER / SPREAD FILTER / PAUSED / RUNNING from ep_ipc telemetry."""
+    st = r.live_state_json if isinstance(r.live_state_json, dict) else {}
+    candidates: list[str] = [str(r.live_status or "")]
+    for key in (
+        "session_state",
+        "status_reason",
+        "reason",
+        "filter",
+        "filter_state",
+        "state",
+        "regime",
+        "status",
+        "comment",
+        "msg",
+        "last_event",
+    ):
+        val = st.get(key)
+        if isinstance(val, str) and val.strip():
+            candidates.append(val.strip())
+    # Also scan recent log lines if embedded in telemetry
+    logs = st.get("logs") or st.get("events")
+    if isinstance(logs, list):
+        for entry in logs[-5:]:
+            if isinstance(entry, str):
+                candidates.append(entry)
+            elif isinstance(entry, dict):
+                for k in ("msg", "message", "status", "reason"):
+                    v = entry.get(k)
+                    if isinstance(v, str):
+                        candidates.append(v)
+
+    joined = " | ".join(candidates).upper()
+    if "OFF SESSION" in joined or "OFF_SESSION" in joined or "OUT OF SESSION" in joined:
+        return "OFF SESSION", "OFF SESSION"
+    if "NEWS FILTER" in joined or "NEWS_FILTER" in joined or "NEWS BLOCK" in joined:
+        return "NEWS FILTER", "NEWS FILTER"
+    if "SPREAD FILTER" in joined or "SPREAD_FILTER" in joined or "HIGH SPREAD" in joined:
+        return "SPREAD FILTER", "SPREAD FILTER"
+    if "PAUSE" in joined or "STOPPED" in joined or "DISABLED" in joined:
+        return "PAUSED", "PAUSED"
+    if st.get("session_state"):
+        s = str(st["session_state"]).strip().upper()
+        return s, s
+    if st.get("status_reason"):
+        s = str(st["status_reason"]).strip().upper()
+        return s, s
+    return None, None
+
+
 def _serialize_robot(
     r: Robot,
     account: TradingAccount | None = None,
@@ -245,6 +294,10 @@ def _serialize_robot(
     now = datetime.now(UTC)
     heartbeat_age_sec = int((now - hb).total_seconds()) if hb else None
     is_online = heartbeat_age_sec is not None and heartbeat_age_sec <= 60
+    session_state, status_reason = _extract_session_state(r)
+    effective_status = (
+        session_state if session_state in {"OFF SESSION", "NEWS FILTER", "SPREAD FILTER"} else (r.live_status or "IDLE")
+    )
     return {
         "id": r.id,
         "account_id": r.account_id,
@@ -260,7 +313,9 @@ def _serialize_robot(
         "version": r.version,
         "strategy_notes": r.strategy_notes,
         "params_json": r.params_json or {},
-        "live_status": r.live_status or "IDLE",
+        "live_status": effective_status,
+        "session_state": session_state,
+        "status_reason": status_reason,
         "live_state_json": r.live_state_json or {},
         "last_execution_ms": r.last_execution_ms,
         "last_heartbeat_at": hb.isoformat() if hb else None,
@@ -531,9 +586,7 @@ async def update_exness_profile(
     await db.commit()
     acc_cnt = int(
         (
-            await db.execute(
-                select(func.count(TradingAccount.id)).where(TradingAccount.profile_id == profile.id)
-            )
+            await db.execute(select(func.count(TradingAccount.id)).where(TradingAccount.profile_id == profile.id))
         ).scalar_one()
         or 0
     )
@@ -745,13 +798,7 @@ async def list_robots(
     now = datetime.now(UTC)
     start_today_msc = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
     closed_deals = (
-        (
-            await db.execute(
-                select(Deal).where(Deal.entry_type.in_([1, 2]), Deal.deal_type.in_([0, 1]))
-            )
-        )
-        .scalars()
-        .all()
+        (await db.execute(select(Deal).where(Deal.entry_type.in_([1, 2]), Deal.deal_type.in_([0, 1])))).scalars().all()
     )
     deals_by_key: dict[tuple[str, int], list[Deal]] = {}
     for d in closed_deals:
@@ -762,7 +809,7 @@ async def list_robots(
     serialized: list[dict[str, Any]] = []
     for r in rows:
         acc = accounts.get(r.account_id)
-        div = (acc.currency_divisor if acc and acc.currency_divisor else 1.0)
+        div = acc.currency_divisor if acc and acc.currency_divisor else 1.0
         key = (r.account_id, int(r.magic_number or 0))
         r_pos = pos_by_key.get(key, [])
         r_deals = deals_by_key.get(key, [])
@@ -830,9 +877,7 @@ async def create_robot(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
     dup = (
-        await db.execute(
-            select(Robot).where(Robot.account_id == account.id, Robot.magic_number == body.magic_number)
-        )
+        await db.execute(select(Robot).where(Robot.account_id == account.id, Robot.magic_number == body.magic_number))
     ).scalar_one_or_none()
     if dup:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MagicNumber already exists on this account")
@@ -874,7 +919,7 @@ async def get_robot(
     if not robot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Robot not found")
     account = await db.get(TradingAccount, robot.account_id)
-    div = (account.currency_divisor if account and account.currency_divisor else 1.0)
+    div = account.currency_divisor if account and account.currency_divisor else 1.0
 
     open_positions = (
         (

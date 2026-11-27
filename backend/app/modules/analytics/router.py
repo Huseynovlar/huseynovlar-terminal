@@ -244,8 +244,7 @@ def _is_bridge_robot_row(r: Robot) -> bool:
     if "bridge" in name_l or "bridge" in ea_l:
         return True
     has_strat = any(
-        st.get(k) is not None
-        for k in ("rsi_m5", "er_h1", "regime", "signal_bias", "bb_upper", "zones", "risk_mode")
+        st.get(k) is not None for k in ("rsi_m5", "er_h1", "regime", "signal_bias", "bb_upper", "zones", "risk_mode")
     )
     if not has_strat and st.get("discovery_source") == "sibling_chart":
         return True
@@ -379,9 +378,11 @@ async def get_home_summary(
         }
     )
 
-    # Live Ticker Strip symbols: user's My Assets + core global benchmarks (zero broken ASS stubs)
-    benchmarks = ["BTCUSD", "XAUUSD", "USTEC", "EURUSD", "DXY", "US10Y"]
-    ticker_symbols = list(dict.fromkeys([*(h.code.upper() for h in asset_hubs), *benchmarks]))[:12]
+    # Live Ticker Strip symbols: ALWAYS pin user's "Мои активы" first on the left,
+    # then fill remaining slots up to 10 with top market benchmarks.
+    portfolio_symbols = list(dict.fromkeys(h.code.upper() for h in asset_hubs if h.code))
+    benchmarks = ["XAUUSD", "USTEC", "BTCUSD", "ETHUSD", "EURUSD", "DXY", "US10Y", "US500"]
+    ticker_symbols = list(dict.fromkeys([*portfolio_symbols, *benchmarks]))[:10]
 
     # Treemap caches (US Sectors + Crypto Top) — strictly exclude non-live 0% stubs
     def _extract_treemap_items(cache_row: MarketCache | None) -> list[dict[str, Any]]:
@@ -492,6 +493,7 @@ async def get_home_summary(
         "server_time_utc": now.isoformat(),
         "period": period,
         "ticker_symbols": ticker_symbols,
+        "portfolio_symbols": portfolio_symbols,
         "initial_ticker_quotes": initial_ticker_quotes,
         "kpis": {
             "total_balance_usd": total_balance_usd,
@@ -855,7 +857,7 @@ def _serialize_deal(
     robot_map: dict[tuple[str, int], str],
 ) -> dict[str, Any]:
     acc = acc_map.get(d.account_id)
-    div = (acc.currency_divisor if acc and acc.currency_divisor else 1.0)
+    div = acc.currency_divisor if acc and acc.currency_divisor else 1.0
     return {
         "id": d.id,
         "account_id": d.account_id,
@@ -912,9 +914,7 @@ async def list_journal_deals(
     if account_id:
         stmt = stmt.where(Deal.account_id == account_id)
     if symbol:
-        stmt = stmt.where(
-            or_(Deal.symbol.ilike(f"%{symbol.strip()}%"), sql_symbol_match(Deal.symbol, symbol))
-        )
+        stmt = stmt.where(or_(Deal.symbol.ilike(f"%{symbol.strip()}%"), sql_symbol_match(Deal.symbol, symbol)))
     if magic_number is not None:
         stmt = stmt.where(Deal.magic_number == magic_number)
     if side:
@@ -1026,9 +1026,7 @@ async def list_journal_round_trip_trades(
     if account_id:
         stmt = stmt.where(Deal.account_id == account_id)
     if symbol and symbol.strip():
-        stmt = stmt.where(
-            or_(Deal.symbol.ilike(f"%{symbol.strip()}%"), sql_symbol_match(Deal.symbol, symbol.strip()))
-        )
+        stmt = stmt.where(or_(Deal.symbol.ilike(f"%{symbol.strip()}%"), sql_symbol_match(Deal.symbol, symbol.strip())))
     all_deals = (await db.execute(stmt)).scalars().all()
 
     acc_map = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}
@@ -1213,32 +1211,34 @@ async def list_journal_positions(
         stmt = stmt.where(OpenPositionLive.side == side)
     rows = (await db.execute(stmt)).scalars().all()
     acc_map = {a.id: a for a in (await db.execute(select(TradingAccount))).scalars().all()}
-    return page.apply([
-        {
-            "id": p.id,
-            "account_id": p.account_id,
-            "account_name": acc_map[p.account_id].name if p.account_id in acc_map else p.account_id,
-            "currency": acc_map[p.account_id].currency if p.account_id in acc_map else "USD",
-            "position_ticket": p.position_ticket,
-            "magic_number": p.magic_number,
-            "symbol": p.symbol,
-            "side": p.side,
-            "volume": p.volume,
-            "open_price": p.open_price,
-            "current_price": p.current_price,
-            "sl": p.sl,
-            "tp": p.tp,
-            "swap": p.swap,
-            "profit": p.profit,
-            "profit_usd": round(p.profit_usd, 2),
-            "mae_usd": round(p.mae_usd, 2),
-            "mfe_usd": round(p.mfe_usd, 2),
-            "open_time": p.open_time,
-            "comment": p.comment,
-            "updated_at": p.updated_at.isoformat(),
-        }
-        for p in rows
-    ])
+    return page.apply(
+        [
+            {
+                "id": p.id,
+                "account_id": p.account_id,
+                "account_name": acc_map[p.account_id].name if p.account_id in acc_map else p.account_id,
+                "currency": acc_map[p.account_id].currency if p.account_id in acc_map else "USD",
+                "position_ticket": p.position_ticket,
+                "magic_number": p.magic_number,
+                "symbol": p.symbol,
+                "side": p.side,
+                "volume": p.volume,
+                "open_price": p.open_price,
+                "current_price": p.current_price,
+                "sl": p.sl,
+                "tp": p.tp,
+                "swap": p.swap,
+                "profit": p.profit,
+                "profit_usd": round(p.profit_usd, 2),
+                "mae_usd": round(p.mae_usd, 2),
+                "mfe_usd": round(p.mfe_usd, 2),
+                "open_time": p.open_time,
+                "comment": p.comment,
+                "updated_at": p.updated_at.isoformat(),
+            }
+            for p in rows
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1555,7 +1555,7 @@ async def update_treasury_operation(
             ),
         )
     acc = await db.get(TradingAccount, op.account_id)
-    div = (acc.currency_divisor if acc and acc.currency_divisor else 1.0)
+    div = acc.currency_divisor if acc and acc.currency_divisor else 1.0
 
     if body.op_kind is not None:
         op.op_kind = body.op_kind
@@ -2109,4 +2109,3 @@ async def generate_analytics_ai_review(
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "review": _strip_markdown_tables(text_out),
     }
-

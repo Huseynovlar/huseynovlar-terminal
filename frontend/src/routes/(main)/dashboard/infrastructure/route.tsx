@@ -4,6 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Activity, Cpu, Pause, Play, Radio, RefreshCw, Server, Terminal } from "lucide-react";
 
 import { InfraEtcAndWikiPanel } from "@/components/pro/InfraEtcAndWikiPanel";
+import { Mt5BridgesPanel } from "@/components/pro/Mt5BridgesPanel";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
@@ -370,6 +371,7 @@ function InfrastructureHubPage() {
           </div>
         </div>
       ) : null}
+      <Mt5BridgesPanel />
       <InfraEtcAndWikiPanel />
     </TerminalPageShell>
   );

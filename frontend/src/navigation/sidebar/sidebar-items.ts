@@ -95,6 +95,7 @@ export function buildSidebarItems(
         { id: "robots", title: dict.nav.robots, url: "/dashboard/robots", icon: Bot },
         { id: "journal", title: dict.nav.journal, url: "/dashboard/journal", icon: BookOpen },
         { id: "treasury", title: dict.nav.treasury, url: "/dashboard/treasury", icon: Banknote },
+        { id: "analytics", title: dict.nav.analytics, url: "/dashboard/analytics", icon: Gauge },
       ],
     },
     {
@@ -106,7 +107,6 @@ export function buildSidebarItems(
         { id: "treemap", title: dict.nav.treemap, url: "/dashboard/treemap", icon: Grid2x2 },
         { id: "stat-arb", title: "Стат. арбитраж и Спреды", url: "/dashboard/stat-arb", icon: Scale },
         { id: "derivatives", title: "Деривативы и Ончейн", url: "/dashboard/derivatives", icon: Activity },
-        { id: "analytics", title: dict.nav.analytics, url: "/dashboard/analytics", icon: Gauge },
       ],
     },
     {

@@ -14,6 +14,7 @@ import {
 import { formatSignedUsd, formatUsd } from "@/components/m5/chart-indicators";
 import { AsyncButton } from "@/components/ui/async-button";
 import { Input } from "@/components/ui/input";
+import { SearchSelect } from "@/components/ui/search-select";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiDownload, apiRequest } from "@/framework/api-client";
@@ -299,65 +300,63 @@ function JournalPage() {
           ))}
         </div>
 
-        <select
-          value={accountId}
-          onChange={(e) => setAccountId(e.target.value)}
-          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
-        >
-          <option value="">Все счета</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
+        <div className="w-40">
+          <SearchSelect value={accountId} onValueChange={setAccountId} className="h-7 text-[11px]">
+            <option value="">Все счета</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </SearchSelect>
+        </div>
 
-        <select
-          value={robotFilter}
-          onChange={(e) => setRobotFilter(e.target.value)}
-          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
-        >
-          <option value="ALL">Все (EA + Manual)</option>
-          <option value="MANUAL">Только ручные</option>
-          {robots.map((r) => (
-            <option key={r.id} value={String(r.magic_number)}>
-              {r.name} (#{r.magic_number})
-            </option>
-          ))}
-        </select>
+        <div className="w-44">
+          <SearchSelect value={robotFilter} onValueChange={setRobotFilter} className="h-7 text-[11px]">
+            <option value="ALL">Все (EA + Manual)</option>
+            <option value="MANUAL">Только ручные</option>
+            {robots.map((r) => (
+              <option key={r.id} value={String(r.magic_number)}>
+                {r.name} (#{r.magic_number})
+              </option>
+            ))}
+          </SearchSelect>
+        </div>
 
-        <select
-          value={sideFilter}
-          onChange={(e) => setSideFilter(e.target.value as "" | "LONG" | "SHORT")}
-          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
-        >
-          <option value="">Сторона</option>
-          <option value="LONG">LONG</option>
-          <option value="SHORT">SHORT</option>
-        </select>
+        <div className="w-28">
+          <SearchSelect
+            value={sideFilter}
+            onValueChange={(v) => setSideFilter(v as "" | "LONG" | "SHORT")}
+            className="h-7 text-[11px]"
+          >
+            <option value="">Сторона</option>
+            <option value="LONG">LONG</option>
+            <option value="SHORT">SHORT</option>
+          </SearchSelect>
+        </div>
 
-        <select
-          value={resultFilter}
-          onChange={(e) => setResultFilter(e.target.value as "" | "WIN" | "LOSS")}
-          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
-        >
-          <option value="">Результат</option>
-          <option value="WIN">Win (+)</option>
-          <option value="LOSS">Loss (-)</option>
-        </select>
+        <div className="w-28">
+          <SearchSelect
+            value={resultFilter}
+            onValueChange={(v) => setResultFilter(v as "" | "WIN" | "LOSS")}
+            className="h-7 text-[11px]"
+          >
+            <option value="">Результат</option>
+            <option value="WIN">Win (+)</option>
+            <option value="LOSS">Loss (-)</option>
+          </SearchSelect>
+        </div>
 
-        <select
-          value={tagFilter}
-          onChange={(e) => setTagFilter(e.target.value)}
-          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
-        >
-          <option value="">Все теги</option>
-          {QUICK_TAGS.map((tg) => (
-            <option key={tg} value={tg}>
-              {tg}
-            </option>
-          ))}
-        </select>
+        <div className="w-32">
+          <SearchSelect value={tagFilter} onValueChange={setTagFilter} className="h-7 text-[11px]">
+            <option value="">Все теги</option>
+            {QUICK_TAGS.map((tg) => (
+              <option key={tg} value={tg}>
+                {tg}
+              </option>
+            ))}
+          </SearchSelect>
+        </div>
 
         <div className="relative ml-auto w-44">
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3 -translate-y-1/2 text-[var(--text-muted)]" />

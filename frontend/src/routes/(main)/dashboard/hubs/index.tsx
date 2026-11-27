@@ -57,6 +57,7 @@ export interface AssetHubItem {
   pnl_24h_usd?: number;
   mt5_zone?: "BUY ZONE" | "FAIR" | "SELL ZONE" | null;
   news_sentiment?: "BULL" | "BEAR" | "NEUTRAL";
+  market_session?: "ONLINE" | "PRE_MARKET" | "AFTER_HOURS" | "OFFLINE" | string;
 }
 
 type SortKey =
@@ -476,6 +477,27 @@ function MyAssetsListPage() {
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono font-semibold text-[var(--text-primary)]">{hub.code}</span>
+                              {hub.market_session ? (
+                                <span
+                                  className="rounded-[2px] px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase"
+                                  style={{
+                                    backgroundColor:
+                                      hub.market_session === "ONLINE"
+                                        ? "color-mix(in srgb, var(--bull) 16%, transparent)"
+                                        : hub.market_session === "OFFLINE"
+                                          ? "var(--bg-elevated)"
+                                          : "color-mix(in srgb, var(--accent-amber) 16%, transparent)",
+                                    color:
+                                      hub.market_session === "ONLINE"
+                                        ? "var(--bull)"
+                                        : hub.market_session === "OFFLINE"
+                                          ? "var(--text-muted)"
+                                          : "var(--accent-amber)",
+                                  }}
+                                >
+                                  {hub.market_session.replace("_", "-")}
+                                </span>
+                              ) : null}
                               <span className="rounded-[2px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1 py-0 font-mono text-[9px] uppercase text-[var(--text-secondary)]">
                                 {hub.group || hub.category}
                               </span>

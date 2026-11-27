@@ -16,6 +16,7 @@ import {
 import { formatSignedUsd } from "@/components/m5/chart-indicators";
 import { AsyncButton } from "@/components/ui/async-button";
 import { Input } from "@/components/ui/input";
+import { SearchSelect } from "@/components/ui/search-select";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiDownload, apiRequest } from "@/framework/api-client";
@@ -264,18 +265,16 @@ function AnalyticsLabPage() {
           ))}
         </div>
 
-        <select
-          value={accountId}
-          onChange={(e) => setAccountId(e.target.value)}
-          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
-        >
-          <option value="">Все счета</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name} (#{a.mt5_login})
-            </option>
-          ))}
-        </select>
+        <div className="w-48">
+          <SearchSelect value={accountId} onValueChange={setAccountId} className="h-7 text-[11px]">
+            <option value="">Все счета</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} (#{a.mt5_login})
+              </option>
+            ))}
+          </SearchSelect>
+        </div>
 
         <Input
           value={symbol}
@@ -284,15 +283,13 @@ function AnalyticsLabPage() {
           className="h-7 w-36 rounded-[4px] border-[var(--border-subtle)] bg-[var(--bg-canvas)] text-[11px]"
         />
 
-        <select
-          value={side}
-          onChange={(e) => setSide(e.target.value)}
-          className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
-        >
-          <option value="">Все стороны</option>
-          <option value="LONG">LONG</option>
-          <option value="SHORT">SHORT</option>
-        </select>
+        <div className="w-36">
+          <SearchSelect value={side} onValueChange={setSide} className="h-7 text-[11px]">
+            <option value="">Все стороны</option>
+            <option value="LONG">LONG</option>
+            <option value="SHORT">SHORT</option>
+          </SearchSelect>
+        </div>
       </div>
 
       {loading && !data ? (

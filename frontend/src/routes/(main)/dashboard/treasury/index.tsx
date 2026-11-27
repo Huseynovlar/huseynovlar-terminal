@@ -12,6 +12,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
+import { SearchSelect } from "@/components/ui/search-select";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
@@ -362,21 +363,23 @@ function TreasuryListPage() {
             ))}
           </div>
 
-          <select
-            value={accountFilter}
-            onChange={(e) => {
-              setAccountFilter(e.target.value);
-              setPage(1);
-            }}
-            className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] text-[var(--text-primary)]"
-          >
-            <option value="">Все счета</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+          <div className="w-44">
+            <SearchSelect
+              value={accountFilter}
+              onValueChange={(v) => {
+                setAccountFilter(v);
+                setPage(1);
+              }}
+              className="h-7 text-[11px]"
+            >
+              <option value="">Все счета</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </SearchSelect>
+          </div>
         </div>
 
         <div className="relative w-56">
@@ -462,19 +465,22 @@ function TreasuryListPage() {
                     </td>
                     <td className="px-3 py-1.5 text-right">
                       <div className="inline-flex items-center gap-1.5">
-                        <select
-                          disabled={busyId === op.id}
-                          value={op.op_kind}
-                          onChange={(e) => void handleReclassify(op, e.target.value)}
-                          className="h-6 rounded-[3px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-1.5 text-[10px] text-[var(--text-primary)]"
-                          title="Ручная переклассификация с сохранением в БД"
-                        >
-                          <option value="DEPOSIT">DEPOSIT</option>
-                          <option value="WITHDRAWAL">WITHDRAWAL</option>
-                          <option value="INTERNAL_TRANSFER">INTERNAL_TRANSFER</option>
-                          <option value="EXNESS_VAULT">EXNESS_VAULT</option>
-                          <option value="REBATE">REBATE</option>
-                        </select>
+                        <div className="w-36 text-left">
+                          <SearchSelect
+                            disabled={busyId === op.id}
+                            value={op.op_kind}
+                            onValueChange={(v) => void handleReclassify(op, v)}
+                            className="h-6 text-[10px]"
+                            title="Ручная переклассификация с сохранением в БД"
+                            options={[
+                              { value: "DEPOSIT", label: "DEPOSIT" },
+                              { value: "WITHDRAWAL", label: "WITHDRAWAL" },
+                              { value: "INTERNAL_TRANSFER", label: "INTERNAL_TRANSFER" },
+                              { value: "EXNESS_VAULT", label: "EXNESS_VAULT" },
+                              { value: "REBATE", label: "REBATE" },
+                            ]}
+                          />
+                        </div>
                         {op.is_manual && (
                           <button
                             type="button"

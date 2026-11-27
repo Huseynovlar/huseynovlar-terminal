@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Download, Pencil, Trash2 } from "lucide-react";
 
 import { RobotTelemetryPanel } from "@/components/m5/RobotTelemetryPanel";
@@ -21,6 +21,9 @@ import { formatTerminalClock, formatUptimeSeconds, useUtcClock } from "@/framewo
 import type { RobotItem } from "@/routes/(main)/dashboard/robots/index";
 
 export const Route = createFileRoute("/(main)/dashboard/robots/$robotId/")({
+  beforeLoad: () => {
+    throw redirect({ to: "/dashboard/robots", replace: true });
+  },
   component: RobotDetailPage,
 });
 

@@ -62,8 +62,8 @@ interface BmapResponse {
   } | null;
 }
 
-const DARK_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
-const LIGHT_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const DARK_STYLE = "https://tiles.openfreemap.org/styles/dark";
+const LIGHT_STYLE = "https://tiles.openfreemap.org/styles/positron";
 
 function vesselColor(cargoType: string): string {
   if (cargoType === "Tanker") return "#F59E0B"; // amber
@@ -302,8 +302,12 @@ function GlobalBmapPage() {
       </div>
 
       {/* Main Map Canvas + Right Collapsible 320px Sidebar */}
-      <div className="relative flex min-h-0 flex-1">
-        <div ref={mapContainerRef} className="h-full flex-1" />
+      <div className="relative flex min-h-[calc(100vh-110px)] flex-1">
+        <div
+          ref={mapContainerRef}
+          className="h-full min-h-[calc(100vh-110px)] w-full flex-1"
+          style={{ minHeight: "calc(100vh - 110px)" }}
+        />
 
         {/* Collapsible Right Inspector Sidebar (320px) */}
         {sidebarOpen && (

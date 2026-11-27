@@ -22,6 +22,7 @@ import { AsyncButton } from "@/components/ui/async-button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { DEFAULT_PAGE_SIZE, PagerBar } from "@/components/ui/pager-bar";
+import { SearchSelect } from "@/components/ui/search-select";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiDownload, apiRequest, apiRequestPaged } from "@/framework/api-client";
@@ -52,6 +53,8 @@ export interface RobotItem {
   strategy_notes: string;
   params_json: Record<string, unknown>;
   live_status: string;
+  session_state?: string | null;
+  status_reason?: string | null;
   live_state_json: Record<string, unknown>;
   last_execution_ms: number | null;
   last_heartbeat_at: string | null;
@@ -306,21 +309,23 @@ function RobotsListPage() {
             />
           </div>
 
-          <select
-            value={accountFilter}
-            onChange={(e) => {
-              setAccountFilter(e.target.value);
-              setPage(1);
-            }}
-            className="h-8 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2.5 text-xs text-[var(--text-primary)] outline-none"
-          >
-            <option value="">Все счета</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} (#{a.mt5_login})
-              </option>
-            ))}
-          </select>
+          <div className="w-52">
+            <SearchSelect
+              value={accountFilter}
+              onValueChange={(v) => {
+                setAccountFilter(v);
+                setPage(1);
+              }}
+              className="h-8 text-xs"
+            >
+              <option value="">Все счета</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} (#{a.mt5_login})
+                </option>
+              ))}
+            </SearchSelect>
+          </div>
         </div>
 
         {/* Status Filter Pills */}
@@ -386,14 +391,20 @@ function RobotsListPage() {
                 {robots.map((r) => {
                   const age = formatAgeSec(r.last_heartbeat_at, nowMs);
                   const isStale = age.sec > 15 || !r.is_online;
-                  const stUp = (r.live_status || "IDLE").toUpperCase();
+                  const stUp = (r.session_state || r.status_reason || r.live_status || "IDLE").toUpperCase();
                   const statusBadge = isStale
                     ? { label: `STALE · ${age.label}`, color: "var(--bear)" }
-                    : stUp.includes("PAUSE")
-                      ? { label: "PAUSED", color: "var(--accent-amber)" }
-                      : (r.stats?.open_positions_count ?? 0) > 0 || stUp.includes("RUN")
-                        ? { label: `RUNNING · ${age.label}`, color: "var(--bull)" }
-                        : { label: `IDLE · ${age.label}`, color: "var(--text-secondary)" };
+                    : stUp.includes("OFF SESSION") || stUp.includes("OFF_SESSION")
+                      ? { label: "OFF SESSION", color: "var(--accent-amber)" }
+                      : stUp.includes("NEWS FILTER") || stUp.includes("NEWS_FILTER")
+                        ? { label: "NEWS FILTER", color: "var(--accent-amber)" }
+                        : stUp.includes("SPREAD FILTER") || stUp.includes("SPREAD_FILTER")
+                          ? { label: "SPREAD FILTER", color: "var(--accent-amber)" }
+                          : stUp.includes("PAUSE")
+                            ? { label: "PAUSED", color: "var(--accent-amber)" }
+                            : (r.stats?.open_positions_count ?? 0) > 0 || stUp.includes("RUN")
+                              ? { label: `RUNNING · ${age.label}`, color: "var(--bull)" }
+                              : { label: `IDLE · ${age.label}`, color: "var(--text-secondary)" };
                   const cleanSym = canonicalMarketSymbol(r.symbol);
                   const tf = String(r.live_state_json?.timeframe ?? r.live_state_json?.tf ?? "M5");
                   const isSelected = selectedId === r.id;

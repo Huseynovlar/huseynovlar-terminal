@@ -84,8 +84,7 @@ function RobotEditPage() {
       title={t.robots.editTitle}
       actions={
         <Link
-          to="/dashboard/robots/$robotId"
-          params={{ robotId }}
+          to="/dashboard/robots"
           className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
         >
           <ArrowLeft className="mr-1.5 size-3.5" />

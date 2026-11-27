@@ -210,7 +210,7 @@ def _render_symbol_logo_svg(raw_symbol: str) -> str:
         b2 = html.escape(fx_clean[3:])
         return (
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">'
-            "<defs><clipPath id=\"r\"><rect width=\"64\" height=\"64\" rx=\"14\"/></clipPath></defs>"
+            '<defs><clipPath id="r"><rect width="64" height="64" rx="14"/></clipPath></defs>'
             '<g clip-path="url(#r)">'
             f'<polygon points="0,0 64,0 0,64" fill="{c1}"/>'
             f'<polygon points="64,0 64,64 0,64" fill="{c2}"/>'
@@ -265,9 +265,34 @@ _EXT_BY_LOGO_MIME: dict[str, str] = {
 }
 
 _KNOWN_CRYPTO_BASES = {
-    "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "TON", "LTC",
-    "AVAX", "DOT", "LINK", "MATIC", "POL", "TRX", "SHIB", "UNI", "ATOM",
-    "NEAR", "APT", "ARB", "OP", "SUI", "BCH", "XLM", "ETC", "FIL", "HBAR",
+    "BTC",
+    "ETH",
+    "SOL",
+    "BNB",
+    "XRP",
+    "ADA",
+    "DOGE",
+    "TON",
+    "LTC",
+    "AVAX",
+    "DOT",
+    "LINK",
+    "MATIC",
+    "POL",
+    "TRX",
+    "SHIB",
+    "UNI",
+    "ATOM",
+    "NEAR",
+    "APT",
+    "ARB",
+    "OP",
+    "SUI",
+    "BCH",
+    "XLM",
+    "ETC",
+    "FIL",
+    "HBAR",
 }
 
 _INDEX_ETF_LOGO_MAP: dict[str, str] = {
@@ -707,7 +732,9 @@ async def _fetch_batch_24h_stats(symbols: list[str], settings: Settings) -> dict
     stock_syms = [
         s.upper()
         for s in symbols
-        if s.isalpha() and 1 <= len(s) <= 5 and not s.upper().endswith("USD")
+        if s.isalpha()
+        and 1 <= len(s) <= 5
+        and not s.upper().endswith("USD")
         and (now_m - _TICKER_24H_ALPACA_TS.get(s.upper(), 0.0) >= 60.0)
     ][:30]
 
@@ -772,6 +799,53 @@ async def _fetch_batch_24h_stats(symbols: list[str], settings: Settings) -> dict
     return _TICKER_24H_CACHE
 
 
+def _compute_market_session(symbol: str, asset_class: str, now_utc: datetime | None = None) -> str:
+    """Compute real-time UTC market session status: ONLINE | PRE_MARKET | AFTER_HOURS | OFFLINE."""
+    now = now_utc or datetime.now(UTC)
+    sym = (symbol or "").strip().upper()
+    cls = (asset_class or "").strip().lower()
+
+    # 1. Crypto is 24/7 ONLINE
+    crypto_syms = {"BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "LINK", "AVAX", "TON", "LTC", "SUI"}
+    if cls == "crypto" or any(sym.startswith(c) for c in crypto_syms) or sym.endswith("USDT"):
+        return "ONLINE"
+
+    wd = now.weekday()  # 0=Mon .. 5=Sat, 6=Sun
+    hhmm = now.hour * 60 + now.minute
+
+    # 2. Forex / Metals / Commodities: Sun 22:00 UTC -> Fri 22:00 UTC
+    if cls in {"forex", "metals", "commodities"} or sym in {
+        "XAUUSD",
+        "XAGUSD",
+        "EURUSD",
+        "GBPUSD",
+        "USDJPY",
+        "USDCHF",
+        "AUDUSD",
+        "USDCAD",
+        "USOIL",
+        "UKOIL",
+    }:
+        if wd == 5:  # Saturday
+            return "OFFLINE"
+        if wd == 6 and hhmm < 22 * 60:  # Sunday before 22:00 UTC
+            return "OFFLINE"
+        if wd == 4 and hhmm >= 22 * 60:  # Friday after 22:00 UTC
+            return "OFFLINE"
+        return "ONLINE"
+
+    # 3. US Equities & Indices (NYSE/NASDAQ schedule in UTC)
+    if wd in (5, 6):
+        return "OFFLINE"
+    if 9 * 60 <= hhmm < 14 * 60 + 30:
+        return "PRE_MARKET"
+    if 14 * 60 + 30 <= hhmm < 21 * 60:
+        return "ONLINE"
+    if hhmm >= 21 * 60 or hhmm < 1 * 60:
+        return "AFTER_HOURS"
+    return "OFFLINE"
+
+
 @router.get("/tickers")
 async def list_market_tickers(
     response: Response,
@@ -818,6 +892,7 @@ async def list_market_tickers(
 
     rows = (await db.execute(ordered_stmt)).scalars().all()
     stats_24h = await _fetch_batch_24h_stats([r.symbol for r in rows], settings)
+    now_utc = datetime.now(UTC)
     out_tickers: list[dict[str, Any]] = []
     for idx, r in enumerate(rows):
         canon = canonical_asset_code(r.symbol) or r.symbol.upper()
@@ -846,6 +921,7 @@ async def list_market_tickers(
                 "spread_bps": spread_bps,
                 "ws_source": (last_tick.get("source") if isinstance(last_tick, dict) else None)
                 or st24.get("ws_source"),
+                "market_session": _compute_market_session(r.symbol, r.asset_class, now_utc),
             }
         )
     return out_tickers
@@ -1016,8 +1092,7 @@ def _is_bridge_robot(robot: Robot) -> bool:
     if "bridge" in name_l or "bridge" in ea_l:
         return True
     has_strategy_telemetry = any(
-        st.get(k) is not None
-        for k in ("rsi_m5", "er_h1", "regime", "signal_bias", "bb_upper", "zones", "risk_mode")
+        st.get(k) is not None for k in ("rsi_m5", "er_h1", "regime", "signal_bias", "bb_upper", "zones", "risk_mode")
     )
     if not has_strategy_telemetry and st.get("discovery_source") == "sibling_chart":
         return True
@@ -1157,6 +1232,7 @@ async def list_assets(
                     "pnl_24h_usd": pnl_24h_usd,
                     "mt5_zone": mt5_zone,
                     "news_sentiment": news_sentiment,
+                    "market_session": _compute_market_session(hub.code, hub.category or hub.group, now_utc),
                 },
             )
         )

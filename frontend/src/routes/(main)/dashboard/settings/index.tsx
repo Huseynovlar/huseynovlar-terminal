@@ -20,6 +20,7 @@ import {
 import { DesktopDownloadPanel } from "@/components/pro/DesktopDownloadPanel";
 import { SettingsSecurityPanels } from "@/components/pro/SettingsSecurityPanels";
 import { AsyncButton } from "@/components/ui/async-button";
+import { SearchSelect } from "@/components/ui/search-select";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
 import { type SoundCategory, type SoundConfig, soundEngine } from "@/framework/sound-engine";
@@ -391,19 +392,19 @@ function SettingsHubPage() {
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-medium text-[var(--text-secondary)]">Часовой пояс</label>
-                <select
+                <SearchSelect
                   value={timezone}
-                  onChange={(e) => {
-                    setTimezone(e.target.value);
-                    localStorage.setItem("ht_tz", e.target.value);
-                    notify.success("Часовой пояс обновлён", e.target.value);
+                  onValueChange={(val) => {
+                    setTimezone(val);
+                    localStorage.setItem("ht_tz", val);
+                    notify.success("Часовой пояс обновлён", val);
                   }}
-                  className="h-9 w-full rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2.5 text-xs text-[var(--text-primary)]"
-                >
-                  <option value="UTC">UTC (Рекомендуется)</option>
-                  <option value="Asia/Baku">Asia/Baku (UTC+4)</option>
-                  <option value="local">Локальное время браузера</option>
-                </select>
+                  options={[
+                    { value: "UTC", label: "UTC (Рекомендуется)" },
+                    { value: "Asia/Baku", label: "Asia/Baku (UTC+4)" },
+                    { value: "local", label: "Локальное время браузера" },
+                  ]}
+                />
               </div>
             </div>
 
@@ -492,21 +493,21 @@ function SettingsHubPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="space-y-1">
                 <label className="text-[11px] font-medium text-[var(--text-secondary)]">Провайдер</label>
-                <select
+                <SearchSelect
                   value={aiCfg.provider}
-                  onChange={(e) =>
+                  onValueChange={(val) =>
                     setAiCfg((prev) => ({
                       ...prev,
-                      provider: e.target.value as AiSettingsDto["provider"],
+                      provider: val as AiSettingsDto["provider"],
                     }))
                   }
-                  className="h-9 w-full rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2.5 text-xs text-[var(--text-primary)]"
-                >
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic (Claude)</option>
-                  <option value="gemini">Google Gemini</option>
-                  <option value="custom_openai">Custom OpenAI-Compatible (Ollama / vLLM / DeepSeek)</option>
-                </select>
+                  options={[
+                    { value: "openai", label: "OpenAI" },
+                    { value: "anthropic", label: "Anthropic (Claude)" },
+                    { value: "gemini", label: "Google Gemini" },
+                    { value: "custom_openai", label: "Custom OpenAI-Compatible (Ollama / vLLM / DeepSeek)" },
+                  ]}
+                />
               </div>
 
               <div className="space-y-1">

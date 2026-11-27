@@ -22,6 +22,7 @@ import {
   StatArbMatrixChart,
   ZScoreSpreadChart,
 } from "@/components/institutional/StatArbCharts";
+import { SearchSelect } from "@/components/ui/search-select";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { notify } from "@/components/ui/toast";
 import { apiRequest } from "@/framework/api-client";
@@ -423,16 +424,19 @@ function StatArbCockpitPage() {
             </div>
 
             {/* Lookback */}
-            <select
-              value={lookback}
-              onChange={(e) => setLookback(Number(e.target.value))}
-              className="h-7 rounded-[4px] border border-[var(--border-subtle)] bg-[var(--bg-canvas)] px-2 text-[11px] tabular-nums text-[var(--text-primary)]"
-            >
-              <option value={100}>100 баров</option>
-              <option value={200}>200 баров</option>
-              <option value={500}>500 баров</option>
-              <option value={1000}>1000 баров</option>
-            </select>
+            <div className="w-28">
+              <SearchSelect
+                value={String(lookback)}
+                onValueChange={(v) => setLookback(Number(v))}
+                className="h-7 text-[11px]"
+                options={[
+                  { value: "100", label: "100 баров" },
+                  { value: "200", label: "200 баров" },
+                  { value: "500", label: "500 баров" },
+                  { value: "1000", label: "1000 баров" },
+                ]}
+              />
+            </div>
           </div>
 
           {/* Thresholds */}
