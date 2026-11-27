@@ -1,9 +1,6 @@
 name: Release Desktop (Tauri v2)
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
 
 permissions:
@@ -14,23 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-desktop:
+  build:
+    name: Build and publish desktop app on self-hosted runner
+    runs-on: self-hosted
+    timeout-minutes: 60
     environment: production
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        include:
-          - platform: macos-latest
-            args: "--target aarch64-apple-darwin"
-          - platform: macos-latest
-            args: "--target x86_64-apple-darwin"
-          - platform: windows-latest
-            args: ""
-          - platform: ubuntu-22.04
-            args: ""
-
-    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,11 +26,9 @@ jobs:
 
       - name: Setup Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Install Linux WebKitGTK / AppImage dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
@@ -54,7 +37,7 @@ jobs:
         working-directory: apps/desktop
         run: npm install
 
-      # Verify the Tauri updater key/password pair before any native build.
+      # Verify the Tauri updater key/password pair before the native build.
       - name: Validate updater signing key
         working-directory: apps/desktop
         env:
@@ -82,13 +65,12 @@ jobs:
           projectPath: apps/desktop
           tagName: v__VERSION__
           releaseName: "Huseynovlar Terminal v__VERSION__"
-          releaseBody: "Huseynovlar Terminal desktop release. macOS builds use an ad-hoc code signature for personal use; macOS may require manual approval in Privacy & Security. Tauri updater artifacts are signed."
+          releaseBody: "Huseynovlar Terminal desktop release built on the configured self-hosted runner. This release contains artifacts for that runner's native platform. Tauri updater artifacts are signed."
           releaseDraft: false
           prerelease: false
-          args: ${{ matrix.args }}
 
       - name: Verify ad-hoc macOS code signature
-        if: matrix.platform == 'macos-latest'
+        if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
@@ -100,70 +82,93 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           codesign --display --verbose=4 "$APP_PATH" 2>&1
 
-  publish-release:
-    name: Keep only the current complete release
-    needs: build-desktop
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Verify current release and remove obsolete releases
+      - name: Keep only the current complete release
+        uses: actions/github-script@v7
         env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="$(jq -r '.version' apps/desktop/tauri.conf.json)"
-          TAG="v$VERSION"
-          REPO="$GITHUB_REPOSITORY"
+          DESKTOP_VERSION: ${{ fromJSON(file('apps/desktop/tauri.conf.json')).version }}
+        with:
+          script: |
+            const version = require("./apps/desktop/tauri.conf.json").version;
+            const tag = `v${version}`;
+            const { owner, repo } = context.repo;
 
-          RELEASE_JSON="$(gh api "repos/$REPO/releases/tags/$TAG")"
-          if [ "$(jq -r '.draft' <<< "$RELEASE_JSON")" != "false" ]; then
-            echo "::error::The current release $TAG is not published."
-            exit 1
-          fi
-          CURRENT_ID="$(jq -r '.id' <<< "$RELEASE_JSON")"
-          ASSET_COUNT="$(jq '.assets | length' <<< "$RELEASE_JSON")"
-          if [ "$ASSET_COUNT" -lt 10 ]; then
-            echo "::error::Only $ASSET_COUNT assets are attached to $TAG; refusing to remove previous releases."
-            exit 1
-          fi
-          for ARCH in aarch64 x64; do
-            DMG="Huseynovlar.Terminal_${VERSION}_${ARCH}.dmg"
-            if ! jq -e --arg name "$DMG" '[.assets[].name] | index($name) != null' <<< "$RELEASE_JSON" >/dev/null; then
-              echo "::error::The required macOS installer $DMG is missing."
-              exit 1
-            fi
-          done
-          echo "Verified $TAG (release $CURRENT_ID) with $ASSET_COUNT assets and both Mac installers."
+            const { data: current } = await github.rest.repos.getReleaseByTag({
+              owner,
+              repo,
+              tag
+            });
 
-          # Do not let an older queued run remove a newer version.
-          LATEST_TAG="$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[].tag_name' | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | sort -V | tail -n 1 || true)"
-          if [ -n "$LATEST_TAG" ]; then
-            HIGHEST_TAG="$( { echo "$TAG"; echo "$LATEST_TAG"; } | sort -V | tail -n 1)"
-            if [ "$HIGHEST_TAG" != "$TAG" ]; then
-              echo "::notice::Skipping cleanup for $TAG because newer release $LATEST_TAG already exists."
-              exit 0
-            fi
-          fi
+            if (current.draft) {
+              core.setFailed(`The current release ${tag} is still a draft.`);
+              return;
+            }
 
-          OLD_RELEASES="$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[] | [.id, .tag_name] | @tsv')"
-          while read -r OLD_ID OLD_TAG; do
-            [ -z "$OLD_ID" ] && continue
-            if [ "$OLD_ID" = "$CURRENT_ID" ]; then
-              continue
-            fi
-            echo "Removing duplicate/obsolete release $OLD_ID ($OLD_TAG)"
-            gh api --silent --method DELETE "repos/$REPO/releases/$OLD_ID"
-            if [ "$OLD_TAG" != "$TAG" ] && gh api --silent "repos/$REPO/git/ref/tags/$OLD_TAG" >/dev/null 2>&1; then
-              gh api --silent --method DELETE "repos/$REPO/git/refs/tags/$OLD_TAG"
-            fi
-          done <<< "$OLD_RELEASES"
+            if (!current.assets || current.assets.length < 1) {
+              core.setFailed(`The current release ${tag} has no build artifacts.`);
+              return;
+            }
 
-          REMAINING="$(gh api "repos/$REPO/releases?per_page=100" --jq 'length')"
-          if [ "$REMAINING" -ne 1 ]; then
-            echo "::error::Expected exactly one release after cleanup, found $REMAINING."
-            exit 1
-          fi
-          echo "Cleanup complete. Only $TAG remains."
+            const versionParts = (value) => {
+              const match = value.match(/^v?(\\d+)\\.(\\d+)\\.(\\d+)$/);
+              return match ? match.slice(1).map(Number) : null;
+            };
+            const compareVersions = (left, right) => {
+              const a = versionParts(left);
+              const b = versionParts(right);
+              if (!a || !b) return 0;
+              for (let i = 0; i < 3; i++) {
+                if (a[i] !== b[i]) return a[i] - b[i];
+              }
+              return 0;
+            };
+
+            const releases = await github.paginate(
+              github.rest.repos.listReleases,
+              { owner, repo, per_page: 100 }
+            );
+
+            const newestTag = releases
+              .map((release) => release.tag_name)
+              .filter((releaseTag) => versionParts(releaseTag))
+              .reduce((newest, releaseTag) =>
+                compareVersions(releaseTag, newest) > 0 ? releaseTag : newest,
+                tag
+              );
+
+            if (compareVersions(newestTag, tag) > 0) {
+              core.notice(`Skipping cleanup for ${tag}; newer release ${newestTag} already exists.`);
+              return;
+            }
+
+            for (const release of releases) {
+              if (release.id === current.id) continue;
+
+              core.info(`Removing obsolete release ${release.id} (${release.tag_name})`);
+              await github.rest.repos.deleteRelease({
+                owner,
+                repo,
+                release_id: release.id
+              });
+
+              try {
+                await github.rest.git.deleteRef({
+                  owner,
+                  repo,
+                  ref: `tags/${release.tag_name}`
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            }
+
+            const remaining = await github.paginate(
+              github.rest.repos.listReleases,
+              { owner, repo, per_page: 100 }
+            );
+
+            if (remaining.length !== 1 || remaining[0].id !== current.id) {
+              core.setFailed(`Expected only release ${tag} to remain; found ${remaining.length} releases.`);
+              return;
+            }
+
+            core.info(`Cleanup complete. Only ${tag} remains.`);
