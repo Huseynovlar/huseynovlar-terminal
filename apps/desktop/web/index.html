@@ -109,7 +109,7 @@
       </div>
 
       <label for="serverUrl">Адрес закрытого сервера терминала (VPN)</label>
-      <input id="serverUrl" type="url" placeholder="https://terminal.huseynovlar.com" />
+      <input id="serverUrl" type="url" placeholder="https://terminal.huseynovlar.org" />
 
       <div class="actions">
         <span class="hint">Автоповтор каждые 5 сек</span>
@@ -119,14 +119,27 @@
 
     <script>
       const STORAGE_KEY = "ht_desktop_server_url_v1";
-      const DEFAULT_URL = "https://terminal.huseynovlar.com";
+      const DEFAULT_URL = "https://terminal.huseynovlar.org";
+      const LEGACY_HOSTS = new Set(["terminal.huseynovlar.com", "api.huseynovlar.com"]);
+
+      function normalizeServerUrl(value) {
+        const candidate = (value || DEFAULT_URL).trim().replace(/\\/+$/, "");
+        try {
+          const parsed = new URL(candidate);
+          if (LEGACY_HOSTS.has(parsed.hostname.toLowerCase())) return DEFAULT_URL;
+          return candidate;
+        } catch {
+          return DEFAULT_URL;
+        }
+      }
       const input = document.getElementById("serverUrl");
       const statusBox = document.getElementById("statusBox");
       const tunnelLabel = document.getElementById("tunnelLabel");
       const retryBtn = document.getElementById("retryBtn");
 
-      const savedUrl = (localStorage.getItem(STORAGE_KEY) || DEFAULT_URL).replace(/\/+$/, "");
+      const savedUrl = normalizeServerUrl(localStorage.getItem(STORAGE_KEY));
       input.value = savedUrl;
+      localStorage.setItem(STORAGE_KEY, savedUrl);
 
       function getBaseUrl() {
         const val = (input.value || DEFAULT_URL).trim().replace(/\/+$/, "");
@@ -134,7 +147,11 @@
         return val;
       }
 
+      let checking = false;
+
       async function checkVpn() {
+        if (checking) return;
+        checking = true;
         const base = getBaseUrl();
         const healthUrl = base + "/healthz";
         retryBtn.disabled = true;
@@ -163,6 +180,7 @@
           statusBox.className = "status-box warn";
           statusBox.textContent = "Нет доступа к закрытому серверу — проверьте подключение к VPN";
         } finally {
+          checking = false;
           retryBtn.disabled = false;
         }
       }

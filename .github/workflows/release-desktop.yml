@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: desktop-release-${{ github.workflow }}
+  cancel-in-progress: true
+
 jobs:
   build-desktop:
     # A main-branch commit with this marker starts a deliberate release.

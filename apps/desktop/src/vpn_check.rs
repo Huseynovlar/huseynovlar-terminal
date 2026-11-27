@@ -1,6 +1,8 @@
 use serde::Serialize;
 use std::time::{Duration, Instant};
 
+const DEFAULT_VPN_HEALTH_URL: &str = "https://terminal.huseynovlar.org/healthz";
+
 #[derive(Debug, Clone, Serialize)]
 pub struct VpnStatusResponse {
     pub connected: bool,
@@ -59,13 +61,13 @@ pub async fn check_vpn_status(endpoint: Option<String>) -> VpnStatusResponse {
     let target = endpoint
         .filter(|s| !s.trim().is_empty())
         .or_else(|| std::env::var("HUSEYNOVLAR_VPN_HEALTH_URL").ok())
-        .unwrap_or_else(|| "https://api.huseynovlar.com/healthz".to_string());
+        .unwrap_or_else(|| DEFAULT_VPN_HEALTH_URL.to_string());
 
     let (tunnel_detected, interface_name) = detect_vpn_interface();
 
     let client = match reqwest::Client::builder()
-        .timeout(Duration::from_millis(2500))
-        .connect_timeout(Duration::from_millis(2000))
+        .timeout(Duration::from_secs(5))
+        .connect_timeout(Duration::from_secs(3))
         .build()
     {
         Ok(c) => c,
@@ -99,13 +101,13 @@ pub async fn check_vpn_status(endpoint: Option<String>) -> VpnStatusResponse {
             endpoint: target,
             message: format!("Сервер ответил HTTP {} — проверьте VPN", resp.status().as_u16()),
         },
-        Err(_) => VpnStatusResponse {
+        Err(error) => VpnStatusResponse {
             connected: false,
             tunnel_detected,
             interface_name,
             latency_ms: None,
-            endpoint: target,
-            message: "Нет доступа к закрытому серверу — проверьте подключение к VPN".to_string(),
+            endpoint: target.clone(),
+            message: format!("Не удалось подключиться к {target}: {error}"),
         },
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "huseynovlar-terminal-desktop"
-version = "2.0.1"
+version = "2.0.2"
 description = "Huseynovlar Terminal — Institutional Tauri v2 Desktop Client"
 authors = ["Huseynovlar"]
 edition = "2021"
