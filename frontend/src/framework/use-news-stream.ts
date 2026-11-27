@@ -5,6 +5,10 @@ import { getAccessToken } from "@/framework/api-client";
 export interface LiveNewsItem {
   id: string;
   title: string;
+  summary: string;
+  url: string;
+  source_url: string;
+  category: string;
   source: string;
   sentiment: string;
   impact_score: number;
@@ -78,9 +82,14 @@ export function useNewsStream(onItem: (item: LiveNewsItem) => void): {
               : msg) as Record<string, unknown>;
             const title = stripHtmlSafe(String(d.title ?? ""));
             if (!title) return;
+            const rawUrl = String(d.source_url ?? d.url ?? "");
             onItemRef.current({
               id: String(d.id ?? `ws-${Date.now()}`),
               title,
+              summary: stripHtmlSafe(String(d.summary ?? "")),
+              url: rawUrl,
+              source_url: rawUrl,
+              category: String(d.category ?? "global"),
               source: String(d.source ?? "WS News"),
               sentiment: String(d.sentiment ?? "NEUTRAL"),
               impact_score: Number(d.impact_score ?? 5),
