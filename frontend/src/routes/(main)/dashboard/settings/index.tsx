@@ -6,6 +6,7 @@ import {
   Bot,
   CheckCircle2,
   Database,
+  Download,
   KeyRound,
   Play,
   Save,
@@ -16,6 +17,7 @@ import {
   VolumeX,
 } from "lucide-react";
 
+import { DesktopDownloadPanel } from "@/components/pro/DesktopDownloadPanel";
 import { SettingsSecurityPanels } from "@/components/pro/SettingsSecurityPanels";
 import { AsyncButton } from "@/components/ui/async-button";
 import { notify } from "@/components/ui/toast";
@@ -27,7 +29,7 @@ export const Route = createFileRoute("/(main)/dashboard/settings/")({
   component: SettingsHubPage,
 });
 
-type ActiveTile = "profile" | "ui_sound" | "ai" | "market_keys" | "telegram";
+type ActiveTile = "profile" | "ui_sound" | "ai" | "market_keys" | "telegram" | "desktop";
 
 interface AiSettingsDto {
   provider: "openai" | "anthropic" | "gemini" | "custom_openai";
@@ -69,6 +71,7 @@ const HUB_TILES: Array<{
   { id: "ai", title: "AI-провайдеры (LLM Adapter)", meta: "OpenAI, Anthropic, Gemini, Custom OpenAI-Compatible", icon: Bot },
   { id: "market_keys", title: "Источники рыночных данных", meta: "Alpaca, Finnhub, FRED, AISStream, CoinMarketCal, Exness", icon: Database },
   { id: "telegram", title: "Уведомления и Telegram Bot", meta: "Внутренняя Docker-сеть huseynovlar_webhooks и алерты", icon: Bell },
+  { id: "desktop", title: "Десктоп-клиент (Скачать)", meta: "Установщики macOS (.dmg), Windows (.exe), Linux (.AppImage)", icon: Download },
 ];
 
 const SOUND_CATEGORIES: Array<{ id: SoundCategory; label: string; desc: string }> = [
@@ -80,7 +83,14 @@ const SOUND_CATEGORIES: Array<{ id: SoundCategory; label: string; desc: string }
 
 function SettingsHubPage() {
   const navigate = useNavigate();
-  const [activeTile, setActiveTile] = useState<ActiveTile>("ui_sound");
+  const [activeTile, setActiveTile] = useState<ActiveTile>(() => {
+    if (typeof window === "undefined") return "ui_sound";
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab === "desktop" || tab === "profile" || tab === "ai" || tab === "market_keys" || tab === "telegram") {
+      return tab;
+    }
+    return "ui_sound";
+  });
 
   // UI & Sound state
   const [soundCfg, setSoundCfg] = useState<SoundConfig>(() => soundEngine.getConfig());
@@ -721,6 +731,9 @@ function SettingsHubPage() {
             </div>
           </div>
         ) : null}
+
+        {/* TILE 6: Desktop Client Download */}
+        {activeTile === "desktop" ? <DesktopDownloadPanel /> : null}
       </div>
     </TerminalPageShell>
   );

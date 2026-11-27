@@ -5,6 +5,7 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  Download,
   ExternalLink,
   Link2,
   Moon,
@@ -290,6 +291,18 @@ export function AppSidebar({
               <span>{soundMuted ? "Звук выключен" : "Звук включён"}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          {typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window) ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Скачать Desktop-приложение"
+                render={<Link to={"/dashboard/settings?tab=desktop" as never} />}
+                className="text-[var(--accent-blue)]"
+              >
+                <Download className="size-4" />
+                <span>Скачать Desktop</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
         </SidebarMenu>
         <div className="mt-2 px-1 pb-1 group-data-[collapsible=icon]:hidden">
           <Button
