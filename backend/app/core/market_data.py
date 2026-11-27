@@ -595,8 +595,29 @@ _INDEX_ETF_PROXY: dict[str, str] = {
     "^NDX": "QQQ",
     "^GSPC": "SPY",
     "^DJI": "DIA",
+    "^GDAXI": "EWG",
+    "^FTSE": "EWU",
+    "^N225": "EWJ",
+    "^RUT": "IWM",
+    "^FCHI": "EWQ",
+    "^HSI": "EWH",
+    "^STOXX50E": "FEZ",
+    "DX-Y.NYB": "UUP",
+    "^VIX": "VIXY",
     "CL=F": "USO",
     "NG=F": "UNG",
+}
+
+_STOOQ_INDEX_MAP: dict[str, str] = {
+    "^NDX": "^ndq",
+    "^GSPC": "^spx",
+    "^DJI": "^dji",
+    "^GDAXI": "^dax",
+    "^FTSE": "^ukx",
+    "^N225": "^nkx",
+    "^FCHI": "^cac",
+    "^HSI": "^hsi",
+    "^STOXX50E": "^sx5e",
 }
 
 
@@ -673,11 +694,12 @@ async def alpaca_stock_bars(
         params: dict[str, Any] = {
             "timeframe": alp_tf,
             "start": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "limit": min(1000, max(50, limit)),
             "feed": "iex",
             "sort": "desc",
         }
+        if before_ts is not None and before_ts > 0:
+            params["end"] = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         try:
             resp = await http.get(
                 f"https://data.alpaca.markets/v2/stocks/{clean}/bars",
@@ -896,7 +918,12 @@ async def fetch_chart_with_fallback(
         }
 
     async def _try_stooq() -> dict[str, Any] | None:
-        bars_fb = await stooq_daily_bars(client, yahoo_sym)
+        stooq_sym = _STOOQ_INDEX_MAP.get(yahoo_sym.upper(), yahoo_sym)
+        bars_fb = await stooq_daily_bars(client, stooq_sym)
+        if not bars_fb:
+            proxy_etf = _INDEX_ETF_PROXY.get(yahoo_sym.upper())
+            if proxy_etf:
+                bars_fb = await stooq_daily_bars(client, proxy_etf)
         if not bars_fb:
             return None
         if before_ts is not None:

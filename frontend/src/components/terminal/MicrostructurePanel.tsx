@@ -348,7 +348,13 @@ export function MicrostructurePanel({
               {/* Asks */}
               <div className="space-y-0.5">
                 {asksWithCum.length === 0 ? (
-                  <div className="py-2 text-center text-[10px] text-[var(--text-muted)]">Ожидание Ask-уровней...</div>
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <div key={`ask-sk-${i}`} className="grid h-5 grid-cols-3 items-center gap-2 px-1">
+                      <div className="h-2.5 w-14 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                      <div className="ml-auto h-2.5 w-10 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                      <div className="ml-auto h-2.5 w-12 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                    </div>
+                  ))
                 ) : (
                   asksWithCum.map((row) => {
                     const pct = Math.min(100, (row.cum / maxCum) * 100);
@@ -381,7 +387,13 @@ export function MicrostructurePanel({
               {/* Bids */}
               <div className="space-y-0.5">
                 {bidsWithCum.length === 0 ? (
-                  <div className="py-2 text-center text-[10px] text-[var(--text-muted)]">Ожидание Bid-уровней...</div>
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <div key={`bid-sk-${i}`} className="grid h-5 grid-cols-3 items-center gap-2 px-1">
+                      <div className="h-2.5 w-14 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                      <div className="ml-auto h-2.5 w-10 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                      <div className="ml-auto h-2.5 w-12 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                    </div>
+                  ))
                 ) : (
                   bidsWithCum.map((row) => {
                     const pct = Math.min(100, (row.cum / maxCum) * 100);
@@ -554,8 +566,18 @@ export function MicrostructurePanel({
               </text>
             </svg>
           ) : (
-            <div className="flex h-full items-center justify-center font-mono text-[10px] text-[var(--text-muted)]">
-              Ожидание тиков /ws/market...
+            <div className="flex h-full w-full items-center gap-2 px-2 py-3">
+              <div className="flex h-full flex-1 flex-col justify-between">
+                <div className="h-px w-full bg-[var(--border-subtle)]/60" />
+                <div className="h-6 w-full rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                <div className="h-px w-full bg-[var(--border-subtle)]/60" />
+                <div className="h-4 w-3/4 rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                <div className="h-px w-full bg-[var(--border-subtle)]/60" />
+              </div>
+              <div className="flex h-full w-12 shrink-0 flex-col justify-center gap-2">
+                <div className="h-3.5 w-full rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+                <div className="h-3.5 w-full rounded-[2px] bg-[var(--bg-elevated)] ht-shimmer-bar" />
+              </div>
             </div>
           )}
         </div>
