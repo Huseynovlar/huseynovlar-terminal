@@ -20,7 +20,7 @@ env:
 jobs:
   deploy:
     name: Test, build and deploy over NetBird
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     timeout-minutes: 25
     environment: production
     steps:
