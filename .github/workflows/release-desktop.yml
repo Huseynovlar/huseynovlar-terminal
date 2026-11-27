@@ -1,4 +1,4 @@
-name: Release Desktop (Tauri v2)
+name: Release Desktop (macOS M1)
 
 on:
   workflow_dispatch:
@@ -12,32 +12,36 @@ concurrency:
 
 jobs:
   build:
-    name: Build and publish desktop app on self-hosted runner
-    runs-on: self-hosted
+    name: Build and publish macOS Apple Silicon (M1)
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 60
     environment: production
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify Apple Silicon runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$(uname -m)" != "arm64" ]; then
+            echo "::error::This workflow must run on an Apple Silicon Mac (arm64)."
+            exit 1
+          fi
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Setup Rust stable
+      - name: Setup Rust stable for Apple Silicon
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux WebKitGTK / AppImage dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        with:
+          targets: aarch64-apple-darwin
 
       - name: Install Desktop Dependencies
         working-directory: apps/desktop
         run: npm install
 
-      # Verify the Tauri updater key/password pair before the native build.
       - name: Validate updater signing key
         working-directory: apps/desktop
         env:
@@ -55,7 +59,7 @@ jobs:
           rm -f "$RUNNER_TEMP/tauri-signing-preflight.txt" "$RUNNER_TEMP/tauri-signing-preflight.txt.sig"
         shell: bash
 
-      - name: Build & Sign Tauri v2 Installers
+      - name: Build & Sign macOS M1 Installer
         uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -64,13 +68,13 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: v__VERSION__
-          releaseName: "Huseynovlar Terminal v__VERSION__"
-          releaseBody: "Huseynovlar Terminal desktop release built on the configured self-hosted runner. This release contains artifacts for that runner's native platform. Tauri updater artifacts are signed."
+          releaseName: "Huseynovlar Terminal v__VERSION__ (macOS M1)"
+          releaseBody: "Huseynovlar Terminal desktop release for macOS Apple Silicon (M1 / ARM64) only. Tauri updater artifacts are signed."
           releaseDraft: false
           prerelease: false
+          args: "--target aarch64-apple-darwin"
 
-      - name: Verify ad-hoc macOS code signature
-        if: runner.os == 'macOS'
+      - name: Verify macOS application signature
         shell: bash
         run: |
           set -euo pipefail
@@ -82,7 +86,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           codesign --display --verbose=4 "$APP_PATH" 2>&1
 
-      - name: Keep only the current complete release
+      - name: Keep only the current macOS M1 release
         uses: actions/github-script@v7
         with:
           script: |
@@ -101,8 +105,38 @@ jobs:
               return;
             }
 
-            if (!current.assets || current.assets.length < 1) {
-              core.setFailed(`The current release ${tag} has no build artifacts.`);
+            const expectedAssets = new Set([
+              `Huseynovlar.Terminal_${version}_aarch64.dmg`,
+              `Huseynovlar.Terminal_${version}_aarch64.app.tar.gz`,
+              `Huseynovlar.Terminal_${version}_aarch64.app.tar.gz.sig`,
+              "latest.json"
+            ]);
+            const actualNames = new Set((current.assets || []).map(asset => asset.name));
+            const missingAssets = [...expectedAssets].filter(name => !actualNames.has(name));
+            if (missingAssets.length) {
+              core.setFailed(`The macOS M1 release is incomplete. Missing: ${missingAssets.join(", ")}`);
+              return;
+            }
+
+            for (const asset of current.assets || []) {
+              if (expectedAssets.has(asset.name)) continue;
+              core.info(`Removing non-M1/obsolete release asset: ${asset.name}`);
+              await github.rest.repos.deleteReleaseAsset({
+                owner,
+                repo,
+                asset_id: asset.id
+              });
+            }
+
+            const { data: refreshed } = await github.rest.repos.getRelease({
+              owner,
+              repo,
+              release_id: current.id
+            });
+            const remainingNames = (refreshed.assets || []).map(asset => asset.name).sort();
+            const expectedNames = [...expectedAssets].sort();
+            if (JSON.stringify(remainingNames) !== JSON.stringify(expectedNames)) {
+              core.setFailed(`Release assets are not limited to the expected macOS M1 files: ${remainingNames.join(", ")}`);
               return;
             }
 
@@ -124,30 +158,27 @@ jobs:
               github.rest.repos.listReleases,
               { owner, repo, per_page: 100 }
             );
-
             const newestTag = releases
-              .map((release) => release.tag_name)
-              .filter((releaseTag) => versionParts(releaseTag))
+              .map(release => release.tag_name)
+              .filter(releaseTag => versionParts(releaseTag))
               .reduce((newest, releaseTag) =>
                 compareVersions(releaseTag, newest) > 0 ? releaseTag : newest,
                 tag
               );
 
             if (compareVersions(newestTag, tag) > 0) {
-              core.notice(`Skipping cleanup for ${tag}; newer release ${newestTag} already exists.`);
+              core.notice(`Skipping old-release cleanup for ${tag}; newer release ${newestTag} already exists.`);
               return;
             }
 
             for (const release of releases) {
               if (release.id === current.id) continue;
-
               core.info(`Removing obsolete release ${release.id} (${release.tag_name})`);
               await github.rest.repos.deleteRelease({
                 owner,
                 repo,
                 release_id: release.id
               });
-
               try {
                 await github.rest.git.deleteRef({
                   owner,
@@ -159,14 +190,4 @@ jobs:
               }
             }
 
-            const remaining = await github.paginate(
-              github.rest.repos.listReleases,
-              { owner, repo, per_page: 100 }
-            );
-
-            if (remaining.length !== 1 || remaining[0].id !== current.id) {
-              core.setFailed(`Expected only release ${tag} to remain; found ${remaining.length} releases.`);
-              return;
-            }
-
-            core.info(`Cleanup complete. Only ${tag} remains.`);
+            core.info(`Release ${tag} is published with macOS M1 assets only.`);
